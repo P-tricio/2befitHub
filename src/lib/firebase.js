@@ -5,13 +5,13 @@ import { getFirestore } from "firebase/firestore";
 
 // Firebase configuration
 const firebaseConfig = {
-    apiKey: "AIzaSyA4X3QjW9jeMdRoHSpun29WvHCVdruTYr4",
-    authDomain: "befithub-f6202.firebaseapp.com",
-    projectId: "befithub-f6202",
-    storageBucket: "befithub-f6202.firebasestorage.app",
-    messagingSenderId: "20961130148",
-    appId: "1:20961130148:web:df76988bf460dd683fd831",
-    measurementId: "G-LMNHNPE88Q"
+    apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+    appId: import.meta.env.VITE_FIREBASE_APP_ID,
+    measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
 // Initialize Firebase
