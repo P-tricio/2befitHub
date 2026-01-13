@@ -7,7 +7,7 @@ import InstallPWA from './components/common/InstallPWA';
 const modules = [
   {
     id: 'fitness',
-    title: 'Fitness Test',
+    title: '2BeTest',
     subtitle: 'Evaluación y Métricas',
     icon: Activity,
     url: 'https://2befitest.vercel.app/',
@@ -15,24 +15,24 @@ const modules = [
   },
   {
     id: 'nutrition',
-    title: 'Nutrición',
-    subtitle: 'Planificación Inteligente',
+    title: '2BeFood',
+    subtitle: 'Planificación Nutricional Inteligente',
     icon: Apple,
     url: 'https://nutri2befit.vercel.app/',
     status: 'active'
   },
   {
     id: 'training',
-    title: 'Entrenamientos',
-    subtitle: 'Tu Estrategia Diaria',
+    title: '2BeTrain',
+    subtitle: 'Tu Guía de Entrenamiento',
     icon: Dumbbell,
     url: '',
     status: 'coming_soon'
   },
   {
     id: 'goals',
-    title: 'Metas',
-    subtitle: 'Contratos y Objetivos',
+    title: '2BeGoals',
+    subtitle: 'Tus Objetivos y Seguimiento',
     icon: Target,
     url: '',
     status: 'coming_soon'
@@ -122,16 +122,12 @@ function App() {
             animate={{ opacity: 1, y: 0 }}
             className="flex flex-col items-center text-center"
           >
-            {/* Center Icon: Contained to prevent stretching */}
-            <div className="w-24 h-24 mb-6 relative">
+            {/* Center Icon: Large Logo */}
+            <div className="w-64 h-32 mb-6 relative">
               <BrandIcon size="w-full h-full object-contain drop-shadow-2xl shadow-brand-green/20" />
             </div>
 
             <p className="text-brand-green font-bold uppercase tracking-wider text-xs mb-3">Bienvenido a tu Ecosistema</p>
-            <h1 className="text-4xl font-black tracking-tight mb-2 flex items-center justify-center gap-2 text-brand-dark">
-              <span>2BEFIT</span>
-              <span className="text-brand-green">HUB</span>
-            </h1>
           </motion.div>
         </header>
 
