@@ -1,0 +1,17 @@
+{
+    "name": "2BEFITHUB",
+    "short_name": "2BEFITHUB",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#ffffff",
+    "theme_color": "#57B590",
+    "orientation": "portrait-primary",
+    "icons": [
+        {
+            "src": "/Logocompact.png",
+            "type": "image/png",
+            "sizes": "122x142",
+            "purpose": "any"
+        }
+    ]
+}
