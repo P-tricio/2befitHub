@@ -138,19 +138,9 @@ const Profile = () => {
                             onChange={(e) => setNewName(e.target.value)}
                         />
 
-                        {/* Photo URL Input (Still keeping it as fallback or read-only if upload used) */}
-                        <div className="w-full relative">
-                            <input
-                                className="text-xs font-medium text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-2 pr-8 text-center w-full outline-none"
-                                placeholder="Subir foto o pegar URL..."
-                                value={newPhotoURL}
-                                onChange={(e) => setNewPhotoURL(e.target.value)}
-                            />
-                            <label className="absolute right-2 top-1/2 -translate-y-1/2 p-1 bg-slate-200 rounded-md cursor-pointer hover:bg-slate-300 text-slate-600">
-                                <input type="file" className="hidden" accept="image/*" onChange={handleFileUpload} disabled={uploading} />
-                                {uploading ? <div className="w-3 h-3 border-2 border-slate-400 border-t-slate-600 rounded-full animate-spin"></div> : <Edit2 size={12} />}
-                            </label>
-                        </div>
+                        <p className="text-xs text-slate-400 font-medium">
+                            Pulsa en tu foto para cambiarla
+                        </p>
 
                         <button onClick={handleSaveProfile} className="px-6 py-2 bg-emerald-500 text-white rounded-full hover:bg-emerald-600 font-bold flex items-center gap-2" disabled={uploading}>
                             <ArrowRight size={16} /> Guardar Cambios

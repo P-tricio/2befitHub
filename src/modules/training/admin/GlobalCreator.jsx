@@ -12,6 +12,8 @@ import { ImageUploadInput, ExerciseCard, ExerciseFormDrawer, ExerciseBrowser, ge
 import { PATTERNS, EQUIPMENT, LEVELS, QUALITIES } from './constants';
 import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges';
 
+const IMGBB_API_KEY = import.meta.env.VITE_IMGBB_API_KEY;
+
 // --- Sub-components ---
 
 // ExerciseItem Component
