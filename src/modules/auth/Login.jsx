@@ -23,6 +23,8 @@ const Login = () => {
             } else {
                 await signup(email, password);
             }
+            // Small delay to allow Firestore sync to complete
+            await new Promise(resolve => setTimeout(resolve, 500));
             navigate('/');
         } catch (err) {
             console.error(err);
@@ -37,6 +39,8 @@ const Login = () => {
         setLoading(true);
         try {
             await googleLogin();
+            // Small delay to allow Firestore sync to complete
+            await new Promise(resolve => setTimeout(resolve, 500));
             navigate('/');
         } catch (err) {
             console.error(err);

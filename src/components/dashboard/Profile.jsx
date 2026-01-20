@@ -1,9 +1,11 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { User, Mail, Shield, LogOut, Settings, Award, ChevronRight, Edit2, ArrowRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { User, Mail, Shield, LogOut, Settings, Award, ChevronRight, Edit2, ArrowRight, ShieldCheck } from 'lucide-react';
 
 const Profile = () => {
     const { currentUser, logout, updateUserProfile } = useAuth();
+    const navigate = useNavigate();
     const [isEditing, setIsEditing] = React.useState(false);
     const [newName, setNewName] = React.useState('');
 
@@ -81,6 +83,17 @@ const Profile = () => {
                 <div className="divide-y divide-slate-50">
                     <ProfileLink icon={User} label="Datos Personales" onClick={handleStartEdit} />
                     <ProfileLink icon={Award} label="Historial de Logros" />
+
+                    {/* Admin Panel Button - Only for admins (or dev override) */}
+                    {(user.role === 'admin' || user.email === 'pabloadrian91@gmail.com') && (
+                        <ProfileLink
+                            icon={ShieldCheck}
+                            label="Panel de Administración"
+                            onClick={() => navigate('/training/admin/global-creator')}
+                            className="bg-indigo-50/50"
+                        />
+                    )}
+
                     <ProfileLink icon={Settings} label="Configuración" />
                     <ProfileLink icon={Shield} label="Privacidad" />
                 </div>
@@ -109,15 +122,15 @@ const StatCard = ({ label, value }) => (
     </div>
 );
 
-const ProfileLink = ({ icon: Icon, label, onClick }) => (
-    <button onClick={onClick} className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors group">
+const ProfileLink = ({ icon: Icon, label, onClick, className }) => (
+    <button onClick={onClick} className={`w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors group ${className}`}>
         <div className="flex items-center gap-4">
-            <div className="p-2 bg-slate-50 rounded-lg text-slate-400 group-hover:bg-white group-hover:text-emerald-500 transition-colors shadow-sm">
+            <div className={`p-2 rounded-lg transition-colors shadow-sm ${className ? 'bg-indigo-50 text-indigo-500 group-hover:bg-indigo-100' : 'bg-slate-50 text-slate-400 group-hover:bg-white group-hover:text-emerald-500'}`}>
                 <Icon size={20} />
             </div>
-            <span className="font-bold text-slate-700 group-hover:text-slate-900">{label}</span>
+            <span className={`font-bold group-hover:text-slate-900 ${className ? 'text-indigo-600' : 'text-slate-700'}`}>{label}</span>
         </div>
-        <ChevronRight size={16} className="text-slate-300 group-hover:text-emerald-500 transform group-hover:translate-x-1 transition-all" />
+        <ChevronRight size={16} className={`transform group-hover:translate-x-1 transition-all ${className ? 'text-indigo-300 group-hover:text-indigo-500' : 'text-slate-300 group-hover:text-emerald-500'}`} />
     </button>
 );
 

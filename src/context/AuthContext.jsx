@@ -42,20 +42,34 @@ export const AuthProvider = ({ children }) => {
             if (user) {
                 // Sync user to Firestore 'users' collection
                 const userRef = doc(db, 'users', user.uid);
-                const userSnap = await getDoc(userRef);
 
-                if (!userSnap.exists()) {
-                    await setDoc(userRef, {
-                        email: user.email,
-                        displayName: user.displayName || 'Usuario Nuevo',
-                        photoURL: user.photoURL,
-                        createdAt: serverTimestamp(),
-                        role: 'user', // Default role
-                        currentProgramId: null
-                    });
+                try {
+                    const userSnap = await getDoc(userRef);
+
+                    if (userSnap.exists()) {
+                        // User exists, merge Firestore data (role, etc.)
+                        const userData = userSnap.data();
+                        setCurrentUser({ ...user, ...userData });
+                    } else {
+                        // Create new user doc
+                        const newUserData = {
+                            email: user.email,
+                            displayName: user.displayName || 'Usuario Nuevo',
+                            photoURL: user.photoURL,
+                            createdAt: serverTimestamp(),
+                            role: 'user', // Default role
+                            currentProgramId: null
+                        };
+                        await setDoc(userRef, newUserData);
+                        setCurrentUser({ ...user, ...newUserData });
+                    }
+                } catch (error) {
+                    console.error("Error fetching user data:", error);
+                    setCurrentUser(user);
                 }
+            } else {
+                setCurrentUser(null);
             }
-            setCurrentUser(user);
             setLoading(false);
         });
 

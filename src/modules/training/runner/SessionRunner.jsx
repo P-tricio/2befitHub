@@ -55,37 +55,54 @@ const SessionRunner = () => {
                 const exercises = step.module.exercises || [];
                 if (exercises.length === 0) return;
 
-                const target = step.module.targeting?.[0] || {};
-                const repsDone = res.reps ? res.reps[0] : 0;
-                const targetReps = target.volume || 10;
+                const targets = step.module.targeting || [];
 
-                if (step.module.protocol === 'R' || step.blockType === 'BASE' || step.blockType === 'BUILD') {
-                    if (repsDone > targetReps + 2) {
+                // Analyze EACH exercise individually
+                exercises.forEach((ex, idx) => {
+                    const repsDone = res.reps?.[idx] || 0;
+                    const weightUsed = res.actualWeights?.[idx] || res.weights?.[idx] || 0;
+                    const targetReps = ex.targetReps || targets[0]?.volume || 10;
+
+                    // Only analyze exercises with load (loadable exercises)
+                    if (!ex.loadable || !weightUsed) return;
+
+                    // Determine adjustment type based on performance
+                    let type = 'keep';
+                    let adjustment = 0;
+                    let msg = '';
+
+                    if (step.module.protocol === 'R' || step.blockType === 'BASE' || step.blockType === 'BUILD') {
+                        const diff = repsDone - targetReps;
+
+                        if (diff > 2) {
+                            type = 'up';
+                            adjustment = 2.5;
+                            msg = `Subir peso en ${ex.nameEs || ex.name}`;
+                        } else if (diff < -2) {
+                            type = 'down';
+                            adjustment = -2.5;
+                            msg = `Bajar peso en ${ex.nameEs || ex.name}`;
+                        } else {
+                            type = 'keep';
+                            adjustment = 0;
+                            msg = `Mantener peso en ${ex.nameEs || ex.name}`;
+                        }
+
                         insights.push({
-                            type: 'up',
+                            type,
                             moduleId: step.module.id,
+                            exerciseId: ex.id,
+                            exerciseIndex: idx,
+                            exerciseName: ex.nameEs || ex.name,
                             blockType: step.blockType,
-                            msg: `Subir peso en ${step.blockType}`,
-                            adjustment: 2.5
-                        });
-                    } else if (repsDone < targetReps - 2) {
-                        insights.push({
-                            type: 'down',
-                            moduleId: step.module.id,
-                            blockType: step.blockType,
-                            msg: `Bajar peso en ${step.blockType}`,
-                            adjustment: -2.5
-                        });
-                    } else {
-                        insights.push({
-                            type: 'keep',
-                            moduleId: step.module.id,
-                            blockType: step.blockType,
-                            msg: `Peso correcto en ${step.blockType}`,
-                            adjustment: 0
+                            previousWeight: parseFloat(weightUsed),
+                            targetReps,
+                            actualReps: repsDone,
+                            adjustment,
+                            msg
                         });
                     }
-                }
+                });
             });
 
             // Save feedback AND analysis
@@ -795,25 +812,37 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise }) => {
         const initWeights = {};
         exercises.forEach((ex, idx) => {
             initReps[idx] = 0;
-            // Pre-fill with planned weight if available, else check for previous log adjustment
-            let suggestedWeight = plan && plan[module.offset + idx] ? plan[module.offset + idx] : '';
 
-            // Apply auto-adjustment from previous session if available
-            if (previousLog?.analysis) {
-                const adjustment = previousLog.analysis.find(a => a.moduleId === module.id);
-                if (adjustment && adjustment.adjustment && suggestedWeight) {
-                    const prevWeight = parseFloat(suggestedWeight);
-                    if (!isNaN(prevWeight)) {
-                        suggestedWeight = (prevWeight + adjustment.adjustment).toFixed(1);
+            // PRIORITY 1: Use actual weight from previous session + recommendation
+            if (previousLog?.results?.actualWeights?.[idx]) {
+                let baseWeight = parseFloat(previousLog.results.actualWeights[idx]);
+
+                // Find exercise-specific recommendation
+                if (previousLog?.analysis) {
+                    const recommendation = previousLog.analysis.find(
+                        a => a.moduleId === module.id &&
+                            (a.exerciseId === ex.id || a.exerciseIndex === idx)
+                    );
+
+                    if (recommendation?.adjustment) {
+                        baseWeight += recommendation.adjustment;
                     }
                 }
-            }
 
-            initWeights[idx] = suggestedWeight;
+                initWeights[idx] = baseWeight.toFixed(1);
+            }
+            // PRIORITY 2: Use plan (if no history exists)
+            else if (plan?.[module.offset + idx]) {
+                initWeights[idx] = plan[module.offset + idx];
+            }
+            // PRIORITY 3: Empty
+            else {
+                initWeights[idx] = '';
+            }
         });
         setRepsDone(initReps);
         setWeightsUsed(initWeights);
-    }, [module, plan, previousLog]);
+    }, [module, plan, previousLog, exercises]);
 
     // Reps Increment Handler
     const incrementReps = (idx) => {
@@ -1106,24 +1135,66 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise }) => {
                                 {exercises.map((ex, idx) => {
                                     if (!ex.loadable) return null;
 
+                                    // Get exercise-specific recommendation
+                                    const recommendation = previousLog?.analysis?.find(
+                                        a => a.moduleId === module.id &&
+                                            (a.exerciseId === ex.id || a.exerciseIndex === idx)
+                                    );
+
+                                    // Get previous weight
+                                    const previousWeight = previousLog?.results?.actualWeights?.[idx];
+
                                     return (
                                         <div key={idx} className="bg-slate-900/50 rounded-xl p-3 border border-slate-700">
-                                            <label className="text-xs font-bold text-slate-400 mb-2 block truncate">
-                                                {ex.nameEs || ex.name}
-                                            </label>
-                                            <div className="flex items-center gap-2">
-                                                {plan?.[module.offset + idx] && (
-                                                    <span className="text-xs text-emerald-500 font-black bg-emerald-500/10 px-2 py-1.5 rounded-lg border border-emerald-500/20 whitespace-nowrap">
-                                                        Plan: {plan[module.offset + idx]}kg
+                                            {/* Header with exercise name and recommendation badge */}
+                                            <div className="flex items-center justify-between mb-2">
+                                                <label className="text-xs font-bold text-slate-400 truncate flex-1">
+                                                    {ex.nameEs || ex.name}
+                                                </label>
+
+                                                {/* Recommendation Badge */}
+                                                {recommendation && (
+                                                    <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ml-2
+                                                        ${recommendation.type === 'up' ? 'bg-emerald-500/20 text-emerald-500 border border-emerald-500/30' :
+                                                            recommendation.type === 'down' ? 'bg-amber-500/20 text-amber-500 border border-amber-500/30' :
+                                                                'bg-blue-500/20 text-blue-500 border border-blue-500/30'}`}>
+                                                        {recommendation.type === 'up' ? '↑ Subir' :
+                                                            recommendation.type === 'down' ? '↓ Bajar' :
+                                                                '→ Mantener'}
                                                     </span>
                                                 )}
+                                            </div>
+
+                                            <div className="flex items-center gap-2">
+                                                {/* Show previous weight and adjustment */}
+                                                {previousWeight && (
+                                                    <div className="flex items-center gap-1.5 text-xs">
+                                                        <span className="text-slate-500 font-bold">
+                                                            {previousWeight}kg
+                                                        </span>
+                                                        {recommendation?.adjustment && recommendation.adjustment !== 0 && (
+                                                            <span className={`font-black ${recommendation.adjustment > 0 ? 'text-emerald-500' : 'text-amber-500'}`}>
+                                                                {recommendation.adjustment > 0 ? '+' : ''}{recommendation.adjustment}kg
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                )}
+
+                                                {/* Input with contextual border color */}
                                                 <div className="relative flex-1">
                                                     <input
                                                         type="number"
                                                         placeholder="0"
                                                         value={weightsUsed[idx] || ''}
                                                         onChange={(e) => handleWeightInput(idx, e.target.value)}
-                                                        className="w-full bg-slate-800 border-2 border-slate-700 rounded-xl py-2.5 pl-3 pr-10 text-white font-mono font-black text-base outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all placeholder:text-slate-600"
+                                                        className={`w-full bg-slate-800 border-2 rounded-xl py-2.5 pl-3 pr-10 
+                                                                   text-white font-mono font-black text-base outline-none 
+                                                                   transition-all placeholder:text-slate-600
+                                                                   ${recommendation?.type === 'up' ? 'border-emerald-500 focus:ring-emerald-500/10' :
+                                                                recommendation?.type === 'down' ? 'border-amber-500 focus:ring-amber-500/10' :
+                                                                    recommendation?.type === 'keep' ? 'border-blue-500 focus:ring-blue-500/10' :
+                                                                        'border-slate-700'} 
+                                                                   focus:ring-4`}
                                                     />
                                                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-500 pointer-events-none">kg</span>
                                                 </div>
