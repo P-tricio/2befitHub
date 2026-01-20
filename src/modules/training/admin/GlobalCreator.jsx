@@ -1,0 +1,2707 @@
+import React, { useState, useEffect } from 'react';
+import {
+    MoreVertical, Plus, Copy, Trash2, ChevronDown, ChevronUp,
+    Link, Link2, Move, Clock, Repeat, Flame, Dumbbell,
+    Settings, Eye, Check, X, Search, Lock, Unlock, Save, Download, Coffee, Filter, UploadCloud, Loader2, Zap, Library, List, ClipboardList
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { TrainingDB } from '../services/db';
+import { ExerciseAPI } from '../services/exerciseApi';
+import ActionMenu from '../../../components/admin/ActionMenu';
+import { ImageUploadInput, ExerciseCard, ExerciseFormDrawer, ExerciseBrowser, getPatternColor } from './components';
+import { PATTERNS, EQUIPMENT, LEVELS, QUALITIES } from './constants';
+import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges';
+
+// --- Sub-components ---
+
+// ExerciseItem Component
+const ExerciseItem = ({ ex, idx, isGrouped, isFirstInGroup, isLastInGroup, onConfigure, onRemove, onDuplicate, onSwap, onToggleGroup, isLinkMode, nextIsGrouped, onUpdateDuration }) => {
+    const [currentImage, setCurrentImage] = useState(ex.mediaUrl || ex.imageStart || ExerciseAPI.getYoutubeThumbnail(ex.youtubeUrl) || null);
+
+    // Auto-GIF Logic (Flicker)
+    useEffect(() => {
+        if (ex.mediaUrl) return; // If media exists, use it
+        if (ex.imageStart && ex.imageEnd) {
+            const interval = setInterval(() => {
+                setCurrentImage(prev => prev === ex.imageStart ? ex.imageEnd : ex.imageStart);
+            }, 700);
+            return () => clearInterval(interval);
+        }
+    }, [ex.mediaUrl, ex.imageStart, ex.imageEnd]);
+
+    // Render Rest Item differently
+    if (ex.type === 'REST') {
+        const [localDuration, setLocalDuration] = useState(ex.duration || 60);
+
+        const handleDurationUpdate = () => {
+            if (onUpdateDuration && localDuration !== ex.duration) {
+                onUpdateDuration(localDuration);
+            }
+        };
+
+        return (
+            <div className="flex items-center gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl mb-2 relative group">
+                <div className="w-10 h-10 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center shrink-0">
+                    <Coffee size={20} />
+                </div>
+                <div className="flex-1 flex items-center gap-2">
+                    <h4 className="font-bold text-slate-800 text-sm">Descanso</h4>
+                    <div className="flex items-center gap-1">
+                        <input
+                            type="number"
+                            value={localDuration}
+                            onChange={(e) => setLocalDuration(parseInt(e.target.value) || 5)}
+                            onBlur={handleDurationUpdate}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    handleDurationUpdate();
+                                    e.target.blur();
+                                }
+                            }}
+                            onClick={(e) => e.target.select()}
+                            className="w-16 px-2 py-1 text-xs font-bold bg-white border border-slate-300 rounded text-center focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                            min="5"
+                            max="600"
+                            step="5"
+                        />
+                        <span className="text-[10px] text-slate-500 font-bold">seg</span>
+                    </div>
+                </div>
+                <button onClick={(e) => { e.stopPropagation(); onRemove(); }} className="p-2 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Trash2 size={16} />
+                </button>
+            </div>
+        );
+    }
+
+    // New Grouping Visuals
+    // If 'isGrouped' is true, this item is attached to the previous one.
+    // If 'nextIsGrouped' is true, the next item is attached to this one.
+
+    // Styles for "Combined" items
+    const mergedTopClass = isGrouped ? 'rounded-t-none border-t-0 mt-0 pt-4 border-t-slate-200/50' : 'mb-2';
+    const mergedBottomClass = nextIsGrouped ? 'rounded-b-none border-b-0 mb-0 pb-4' : 'mb-2';
+    // If connected in a chain, borders must be handled carefully.
+    // Actually, if we merge them, we might want to remove borders between them or make them subtle.
+    // User asked to "combine cards". Let's remove the spacing and inner borders.
+
+    const cardBaseClass = "relative flex-1 flex items-center gap-3 p-3 bg-white border border-slate-200 shadow-sm transition-all cursor-pointer group/card";
+    const groupedClass = isGrouped ? "border-t-0 rounded-t-none mt-0 pt-2" : "rounded-t-xl";
+    const nextGroupedClass = nextIsGrouped ? "border-b-0 rounded-b-none mb-0 pb-2 z-10" : "rounded-b-xl mb-2";
+
+    // Smart Summary Logic
+    const getSummary = () => {
+        const sets = ex.config?.sets || [];
+        if (sets.length === 0) return '0 Sets';
+
+        const volType = ex.config?.volType || 'REPS';
+        const intType = ex.config?.intType || 'RIR'; // defaults if missing
+        const sharedTime = ex.config?.sharedTime || false;
+
+        // 1. Check for Volume Uniformity
+        const firstRep = sets[0]?.reps;
+        const uniformReps = sets.every(s => s.reps === firstRep);
+
+        // 2. Check for Intensity Uniformity
+        const firstInt = sets[0]?.rir; // 'rir' field holds intensity value
+        const uniformInt = sets.every(s => s.rir === firstInt);
+
+        // Build string: "3 x 10 REPS @ 10kg"
+        let text = `${sets.length} x `;
+
+        if (uniformReps && firstRep) {
+            text += `${firstRep}${volType === 'TIME' ? 's' : ''}`;
+            // Add shared time indicator
+            if (sharedTime && volType === 'TIME') {
+                text += ' (compartido)';
+            }
+        } else {
+            text += `(VAR)`; // Var volume
+        }
+
+        if (firstInt && uniformInt) {
+            text += ` @ ${firstInt} ${intType}`;
+        }
+
+        return text;
+    };
+
+    return (
+        <div className="relative flex flex-col">
+            {/* Shared Time Badge (floating) - Only show on the 2nd exercise of the pair */}
+            {ex.config?.sharedTime && isGrouped && (
+                <div className="absolute -top-2 right-2 z-10 bg-orange-500 text-white text-[9px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 shadow-md pointer-events-none">
+                    <span>⏱️</span>
+                    <span>COMPARTIDO</span>
+                </div>
+            )}
+
+            {/* EMOM Badge (floating) - Only show on the 2nd exercise of the pair if EMOM */}
+            {ex.config?.isEMOM && isGrouped && (
+                <div className="absolute -top-2 right-2 z-10 bg-emerald-500 text-white text-[9px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 shadow-md pointer-events-none">
+                    <span>🕐</span>
+                    <span>EMOM</span>
+                </div>
+            )}
+
+            {/* Card */}
+            <div
+                className={`${cardBaseClass} ${groupedClass} ${nextGroupedClass} ${ex.config?.sharedTime
+                    ? 'border-l-4 border-l-orange-500'
+                    : ex.config?.isEMOM
+                        ? 'border-l-4 border-l-emerald-500'
+                        : isGrouped
+                            ? 'border-l-4 border-l-blue-400'
+                            : ''
+                    }`}
+                onClick={() => onConfigure(ex)}
+            >
+                <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center shrink-0 overflow-hidden relative">
+                    {currentImage || ex.mediaUrl ? (
+                        <img src={currentImage || ex.mediaUrl} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                        <Dumbbell size={16} className="text-slate-400" />
+                    )}
+                </div>
+
+                <div className="flex-1 min-w-0">
+                    <h4 className="font-bold text-slate-800 text-sm truncate">{ex.name_es || ex.name || 'Ejercicio'}</h4>
+                    {/* Show description preview if available */}
+                    {(ex.description || (ex.instructions_es && ex.instructions_es.length > 0) || (ex.instructions && ex.instructions.length > 0)) && (
+                        <div className="group relative">
+                            <p className="text-[10px] text-slate-400 truncate cursor-help hover:text-slate-600 transition-colors">
+                                ℹ️ {ex.description || (ex.instructions_es?.[0]) || (ex.instructions?.[0]) || 'Ver detalles'}
+                            </p>
+                            {/* Tooltip for long description */}
+                            <div className="absolute left-0 bottom-full mb-2 w-48 bg-slate-800 text-white text-[10px] p-2 rounded-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
+                                {ex.description || (ex.instructions_es?.join(' ')) || (ex.instructions?.join(' ')) || ''}
+                            </div>
+                        </div>
+                    )}
+                    <div className="flex items-center gap-2 mt-0.5">
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider ${ex.config?.sharedTime
+                            ? 'bg-orange-100 text-orange-700'
+                            : ex.config?.isEMOM
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : 'bg-slate-100 text-slate-600'
+                            }`}>
+                            {ex.config?.isEMOM ? 'EMOM' : (ex.config?.volType || 'SETS')}
+                        </span>
+                        <p className="text-xs text-slate-500 font-bold">
+                            {getSummary()}
+                        </p>
+                    </div>
+                </div>
+
+                <div className="flex items-center gap-1">
+                    <ActionMenu actions={[
+                        { label: 'Cambiar Ejercicio', icon: <Move size={16} />, onClick: (e) => { e?.stopPropagation?.(); onSwap?.(); } },
+                        { label: 'Duplicar', icon: <Copy size={16} />, onClick: (e) => { e?.stopPropagation?.(); onDuplicate(); } },
+                        { label: 'Eliminar', icon: <Trash2 size={16} />, onClick: (e) => { e?.stopPropagation?.(); onRemove(); }, variant: 'danger' }
+                    ]} />
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// 2. Block Card Component
+const BlockCard = ({ block, idx, onUpdate, onRemove, onDuplicate, onAddExercise, onSaveModule, onImportModule, onOpenConfig, onSwapExercise }) => {
+    const [isExpanded, setIsExpanded] = useState(true);
+    const [linkMode, setLinkMode] = useState(false); // Toggle for connecting exercises
+
+    const toggleExerciseGroup = (exIdx) => {
+        const newExercises = [...block.exercises];
+        const ex = newExercises[exIdx];
+        // Toggle 'isGrouped' status
+        ex.isGrouped = !ex.isGrouped;
+        onUpdate({ ...block, exercises: newExercises });
+    };
+
+    const addRest = () => {
+        const newExercises = [...block.exercises];
+        newExercises.push({
+            id: crypto.randomUUID(),
+            type: 'REST',
+            duration: 60,
+            name: 'Descanso'
+        });
+        onUpdate({ ...block, exercises: newExercises });
+    };
+
+    return (
+        <div className="bg-slate-50/50 rounded-2xl border border-slate-200 overflow-hidden mb-4">
+            {/* Header */}
+            <div className="bg-white p-4 border-b border-slate-100 flex justify-between items-center sticky top-0 z-10">
+                <div className="flex items-center gap-3 flex-1 min-w-0 mr-2">
+                    <span className="w-6 h-6 rounded bg-slate-900 text-white text-xs font-bold flex items-center justify-center shrink-0">
+                        {idx + 1}
+                    </span>
+                    <input
+                        type="text"
+                        value={block.name}
+                        onChange={(e) => onUpdate({ ...block, name: e.target.value })}
+                        className="font-black text-slate-900 bg-transparent outline-none focus:bg-slate-50 px-2 rounded -ml-2 w-full truncate"
+                        placeholder="Nombre del Bloque"
+                    />
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                    <button
+                        onClick={onImportModule}
+                        className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        title="Importar Módulo"
+                    >
+                        <Download size={16} />
+                    </button>
+                    <button
+                        onClick={onSaveModule}
+                        className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                        title="Guardar como Módulo"
+                    >
+                        <Save size={16} />
+                    </button>
+                    <ActionMenu actions={[
+                        { label: 'Duplicar', icon: <Copy size={16} />, onClick: onDuplicate },
+                        { label: 'Eliminar', icon: <Trash2 size={16} />, onClick: onRemove, variant: 'danger' }
+                    ]} />
+                    <button onClick={() => setIsExpanded(!isExpanded)} className="p-1 text-slate-400">
+                        {isExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                    </button>
+                </div>
+            </div>
+
+            {/* Body */}
+            <AnimatePresence>
+                {isExpanded && (
+                    <motion.div
+                        initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }}
+                        className="p-4"
+                    >
+                        {/* Empty State */}
+                        {block.exercises.length === 0 && (
+                            <div className="text-center py-8 border-2 border-dashed border-slate-200 rounded-xl">
+                                <p className="text-xs text-slate-400 mb-2 font-bold">Sin Ejercicios</p>
+                                <button
+                                    onClick={onAddExercise}
+                                    className="text-emerald-600 text-xs font-black uppercase tracking-wider hover:underline"
+                                >
+                                    + Añadir Ejercicio
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Exercise List */}
+                        <div className="space-y-0">
+                            {block.exercises.map((ex, exIdx) => {
+                                // Determine connectivity logic
+                                const nextEx = block.exercises[exIdx + 1];
+                                const isNextGrouped = nextEx && nextEx.isGrouped;
+
+                                return (
+                                    <React.Fragment key={ex.id || exIdx}>
+                                        <ExerciseItem
+                                            ex={ex}
+                                            idx={exIdx}
+                                            isGrouped={ex.isGrouped}
+                                            nextIsGrouped={isNextGrouped}
+                                            isLinkMode={linkMode}
+                                            onConfigure={() => onOpenConfig(idx, exIdx)}
+                                            onSwap={() => onSwapExercise(idx, exIdx)}
+                                            onUpdateDuration={(newDuration) => {
+                                                const newEx = [...block.exercises];
+                                                newEx[exIdx] = { ...ex, duration: newDuration };
+                                                onUpdate({ ...block, exercises: newEx });
+                                            }}
+                                            onDuplicate={() => {
+                                                const newEx = [...block.exercises];
+                                                const copy = { ...ex, id: crypto.randomUUID(), name: `${ex.name} (Copia)` };
+                                                newEx.splice(exIdx + 1, 0, copy);
+                                                onUpdate({ ...block, exercises: newEx });
+                                            }}
+                                            onRemove={() => {
+                                                const newEx = block.exercises.filter((_, i) => i !== exIdx);
+                                                onUpdate({ ...block, exercises: newEx });
+                                            }}
+                                        />
+
+                                        {/* Linker Button (Between Cards) */}
+                                        {linkMode && exIdx < block.exercises.length - 1 && ex.type !== 'REST' && nextEx.type !== 'REST' && (
+                                            <div className="h-4 -my-2 flex justify-center items-center z-20 relative">
+                                                <button
+                                                    onClick={() => toggleExerciseGroup(exIdx + 1)}
+                                                    className={`w-6 h-6 rounded-full flex items-center justify-center border transition-all ${isNextGrouped ? 'bg-blue-500 border-blue-600 text-white' : 'bg-white border-slate-300 text-slate-400 hover:scale-110'}`}
+                                                >
+                                                    {isNextGrouped ? <Link2 size={12} /> : <Plus size={12} />}
+                                                </button>
+                                            </div>
+                                        )}
+                                    </React.Fragment>
+                                );
+                            })}
+                        </div>
+
+                        {/* Footer / Add Button */}
+                        <div className="mt-4 flex items-center justify-between">
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={onAddExercise}
+                                    className="bg-slate-200 hover:bg-slate-300 text-slate-600 px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-colors"
+                                >
+                                    <Plus size={14} /> Ejercicio
+                                </button>
+                                <button
+                                    onClick={addRest}
+                                    className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-colors"
+                                    title="Añadir Descanso"
+                                >
+                                    <Coffee size={14} />
+                                </button>
+                            </div>
+
+                            {/* Superset Toggle (Granular) */}
+                            <div className="flex items-center gap-2">
+                                <span className={`text-[10px] font-bold uppercase tracking-wider ${linkMode ? 'text-blue-600' : 'text-slate-400'}`}>
+                                    Link Mode
+                                </span>
+                                <button
+                                    onClick={() => setLinkMode(!linkMode)}
+                                    className={`w-10 h-6 rounded-full p-1 transition-colors ${linkMode ? 'bg-blue-500' : 'bg-slate-200'}`}
+                                >
+                                    <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${linkMode ? 'translate-x-4' : 'translate-x-0'}`} />
+                                </button>
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </div>
+    );
+};
+
+// 3. Exercise Configuration Drawer (The "Load Editor")
+const ExerciseConfigDrawer = ({ isOpen, onClose, exercise, onSave }) => {
+    const [config, setConfig] = useState(exercise?.config || {
+        volType: 'REPS',
+        intType: 'RIR',
+        sets: []
+    });
+    const [notes, setNotes] = useState(exercise?.notes || '');
+    const [currentImage, setCurrentImage] = useState(exercise?.mediaUrl || exercise?.imageStart || null);
+    const [isPlayingVideo, setIsPlayingVideo] = useState(false);
+
+    // Reset state when exercise changes
+    useEffect(() => {
+        if (exercise) {
+            setConfig(exercise.config || {
+                volType: 'REPS',
+                intType: 'RIR',
+                sets: []
+            });
+            setNotes(exercise.notes || '');
+            setCurrentImage(exercise.mediaUrl || exercise.imageStart || ExerciseAPI.getYoutubeThumbnail(exercise.youtubeUrl) || null);
+        }
+    }, [exercise]);
+
+    // Auto-GIF Logic
+    useEffect(() => {
+        if (exercise?.mediaUrl) return;
+        if (exercise?.imageStart && exercise?.imageEnd) {
+            const interval = setInterval(() => {
+                setCurrentImage(prev => prev === exercise.imageStart ? exercise.imageEnd : exercise.imageStart);
+            }, 700);
+            return () => clearInterval(interval);
+        }
+    }, [exercise]);
+
+    const handleAddSet = () => {
+        const lastSet = config.sets[config.sets.length - 1] || { reps: 10, rir: 2, weight: '', rest: 60 };
+        setConfig({ ...config, sets: [...config.sets, { ...lastSet }] });
+    };
+
+    const handleUpdateSet = (idx, field, value) => {
+        const newSets = [...config.sets];
+        newSets[idx] = { ...newSets[idx], [field]: value };
+        setConfig({ ...config, sets: newSets });
+    };
+
+    const handleDuplicateSet = (idx) => {
+        const set = config.sets[idx];
+        const newSets = [...config.sets];
+        newSets.splice(idx + 1, 0, { ...set });
+        setConfig({ ...config, sets: newSets });
+    };
+
+    const handleRemoveSet = (idx) => {
+        setConfig({ ...config, sets: config.sets.filter((_, i) => i !== idx) });
+    };
+
+    // Extract YouTube video ID from URL
+    const getYoutubeVideoId = (url) => {
+        if (!url) return null;
+        const regExp = /^.*(youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?v=|shorts\/|\&v=)([^#\&\?]*).*/;
+        const match = url.match(regExp);
+        return (match && match[2].length === 11) ? match[2] : null;
+    };
+
+    const handleSave = () => {
+        onSave({ ...exercise, config, notes });
+        onClose();
+    };
+
+    return (
+        <AnimatePresence>
+            {isOpen && (
+                <motion.div
+                    initial={{ opacity: 0, x: '100%' }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: '100%' }}
+                    className="absolute inset-0 bg-white z-50 flex flex-col"
+                >
+                    {/* Header */}
+                    <div className="bg-white border-b border-slate-100 p-4 flex items-center gap-3 sticky top-0 z-10 shadow-sm">
+                        <button onClick={onClose} className="p-2 -ml-2 text-slate-400 hover:text-slate-600">
+                            <ChevronDown className="rotate-90" size={24} />
+                        </button>
+                        <h3 className="font-black text-slate-800 text-lg flex-1 truncate">{exercise?.name}</h3>
+                        <button onClick={handleSave} className="text-emerald-600 font-bold text-sm">Guardar</button>
+                    </div>
+
+                    {/* Content */}
+                    <div className="flex-1 overflow-y-auto p-4 spacing-y-4">
+
+                        {/* Visual Preview - Enlarged and with YouTube support */}
+                        <div className="flex justify-center mb-6">
+                            <div className="w-full aspect-video bg-slate-50 rounded-2xl flex items-center justify-center overflow-hidden border border-slate-100 shadow-inner relative">
+                                {isPlayingVideo && exercise?.youtubeUrl ? (
+                                    // YouTube iframe player
+                                    <div className="relative w-full h-full">
+                                        <iframe
+                                            src={`https://www.youtube.com/embed/${getYoutubeVideoId(exercise.youtubeUrl)}?autoplay=1`}
+                                            title={exercise.name_es || exercise.name}
+                                            frameBorder="0"
+                                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                            allowFullScreen
+                                            className="w-full h-full"
+                                        />
+                                        <button
+                                            onClick={() => setIsPlayingVideo(false)}
+                                            className="absolute top-2 right-2 w-8 h-8 rounded-full bg-slate-900/80 hover:bg-slate-900 text-white flex items-center justify-center shadow-lg z-10"
+                                        >
+                                            <X size={16} />
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <>
+                                        {currentImage || exercise?.mediaUrl || ExerciseAPI.getYoutubeThumbnail(exercise?.youtubeUrl) ? (
+                                            <>
+                                                <img
+                                                    src={currentImage || exercise?.mediaUrl || ExerciseAPI.getYoutubeThumbnail(exercise?.youtubeUrl)}
+                                                    alt=""
+                                                    className="w-full h-full object-contain p-2 mix-blend-multiply"
+                                                />
+                                                {exercise?.youtubeUrl && (
+                                                    <button
+                                                        onClick={() => setIsPlayingVideo(true)}
+                                                        className="absolute inset-0 bg-slate-900/0 hover:bg-slate-900/20 transition-colors flex items-center justify-center group"
+                                                    >
+                                                        <div className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-xl">
+                                                            <svg className="w-8 h-8 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
+                                                                <path d="M8 5v14l11-7z" />
+                                                            </svg>
+                                                        </div>
+                                                    </button>
+                                                )}
+                                            </>
+                                        ) : (
+                                            <Dumbbell size={40} className="text-slate-200" />
+                                        )}
+                                    </>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Exercise Description / Instructions */}
+                        <div className="mb-6">
+                            <p className="text-[10px] uppercase font-black text-slate-400 tracking-wider mb-2">Instrucciones</p>
+                            <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 text-xs text-slate-600 leading-relaxed text-left">
+                                {exercise?.description || (exercise?.instructions_es?.join(' ')) || (exercise?.instructions?.join(' ')) || 'Sin instrucciones detalladas.'}
+                            </div>
+                        </div>
+
+                        {/* Sets Editor */}
+                        <div className="mb-6">
+                            <div className="flex justify-between items-end mb-2">
+                                <label className="text-[10px] uppercase font-black text-slate-400 tracking-wider">Series / Rondas</label>
+                                <span className="text-[10px] text-slate-400 font-mono">Total Vol: {config.sets.length}</span>
+                            </div>
+
+                            <div className="space-y-2">
+                                {/* Header Row with Dropdowns */}
+                                <div className="grid grid-cols-[24px_1fr_1fr_1fr_52px] gap-1 text-[10px] font-bold text-slate-400 text-center mb-1 items-end">
+                                    <span>#</span>
+
+                                    {/* Volume Type Selector */}
+                                    <div className="relative group">
+                                        <select
+                                            value={config.volType || 'REPS'}
+                                            onChange={(e) => setConfig({ ...config, volType: e.target.value })}
+                                            className="appearance-none bg-transparent text-center outline-none font-bold uppercase cursor-pointer w-full text-slate-400 hover:text-slate-600"
+                                        >
+                                            <option value="REPS">REPS</option>
+                                            <option value="TIME">TIEMPO (s)</option>
+                                        </select>
+                                        <ChevronDown size={10} className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none opacity-50" />
+                                    </div>
+
+                                    {/* Intensity Type Selector */}
+                                    <div className="relative group">
+                                        <select
+                                            value={config.intType || 'RIR'}
+                                            onChange={(e) => setConfig({ ...config, intType: e.target.value })}
+                                            className="appearance-none bg-transparent text-center outline-none font-bold uppercase cursor-pointer w-full text-slate-400 hover:text-slate-600"
+                                        >
+                                            <option value="RIR">RIR</option>
+                                            <option value="PESO">PESO</option>
+                                            <option value="%">% MAX</option>
+                                            <option value="RPE">RPE</option>
+                                        </select>
+                                        <ChevronDown size={10} className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none opacity-50" />
+                                    </div>
+
+                                    <span>DESC (s)</span>
+                                    <span></span>
+                                </div>
+
+                                {/* Shared Time Toggle (only for TIME volType) */}
+                                {config.volType === 'TIME' && (
+                                    <div className="mt-3 mb-2 flex items-center justify-between p-3 bg-orange-50 border border-orange-200 rounded-xl">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-lg">⏱️</span>
+                                            <div>
+                                                <p className="text-xs font-bold text-slate-800">Tiempo Compartido</p>
+                                                <p className="text-[10px] text-slate-500">AMRAP - Los ejercicios del par comparten el tiempo total</p>
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => setConfig({
+                                                ...config,
+                                                sharedTime: !config.sharedTime
+                                            })}
+                                            className={`w-11 h-6 rounded-full p-1 transition-colors ${config.sharedTime ? 'bg-orange-500' : 'bg-slate-300'
+                                                }`}
+                                        >
+                                            <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${config.sharedTime ? 'translate-x-5' : 'translate-x-0'
+                                                }`} />
+                                        </button>
+                                    </div>
+                                )}
+
+                                {/* EMOM Toggle (only for REPS volType) */}
+                                {config.volType === 'REPS' && (
+                                    <div className="mt-3 mb-2 flex items-center justify-between p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-lg">🕐</span>
+                                            <div>
+                                                <p className="text-xs font-bold text-slate-800">EMOM</p>
+                                                <p className="text-[10px] text-slate-500">Every Minute On the Minute - Timer por minutos</p>
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => setConfig({
+                                                ...config,
+                                                isEMOM: !config.isEMOM
+                                            })}
+                                            className={`w-11 h-6 rounded-full p-1 transition-colors ${config.isEMOM ? 'bg-emerald-500' : 'bg-slate-300'
+                                                }`}
+                                        >
+                                            <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${config.isEMOM ? 'translate-x-5' : 'translate-x-0'
+                                                }`} />
+                                        </button>
+                                    </div>
+                                )}
+
+                                {config.sets.map((set, sIdx) => (
+                                    <div key={sIdx} className="grid grid-cols-[24px_1fr_1fr_1fr_52px] gap-1 items-center">
+                                        <div className="w-6 h-6 rounded bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500 shrink-0">
+                                            {sIdx + 1}
+                                        </div>
+                                        <input
+                                            type="text" // numeric text
+                                            value={set.reps || ''}
+                                            onChange={(e) => handleUpdateSet(sIdx, 'reps', e.target.value)}
+                                            placeholder={config.volType === 'TIME' ? "45s" : "10"}
+                                            className="bg-slate-50 border border-slate-200 rounded-lg py-1.5 text-center text-xs font-bold text-slate-700 outline-none focus:border-blue-400 min-w-0 w-full"
+                                        />
+                                        <input
+                                            type="text"
+                                            value={set.rir || ''}
+                                            onChange={(e) => handleUpdateSet(sIdx, 'rir', e.target.value)}
+                                            placeholder={config.intType === 'PESO' ? "20kg" : (config.intType === '%' ? "75%" : "2")}
+                                            className="bg-slate-50 border border-slate-200 rounded-lg py-1.5 text-center text-xs font-bold text-slate-700 outline-none focus:border-blue-400 min-w-0 w-full"
+                                        />
+                                        <input
+                                            type="number"
+                                            value={set.rest || ''}
+                                            onChange={(e) => handleUpdateSet(sIdx, 'rest', e.target.value)}
+                                            placeholder="60"
+                                            className="bg-slate-50 border border-slate-200 rounded-lg py-1.5 text-center text-xs font-bold text-slate-700 outline-none focus:border-blue-400 min-w-0 w-full"
+                                        />
+                                        <div className="flex items-center gap-0.5 shrink-0 justify-center">
+                                            <button onClick={() => handleDuplicateSet(sIdx)} className="p-1 text-slate-300 hover:text-blue-500 hover:bg-blue-50 rounded">
+                                                <Copy size={13} />
+                                            </button>
+                                            <button onClick={() => handleRemoveSet(sIdx)} className="p-1 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded">
+                                                <X size={13} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <button
+                                onClick={handleAddSet}
+                                className="mt-3 w-full py-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-500 font-bold text-xs hover:bg-slate-100 flex items-center justify-center gap-2"
+                            >
+                                <Plus size={14} /> Añadir Serie
+                            </button>
+                        </div>
+
+                        {/* Notes */}
+                        <div>
+                            <label className="text-[10px] uppercase font-black text-slate-400 tracking-wider mb-2 block">Notas de Ejecución</label>
+                            <textarea
+                                value={notes}
+                                onChange={(e) => setNotes(e.target.value)}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-medium text-slate-700 outline-none focus:border-blue-400 min-h-[100px]"
+                                placeholder="Tempo 3-0-1, pausa en contracción..."
+                            />
+                        </div>
+
+                        <div className="h-20" />
+                    </div>
+                </motion.div>
+            )}
+        </AnimatePresence>
+    );
+};
+
+const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, onSave, onDirtyChange }) => {
+    // Main View State: 'editor' | 'library' | 'sessions'
+    const [mainView, setMainView] = useState('editor');
+
+    // Session State
+    const [sessionTitle, setSessionTitle] = useState(initialSession?.name || initialSession?.title || 'Día 1 SESIÓN');
+    const [sessionDescription, setSessionDescription] = useState(initialSession?.description || '');
+    const [descriptionExpanded, setDescriptionExpanded] = useState(false);
+    const [blocks, setBlocks] = useState(initialSession?.blocks || [
+        { id: '1', name: 'Bloque 1', exercises: [] }
+    ]);
+    const [sessionType, setSessionType] = useState(initialSession?.type || 'LIBRE'); // LIBRE, PDP-T, PDP-R, PDP-E
+
+    // Config State
+    const [configDrawerOpen, setConfigDrawerOpen] = useState(false);
+    const [activeExerciseObj, setActiveExerciseObj] = useState(null); // Full exercise object for editing
+    const [activeBlockIdx, setActiveBlockIdx] = useState(null);
+    const [activeExIdx, setActiveExIdx] = useState(null);
+    const [linkMode, setLinkMode] = useState(false); // Superseries link mode
+
+    // Data & Picker State
+    const [allExercises, setAllExercises] = useState([]);
+    const [allModules, setAllModules] = useState([]);
+    const [allSessions, setAllSessions] = useState([]); // For sessions list view
+    const [exercisePickerOpen, setExercisePickerOpen] = useState(false);
+    const [activeBlockIdxForPicker, setActiveBlockIdxForPicker] = useState(null);
+    const [modulePickerOpen, setModulePickerOpen] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const [pickerSearch, setPickerSearch] = useState('');
+    const [pickerFilter, setPickerFilter] = useState({ pattern: [], equipment: [], level: [], quality: [] });
+    const [pickerTab, setPickerTab] = useState('library'); // 'library' | 'online'
+    const [onlineResults, setOnlineResults] = useState([]);
+    const [isSearchingOnline, setIsSearchingOnline] = useState(false);
+    const [expandedOnlineEx, setExpandedOnlineEx] = useState(null);
+    const [discoveryMode, setDiscoveryMode] = useState(false);
+    const [bulkExercises, setBulkExercises] = useState([]); // Cache for all exercises
+
+    // Swap Mode State (for replacing exercise while keeping config)
+    const [swapMode, setSwapMode] = useState(false);
+    const [swapTarget, setSwapTarget] = useState(null); // { blockIdx, exIdx, config }
+
+    // Quick Creator State
+    const [quickCreatorOpen, setQuickCreatorOpen] = useState(false);
+    const [creationData, setCreationData] = useState({
+        name: '', pattern: 'Squat', equipment: 'Ninguno (Peso Corporal)',
+        level: 'Intermedio', quality: 'Fuerza',
+        mediaUrl: '', imageStart: '', imageEnd: '', youtubeUrl: '', description: '',
+        tags: []
+    });
+
+    const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
+    const [pdpDropdownOpen, setPdpDropdownOpen] = useState(false);
+
+    // Library Edit State
+    const [libraryEditDrawerOpen, setLibraryEditDrawerOpen] = useState(false);
+    const [libraryEditExercise, setLibraryEditExercise] = useState(null);
+    const [librarySearchTerm, setLibrarySearchTerm] = useState('');
+    const [libraryFilters, setLibraryFilters] = useState({ pattern: [], equipment: [], level: [], quality: [] });
+    const [libraryFilterDrawerOpen, setLibraryFilterDrawerOpen] = useState(false);
+
+    // Filter Exercise List Helper Function
+    const filterExerciseList = (exercises, searchTerm, filters) => {
+        return exercises.filter(ex => {
+            // Search Filter
+            const term = searchTerm.toLowerCase();
+            const esName = (ex.name_es || '').toLowerCase();
+            const enName = (ex.name || '').toLowerCase();
+            const matchesSearch = !term || esName.includes(term) || enName.includes(term) || (ex.tags || []).some(t => t.toLowerCase().includes(term));
+
+            if (!matchesSearch) return false;
+
+            // Category Filters
+            if (filters.pattern.length > 0 && !filters.pattern.includes(ex.pattern)) return false;
+
+            // Equipment Filter
+            if (filters.equipment.length > 0) {
+                const equipmentList = ex.equipmentList_es || [];
+                const equipmentString = (ex.equipment_es || ex.equipment || '');
+
+                const matchesEq = filters.equipment.some(selectedEq => {
+                    if (equipmentList.includes(selectedEq)) return true;
+                    return equipmentString.includes(selectedEq);
+                });
+
+                if (!matchesEq) return false;
+            }
+
+            if (filters.level.length > 0 && !filters.level.includes(ex.level)) return false;
+
+            if (filters.quality.length > 0) {
+                const matchesQuality = filters.quality.some(qId => (ex.qualities || []).includes(qId));
+                if (!matchesQuality) return false;
+            }
+
+            return true;
+        });
+    };
+
+    // Toggle filter helper
+    const toggleFilter = (type, value) => {
+        setPickerFilter(prev => {
+            const list = prev[type];
+            const exists = list.includes(value);
+            return {
+                ...prev,
+                [type]: exists ? list.filter(item => item !== value) : [...list, value]
+            };
+        });
+    };
+
+    // Track dirty state
+    const [isDirty, setIsDirty] = useState(false);
+    const [exDrawerDirty, setExDrawerDirty] = useState(false); // Track child drawer
+    const [initialState, setInitialState] = useState(null);
+
+    // Initialize state logic
+    useEffect(() => {
+        const startState = {
+            name: initialSession?.name || initialSession?.title || 'Día 1 SESIÓN',
+            description: initialSession?.description || '',
+            blocks: initialSession?.blocks || [{ id: '1', name: 'Bloque 1', exercises: [] }]
+        };
+        // We only set this once on mount/init to establish baseline
+        if (!initialState) {
+            setInitialState(JSON.stringify(startState));
+        }
+    }, [initialSession]);
+
+    // Check for changes & Notify/Block
+    useEffect(() => {
+        if (!initialState) return;
+
+        const currentState = JSON.stringify({
+            name: sessionTitle,
+            description: sessionDescription,
+            blocks: blocks
+        });
+
+        const sessionDirty = currentState !== initialState;
+        setIsDirty(sessionDirty);
+
+        const totalDirty = sessionDirty || exDrawerDirty;
+
+        if (embeddedMode) {
+            // If embedded, notify parent
+            if (onDirtyChange) onDirtyChange(totalDirty);
+        }
+
+    }, [sessionTitle, sessionDescription, blocks, initialState, exDrawerDirty, embeddedMode, onDirtyChange]);
+
+    // Enable Protection (Only if standalone)
+    // If embedded, the parent (ProgramBuilder) handles the blocking
+    useUnsavedChanges(!embeddedMode && (isDirty || exDrawerDirty));
+
+    useEffect(() => {
+        TrainingDB.exercises.getAll().then(setAllExercises);
+        TrainingDB.modules.getAll().then(setAllModules);
+        TrainingDB.sessions.getAll().then(setAllSessions);
+    }, []);
+
+    // Online Search Debounce
+    useEffect(() => {
+        if (pickerTab !== 'online') return;
+
+        if (discoveryMode) {
+            // Local search in bulk downloaded data
+            if (!pickerSearch.trim()) {
+                setOnlineResults(bulkExercises.slice(0, 50)); // Show some initial if empty
+                return;
+            }
+            const filtered = bulkExercises.filter(ex =>
+                ex.name.toLowerCase().includes(pickerSearch.toLowerCase()) ||
+                ex.target.toLowerCase().includes(pickerSearch.toLowerCase()) ||
+                ex.bodyPart.toLowerCase().includes(pickerSearch.toLowerCase())
+            );
+            setOnlineResults(filtered.slice(0, 50));
+            return;
+        }
+
+        if (!pickerSearch.trim() || pickerSearch.length < 3) {
+            setOnlineResults([]);
+            return;
+        }
+
+        const timer = setTimeout(async () => {
+            setIsSearchingOnline(true);
+            try {
+                const results = await ExerciseAPI.searchOnline(pickerSearch);
+                setOnlineResults(results);
+            } catch (err) {
+                console.error(err);
+            } finally {
+                setIsSearchingOnline(false);
+            }
+        }, 600);
+
+        return () => clearTimeout(timer);
+    }, [pickerSearch, pickerTab, discoveryMode]);
+
+    const handleEnableDiscovery = async () => {
+        if (bulkExercises.length > 0) {
+            setDiscoveryMode(true);
+            return;
+        }
+
+        setIsSearchingOnline(true);
+        try {
+            const all = await ExerciseAPI.getAllExercises();
+            setBulkExercises(all);
+            setOnlineResults(all.slice(0, 50));
+            setDiscoveryMode(true);
+        } catch (err) {
+            console.error('Error in Discovery Mode:', err);
+            alert('Error al cargar catálogo completo');
+        } finally {
+            setIsSearchingOnline(false);
+        }
+    };
+
+    // Export catalog for LLM processing
+    const handleExportCatalog = () => {
+        if (bulkExercises.length === 0) {
+            alert('Primero activa el Modo Discovery para cargar el catálogo');
+            return;
+        }
+
+        // Structure exercises with our schema + placeholders for LLM
+        const exportData = {
+            metadata: {
+                exportDate: new Date().toISOString(),
+                totalExercises: bulkExercises.length,
+                version: "1.0",
+                instructions: "Este archivo debe ser procesado por un LLM para traducir y enriquecer los datos. Ver prompt adjunto."
+            },
+            exercises: bulkExercises.map(ex => ({
+                // Original data (works with both ExerciseDB and GitHub)
+                id: ex.id,
+                name: ex.name,
+                bodyPart: ex.bodyPart,
+                target: ex.target,
+                secondaryMuscles: ex.secondaryMuscles || [],
+                equipment: ex.equipment,
+                gifUrl: ex.gifUrl || '',
+                imageStart: ex.imageStart || '',  // GitHub: start position
+                imageEnd: ex.imageEnd || '',      // GitHub: end position
+                instructions: ex.instructions || [],
+
+                // Extra fields from GitHub dataset
+                level_original: ex.level || '',   // beginner/intermediate/expert
+                force_original: ex.force || '',   // push/pull/static
+                mechanic_original: ex.mechanic || '', // compound/isolation
+
+                // To be filled by LLM
+                name_es: "",                    // Traducción del nombre
+                instructions_es: [],            // Instrucciones en español
+
+                // Biomechanical classification (LLM should infer)
+                pattern: "",                    // Squat|Hinge|Push|Pull|Lunge|Carry|Core|Global
+                forceType: ex.force || "",      // Pre-fill from GitHub if available
+                movementType: ex.mechanic === 'compound' ? 'Compuesto' : (ex.mechanic === 'isolation' ? 'Aislamiento' : ''),
+                plane: "",                      // Sagital|Frontal|Transversal|Multi
+                unilateral: false,
+
+                // Physical qualities (LLM should assign)
+                qualities: [],                  // ["F","E","M","C"] - Fuerza, Energía, Movilidad, Control
+                subQualities: [],               // Secondary tags
+
+                // Training attributes (LLM should infer)
+                level: ex.level || "",          // Pre-fill from GitHub if available
+                loadable: false,
+
+                // Equipment (translated + list for multiple)
+                equipment_es: "",               // Traducción del equipamiento
+                equipmentList: [ex.equipment],  // Array for multiple equipment
+                equipmentList_es: [],           // Translated equipment array
+
+                // Management (leave empty)
+                isFavorite: false,
+                mediaUrl_backup: null,
+                usageCount: 0,
+                lastUsed: null,
+                tags: [],
+                source: ex.imageStart ? "github" : "exercisedb"
+            }))
+        };
+
+        // Download as JSON
+        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `exercisedb_catalog_${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        alert(`✅ Exportados ${bulkExercises.length} ejercicios. Ahora procésalos con el LLM.`);
+    };
+
+    // Import processed catalog from LLM
+    const handleImportProcessedCatalog = async (event) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        try {
+            const text = await file.text();
+            const data = JSON.parse(text);
+
+            if (!data.exercises || !Array.isArray(data.exercises)) {
+                throw new Error('Formato de archivo inválido');
+            }
+
+            const exercises = data.exercises;
+            const confirmed = window.confirm(
+                `¿Importar ${exercises.length} ejercicios a la base de datos?\n\nEsto puede tardar varios minutos.`
+            );
+
+            if (!confirmed) return;
+
+            setIsSaving(true);
+            let imported = 0;
+            let errors = 0;
+
+            for (const ex of exercises) {
+                try {
+                    // Use name_es as primary name, fallback to original
+                    await TrainingDB.exercises.create({
+                        externalId: ex.id,
+                        name: ex.name_es || ex.name,
+                        nameOriginal: ex.name,
+                        bodyPart: ex.bodyPart,
+                        target: ex.target,
+                        secondaryMuscles: ex.secondaryMuscles || [],
+                        equipment: ex.equipment_es || ex.equipment,
+                        equipmentOriginal: ex.equipment,
+                        mediaUrl: ex.gifUrl,
+                        description: (ex.instructions_es || []).join('\n'),
+                        instructionsOriginal: ex.instructions || [],
+                        pattern: ex.pattern || 'Global',
+                        forceType: ex.forceType || '',
+                        movementType: ex.movementType || '',
+                        plane: ex.plane || '',
+                        unilateral: ex.unilateral || false,
+                        qualities: ex.qualities || [],
+                        subQualities: ex.subQualities || [],
+                        level: ex.level || 'Intermedio',
+                        loadable: ex.loadable || false,
+                        isFavorite: false,
+                        mediaUrl_backup: null,
+                        usageCount: 0,
+                        lastUsed: null,
+                        tags: ex.tags || [],
+                        source: 'exercisedb'
+                    });
+                    imported++;
+                } catch (err) {
+                    console.error(`Error importing ${ex.name}:`, err);
+                    errors++;
+                }
+
+                // Progress update every 100 exercises
+                if (imported % 100 === 0) {
+                    console.log(`Importados: ${imported}/${exercises.length}`);
+                }
+            }
+
+            alert(`✅ Importación completada!\n\n• Importados: ${imported}\n• Errores: ${errors}`);
+
+            // Refresh exercise list
+            TrainingDB.exercises.getAll().then(setAllExercises);
+
+        } catch (err) {
+            console.error('Import error:', err);
+            alert('Error al importar: ' + err.message);
+        } finally {
+            setIsSaving(false);
+            event.target.value = ''; // Reset file input
+        }
+    };
+
+    const toggleOnlineExpansion = (exId) => {
+        setExpandedOnlineEx(expandedOnlineEx === exId ? null : exId);
+    };
+
+    const handleImportOnlineExercise = async (onlineEx) => {
+        if (isSaving) return;
+        console.log('IMPORTING FROM ONLINE:', onlineEx);
+        setIsSaving(true);
+        try {
+            let finalGifUrl = '';
+
+            try {
+                // 1. Download GIF from ExerciseDB (with a small retry for stability)
+                let gifBlob;
+                try {
+                    gifBlob = await ExerciseAPI.fetchImageBlob(onlineEx.id);
+                } catch (e) {
+                    console.warn('First fetch failed, retrying in 1s...', e);
+                    await new Promise(r => setTimeout(r, 1000));
+                    gifBlob = await ExerciseAPI.fetchImageBlob(onlineEx.id);
+                }
+
+                // 2. Upload to ImgBB for permanent storage
+                const formData = new FormData();
+                formData.append('image', gifBlob, `${onlineEx.id}.gif`);
+
+                const imgbbRes = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
+                    method: 'POST',
+                    body: formData
+                });
+                const imgbbData = await imgbbRes.json();
+
+                if (imgbbData.success) {
+                    finalGifUrl = imgbbData.data.url;
+                } else {
+                    console.warn('ImgBB Upload failed, using original preview URL');
+                    finalGifUrl = onlineEx.mediaUrl || '';
+                }
+            } catch (gifErr) {
+                console.error('GIF permanent storage process failed:', gifErr);
+                finalGifUrl = onlineEx.mediaUrl || ''; // Fallback to original URL (with API key)
+            }
+
+            // 3. Translate content to Spanish
+            let translatedName = onlineEx.name;
+            let translatedDescription = (onlineEx.instructions || []).join('\n');
+
+            try {
+                [translatedName, translatedDescription] = await Promise.all([
+                    ExerciseAPI.translateText(onlineEx.name),
+                    ExerciseAPI.translateText(translatedDescription)
+                ]);
+            } catch (trErr) {
+                console.error('Translation failed, using original English text:', trErr);
+            }
+
+            // Map ExerciseDB to 2BeFitHub structure
+            const prefilledData = {
+                name: ExerciseAPI.toSentenceCase(translatedName || 'Sin nombre'),
+                pattern: ExerciseAPI.mapBodyPartToPattern(onlineEx.bodyPart || ''),
+                equipment: (onlineEx.equipment || 'Ninguno').charAt(0).toUpperCase() + (onlineEx.equipment || 'Ninguno').slice(1),
+                level: 'Intermedio', // Default
+                quality: 'Fuerza',    // Default
+                loadable: onlineEx.equipment !== 'body weight', // If not bodyweight, consider it loadable
+                mediaUrl: finalGifUrl,
+                imageStart: '',
+                imageEnd: '',
+                youtubeUrl: '',
+                description: ExerciseAPI.postProcessSpanish(translatedDescription || 'Sin descripción'),
+                tags: [
+                    onlineEx.target,
+                    onlineEx.bodyPart,
+                    ...(onlineEx.secondaryMuscles || [])
+                ].filter(Boolean)
+            };
+
+            // Instead of saving directly, we open the Quick Creator with pre-filled fields
+            setCreationData(prefilledData);
+            setQuickCreatorOpen(true);
+            setExercisePickerOpen(false); // Close the picker to show the creator
+        } catch (error) {
+            console.error('Error importing exercise details:', error);
+            alert('Error al preparar importación: ' + error.message);
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const addBlock = () => {
+        setBlocks([...blocks, {
+            id: crypto.randomUUID(),
+            name: `Bloque ${blocks.length + 1}`,
+            exercises: []
+        }]);
+    };
+
+    const importModule = (moduleData) => {
+        setBlocks([...blocks, {
+            ...moduleData,
+            id: crypto.randomUUID(),
+            name: `${moduleData.name} (Imp)`,
+            // Ensure exercises get new IDs
+            exercises: (moduleData.exercises || []).map(e => ({
+                ...e,
+                id: crypto.randomUUID(),
+                // Ensure config exists
+                config: e.config || { protocol: 'REPS', sets: [] }
+            }))
+        }]);
+        setModulePickerOpen(false);
+    };
+
+    const handleClearSession = () => {
+        if (window.confirm('¿Estás seguro de querer borrar toda la sesión actual?')) {
+            setBlocks([{ id: crypto.randomUUID(), name: 'Bloque 1', exercises: [] }]);
+            setSessionTitle('Nueva Sesión');
+            setSessionDescription('');
+            setSessionType('LIBRE');
+        }
+    };
+
+    // PDP Protocol Templates
+    const PDP_TEMPLATES = {
+        'PDP-T': [
+            { name: 'BOOST - Activación', timeCap: 240, description: '4 min - Activación dinámica (Superserie)' },
+            { name: 'BASE - Fuerza', timeCap: 240, description: '4 min - Fuerza fundamental (Solo)' },
+            { name: 'BUILD A - Capacidad', timeCap: 300, description: '5 min - Construcción capacidad (Solo)' },
+            { name: 'BUILD B - Capacidad', timeCap: 300, description: '5 min - Construcción capacidad (Solo)' },
+            { name: 'BURN A - Acondicionamiento', timeCap: 360, description: '6 min - Metabólico (Superserie)' },
+            { name: 'BURN B - Acondicionamiento', timeCap: 360, description: '6 min - Metabólico (Superserie)' }
+        ],
+        'PDP-R': [
+            { name: 'BOOST - Activación', targetReps: 30, description: '30 reps - Activación dinámica (Superserie)' },
+            { name: 'BASE - Fuerza', targetReps: 30, description: '30 reps - Fuerza fundamental (Solo)' },
+            { name: 'BUILD A - Capacidad', targetReps: 40, description: '40 reps - Construcción capacidad (Solo)' },
+            { name: 'BUILD B - Capacidad', targetReps: 40, description: '40 reps - Construcción capacidad (Solo)' },
+            { name: 'BURN A - Acondicionamiento', targetReps: 60, description: '60 reps - Metabólico (Superserie)' },
+            { name: 'BURN B - Acondicionamiento', targetReps: 60, description: '60 reps - Metabólico (Superserie)' }
+        ],
+        'PDP-E': [
+            { name: 'BOOST - Activación', emomMinutes: 4, description: 'EMOM 4 min - Superserie A+B' },
+            { name: 'BASE - Fuerza', emomMinutes: 4, description: 'EMOM 4 min - 5-6 reps estrictas' },
+            { name: 'BUILD A - Capacidad', emomMinutes: 5, description: 'EMOM 5 min - 8 reps/min' },
+            { name: 'BUILD B - Capacidad', emomMinutes: 5, description: 'EMOM 5 min - 8 reps/min' },
+            { name: 'BURN A - Acondicionamiento', emomMinutes: 6, description: 'EMOM 6 min - Biseries (10+10)' },
+            { name: 'BURN B - Acondicionamiento', emomMinutes: 6, description: 'EMOM 6 min - Biseries (10+10)' }
+        ]
+    };
+
+    const PDP_DESCRIPTIONS = {
+        'PDP-T': 'Progressive Density Program bajo Time Cap. Formato de trabajo: máxima densidad en tiempo fijo.\n\n• BOOST (4min): Superserie de activación alternando 2 ejercicios.\n• BASE (4min): Trabajo de fuerza en 1 ejercicio principal.\n• BUILD A/B (5min c/u): Trabajo de capacidad en ejercicios por separado.\n• BURN A/B (6min c/u): 2 bloques de acondicionamiento tipo AMRAP en superseries.',
+
+        'PDP-R': 'Progressive Density Program basado en Reps. Formato de trabajo: completar reps target en el menor tiempo posible.\n\n• BOOST (30 reps): Superserie compartiendo reps (15+15).\n• BASE (30 reps): Trabajo de fuerza en 1 ejercicio solo.\n• BUILD A/B (40 reps c/u): Capacidad en ejercicios por separado.\n• BURN A/B (60 reps c/u): Acondicionamiento en superseries (60 reps por ejercicio).',
+
+        'PDP-E': 'Progressive Density Program en formato EMOM. Formato de trabajo: Every Minute On the Minute.\n\n• BOOST (4min): Superserie A+B (6 reps/min).\n• BASE (4min): 1 Ejercicio (6 reps/min).\n• BUILD A/B (5min c/u): 1 Ejercicio (8 reps/min).\n• BURN A/B (6min c/u): Superseries (10+10 reps/min).'
+    };
+
+    const applyTemplate = (protocolType) => {
+        const template = PDP_TEMPLATES[protocolType];
+        if (!template) return;
+
+        // Set protocol description and expand
+        setSessionDescription(PDP_DESCRIPTIONS[protocolType] || '');
+        setSessionType(protocolType);
+        setDescriptionExpanded(true);
+
+        // Helper to create placeholder exercise with config
+        const createPlaceholderExercise = (blockIdx, exIdx, blockDef, protocolType) => {
+            const baseConfig = {
+                volType: protocolType === 'PDP-T' ? 'TIME' : 'REPS',
+                intType: 'RIR',
+                sets: []
+            };
+
+            // Official PDP Protocol Values
+            const OFFICIAL_VALUES = {
+                BOOST: { time: 240, reps: 30, emomMin: 4 },
+                BASE: { time: 240, reps: 30, emomMin: 4 },
+                BUILD: { time: 300, reps: 40, emomMin: 5 },
+                BURN: { time: 360, reps: 60, emomMin: 6 }
+            };
+
+            const blockTypes = ['BOOST', 'BASE', 'BUILD', 'BUILD', 'BURN', 'BURN']; // Indexed by 0-5
+            const blockType = blockTypes[blockIdx]; // Get generic type (e.g., 'BUILD' for both A and B)
+            const values = OFFICIAL_VALUES[blockType];
+
+            // BOOST: superseries (2 exercises)
+            // BASE: solo (1 exercise)
+            // BUILD A/B: solo (1 exercise each)
+            // BURN A/B: superseries (2 exercises each)
+
+            // Define sets based on protocol
+            if (protocolType === 'PDP-T') {
+                // Time-based
+                let timePerExercise;
+                if (blockType === 'BOOST') {
+                    // BOOST: Superseries alternating, share the time
+                    timePerExercise = Math.floor(values.time / 2);
+                } else if (blockType === 'BURN') {
+                    // BURN: Linked Superserie (AMRAP), both share full time visually but logically it's per block
+                    timePerExercise = values.time;
+                } else {
+                    // BASE & BUILD: Solo work
+                    timePerExercise = values.time;
+                }
+                baseConfig.sets = [
+                    { reps: String(timePerExercise), rir: '2-3', rest: '0' }
+                ];
+            } else if (protocolType === 'PDP-R') {
+                // Reps-based - only BOOST shares reps
+                let repsPerExercise;
+                if (blockType === 'BOOST') {
+                    // BOOST: Superseries alternating (15+15 = 30)
+                    repsPerExercise = Math.floor(values.reps / 2);
+                } else {
+                    // BASE: 30 reps solo
+                    // BUILD: 40 reps solo
+                    // BURN: 60 reps EACH exercise in pair
+                    repsPerExercise = values.reps;
+                }
+                baseConfig.sets = [
+                    { reps: String(repsPerExercise), rir: '2-3', rest: '0' }
+                ];
+            } else if (protocolType === 'PDP-E') {
+                // EMOM
+                const numSets = values.emomMin;
+                let repsPerRound = 6;
+                if (blockType === 'BUILD') repsPerRound = 8;
+                if (blockType === 'BURN') repsPerRound = 10;
+
+                baseConfig.sets = Array(numSets).fill(null).map(() => ({
+                    reps: String(repsPerRound),
+                    rir: '2-3',
+                    rest: '0'
+                }));
+            }
+
+            // Mark if time is shared (PDP-T BURN only)
+            const isSharedTime = protocolType === 'PDP-T' && blockType === 'BURN';
+            if (isSharedTime) {
+                baseConfig.sharedTime = true;
+            }
+
+            // Mark if EMOM (PDP-E only)
+            const isEMOM = protocolType === 'PDP-E';
+            if (isEMOM) {
+                baseConfig.isEMOM = true;
+            }
+
+            return {
+                id: crypto.randomUUID(),
+                name: `Ejercicio ${exIdx + 1}`,
+                type: 'EXERCISE',
+                pattern: 'Global',
+                quality: 'Fuerza',
+                config: baseConfig,
+                isGrouped: (blockType === 'BOOST' || blockType === 'BURN') && exIdx % 2 === 1, // Group 2nd exercise in Boost/Burn
+                mediaUrl: '',
+                imageStart: '',
+                imageEnd: ''
+            };
+        };
+
+        // 1. Collect existing exercises to reuse
+        let availableExercises = [];
+        if (blocks && blocks.length > 0) {
+            // Flatten blocks and collect exercises
+            availableExercises = blocks.flatMap(b => b.exercises);
+        }
+        let exIterator = 0;
+
+        const newBlocks = template.map((blockDef, blockIdx) => {
+            const blockTypes = ['BOOST', 'BASE', 'BUILD', 'BUILD', 'BURN', 'BURN'];
+            const blockType = blockTypes[blockIdx];
+
+            // BOOST: 2 exercises (superseries)
+            // BASE: 1 exercise (solo)
+            // BUILD A/B: 1 exercise (solo - changed from 2)
+            // BURN A/B: 2 exercises (superseries)
+            let numExercises;
+            if (blockType === 'BOOST') numExercises = 2;
+            else if (blockType === 'BASE') numExercises = 1;
+            else if (blockType === 'BUILD') numExercises = 1; // CHANGED: Now single exercise per Build block
+            else if (blockType === 'BURN') numExercises = 2;
+
+            return {
+                id: crypto.randomUUID(),
+                name: blockDef.name,
+                exercises: Array(numExercises).fill(null).map((_, i) => {
+                    // Create base placeholder with correct config for new protocol
+                    const placeholder = createPlaceholderExercise(blockIdx, i, blockDef, protocolType);
+
+                    // If we have an existing exercise, merge it
+                    if (exIterator < availableExercises.length) {
+                        const existing = availableExercises[exIterator];
+                        exIterator++;
+
+                        return {
+                            ...existing,
+                            id: crypto.randomUUID(), // New ID for new structure
+                            config: placeholder.config, // OVERWRITE config to match new protocol (Critical!)
+                            isGrouped: placeholder.isGrouped, // Update grouping for new structure
+                            // Keep identity properties:
+                            name: existing.name || placeholder.name,
+                            mediaUrl: existing.mediaUrl || placeholder.mediaUrl,
+                            youtubeUrl: existing.youtubeUrl || '',
+                            imageStart: existing.imageStart || '',
+                            imageEnd: existing.imageEnd || '',
+                            description: existing.description || '',
+                            pattern: existing.pattern || placeholder.pattern,
+                            equipment: existing.equipment || placeholder.equipment
+                        };
+                    }
+
+                    return placeholder;
+                }),
+                description: blockDef.description,
+                protocol: protocolType,
+                params: {
+                    timeCap: blockDef.timeCap,
+                    targetReps: blockDef.targetReps,
+                    emomMinutes: blockDef.emomMinutes
+                }
+            };
+        });
+
+        setBlocks(newBlocks);
+        setSessionTitle(`Sesión ${protocolType}`);
+    };
+
+    const saveModuleToDB = async (block) => {
+        const moduleName = prompt('Nombre del Módulo a guardar:', block.name);
+        if (!moduleName) return;
+
+        try {
+            await TrainingDB.modules.create({
+                name: moduleName,
+                exercises: block.exercises,
+                protocol: 'HYBRID', // auto-detect?
+                createdAt: new Date().toISOString()
+            });
+            alert('Módulo guardado correctamente en la librería.');
+            // Refresh modules
+            TrainingDB.modules.getAll().then(setAllModules);
+        } catch (e) {
+            console.error(e);
+            alert('Error al guardar el módulo.');
+        }
+    };
+
+    const updateBlock = (idx, newData) => {
+        const newBlocks = [...blocks];
+        newBlocks[idx] = newData;
+        setBlocks(newBlocks);
+    };
+
+    const handleAddExerciseRequest = (blockIdx) => {
+        setActiveBlockIdxForPicker(blockIdx);
+        setExercisePickerOpen(true);
+    };
+
+    const handleExerciseSelect = (ex) => {
+        const newBlocks = [...blocks];
+
+        if (swapMode && swapTarget) {
+            // Swap mode: Replace exercise but keep config
+            const { blockIdx, exIdx, config, isGrouped } = swapTarget;
+            newBlocks[blockIdx].exercises[exIdx] = {
+                ...ex,
+                id: crypto.randomUUID(),
+                config: config, // Preserve original config
+                isGrouped: isGrouped // Preserve grouping
+            };
+            setSwapMode(false);
+            setSwapTarget(null);
+        } else {
+            // Normal mode: Add new exercise
+            newBlocks[activeBlockIdxForPicker].exercises.push({
+                ...ex,
+                id: crypto.randomUUID(),
+                name: ex.nameEs || ex.name_es || ex.name,
+                description: ex.descriptionEs || ex.description_es || ex.description || '',
+                config: { volType: 'REPS', intType: 'RIR', sets: [] },
+                isGrouped: false
+            });
+        }
+
+        setBlocks(newBlocks);
+        setExercisePickerOpen(false);
+        setPickerSearch('');
+    };
+
+    const handleStartCreation = () => {
+        setCreationData({
+            name: pickerSearch || '', pattern: 'Squat', equipment: 'Ninguno (Peso Corporal)',
+            level: 'Intermedio', quality: 'Fuerza',
+            loadable: false, // Default: not loadable
+            mediaUrl: '', imageStart: '', imageEnd: '', // New Fields
+            youtubeUrl: '', description: '',
+            tags: []
+        });
+        setQuickCreatorOpen(true);
+    };
+
+    const handleCreateAndSelect = async () => {
+        if (!creationData.name) return;
+        try {
+            const newExRef = await TrainingDB.exercises.create({
+                name: creationData.name.trim(),
+                pattern: creationData.pattern || 'Global',
+                equipment: creationData.equipment || 'Ninguno',
+                level: creationData.level || 'Intermedio',
+                quality: creationData.quality || 'Fuerza',
+                loadable: creationData.loadable || false, // Include loadable field
+                mediaUrl: creationData.mediaUrl || '',
+                imageStart: creationData.imageStart || '',
+                imageEnd: creationData.imageEnd || '',
+                youtubeUrl: creationData.youtubeUrl || '',
+                description: creationData.description || '',
+                tags: creationData.tags || []
+            });
+            // Select it immediately
+            const exData = {
+                id: newExRef.id, ...creationData,
+                // Ensure defaults for immediate display
+                mediaUrl: creationData.mediaUrl || '',
+                imageStart: creationData.imageStart || '',
+                imageEnd: creationData.imageEnd || ''
+            };
+            setAllExercises([...allExercises, exData]);
+            handleExerciseSelect(exData);
+            setQuickCreatorOpen(false);
+        } catch (error) {
+            console.error(error);
+            alert('Error al crear ejercicio: ' + error.message);
+        }
+    };
+
+    const handleOpenConfig = (blockIdx, exIdx) => {
+        const ex = blocks[blockIdx].exercises[exIdx];
+        setActiveExerciseObj({ ...ex });
+        setActiveBlockIdx(blockIdx);
+        setActiveExIdx(exIdx);
+        setConfigDrawerOpen(true);
+    };
+
+    const handleSaveSession = async () => {
+        if (isSaving) return;
+
+        // Basic validation
+        if (!sessionTitle.trim()) {
+            alert('Por favor, indica un título para la sesión');
+            return;
+        }
+
+        const exercisesCount = blocks.reduce((acc, block) => acc + block.exercises.length, 0);
+        if (exercisesCount === 0) {
+            alert('La sesión debe tener al menos un ejercicio');
+            return;
+        }
+
+        setIsSaving(true);
+        try {
+            // Helper to remove undefined values recursively
+            const sanitizeData = (obj) => {
+                return JSON.parse(JSON.stringify(obj, (key, value) => {
+                    return value === undefined ? null : value;
+                }));
+            };
+
+            const sessionData = sanitizeData({
+                name: sessionTitle,
+                description: sessionDescription,
+                type: sessionType,
+                blocks: blocks.map(block => ({
+                    id: block.id,
+                    name: block.name,
+                    description: block.description || '',
+                    protocol: block.protocol || sessionType || 'LIBRE',
+                    ...(block.params ? { params: block.params } : {}),
+                    exercises: block.exercises.map(ex => ({
+                        // Core identity
+                        id: ex.id,
+                        name: ex.name,
+                        type: ex.type || 'EXERCISE', // Important for REST
+                        duration: ex.duration || 0,   // Important for REST
+
+                        pattern: ex.pattern || 'Global',
+                        quality: ex.quality || 'Fuerza',
+                        equipment: ex.equipment || '',
+
+                        // Configuration
+                        config: ex.config || {},
+                        isGrouped: ex.isGrouped || false,
+
+                        // Media - preserve ALL sources for GIF playback
+                        mediaUrl: ex.mediaUrl || ex.gifUrl || '',
+                        gifUrl: ex.gifUrl || ex.mediaUrl || '',
+                        imageStart: ex.imageStart || '',
+                        imageEnd: ex.imageEnd || '',
+                        youtubeUrl: ex.youtubeUrl || '',
+
+                        // Content - preserve description for detail view
+                        description: ex.description || '',
+                        tags: ex.tags || []
+                    }))
+                }))
+            });
+
+            if (embeddedMode) {
+                await onSave(sessionData);
+            } else {
+                await TrainingDB.sessions.create(sessionData);
+
+                // Refresh list immediately
+                const updatedSessions = await TrainingDB.sessions.getAll();
+                setAllSessions(updatedSessions);
+
+                alert('🚀 Sesión guardada con éxito');
+            }
+            // Reset dirty state after successful save
+            setInitialState(JSON.stringify({
+                name: sessionTitle,
+                description: sessionDescription,
+                blocks: blocks
+            }));
+            setIsDirty(false);
+
+        } catch (error) {
+            console.error('Error saving session:', error);
+            alert('❌ Error al guardar la sesión: ' + error.message);
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleSaveConfig = (updatedEx) => {
+        if (activeBlockIdx === null || activeExIdx === null) return;
+        const newBlocks = [...blocks];
+        newBlocks[activeBlockIdx].exercises[activeExIdx] = updatedEx;
+        setBlocks(newBlocks);
+        // Drawer closes automatically via its internal logic or we can ensure it here
+        setConfigDrawerOpen(false);
+    };
+
+    const handleSwapExercise = (blockIdx, exIdx) => {
+        const ex = blocks[blockIdx].exercises[exIdx];
+        setSwapTarget({
+            blockIdx,
+            exIdx,
+            config: ex.config,
+            isGrouped: ex.isGrouped
+        });
+        setSwapMode(true);
+        setExercisePickerOpen(true);
+    };
+
+    // Library CRUD Handlers
+    const handleLibraryEdit = (ex) => {
+        setLibraryEditExercise(ex);
+        setLibraryEditDrawerOpen(true);
+    };
+
+    const handleLibrarySave = async (formData) => {
+        if (!libraryEditExercise) return;
+        try {
+            await TrainingDB.exercises.update(libraryEditExercise.id, formData);
+            setAllExercises(prev => prev.map(ex => ex.id === libraryEditExercise.id ? { ...ex, ...formData } : ex));
+            setLibraryEditDrawerOpen(false);
+            setLibraryEditExercise(null);
+        } catch (error) {
+            console.error('Error updating exercise:', error);
+            throw error;
+        }
+    };
+
+    const handleLibraryDelete = async (exId) => {
+        if (!window.confirm('¿Seguro que quieres eliminar este ejercicio?')) return;
+        try {
+            await TrainingDB.exercises.delete(exId);
+            setAllExercises(prev => prev.filter(ex => ex.id !== exId));
+        } catch (error) {
+            console.error('Error deleting exercise:', error);
+            alert('Error al eliminar: ' + error.message);
+        }
+    };
+
+    const handleLibraryDuplicate = async (ex) => {
+        try {
+            const { id, ...data } = ex;
+            const newEx = await TrainingDB.exercises.create({ ...data, name: `${data.name} (Copia)` });
+            setAllExercises(prev => [...prev, { id: newEx.id, ...data, name: `${data.name} (Copia)` }]);
+        } catch (error) {
+            console.error('Error duplicating exercise:', error);
+            alert('Error al duplicar: ' + error.message);
+        }
+    };
+
+    // Sessions Handlers
+    const handleLoadSession = (session) => {
+        setSessionTitle(session.name || 'Nueva Sesión');
+        setSessionDescription(session.description || '');
+        setBlocks(session.blocks || [{ id: '1', name: 'Bloque 1', exercises: [] }]);
+        setMainView('editor');
+    };
+
+    const handleDeleteSession = async (sessionId) => {
+        if (!window.confirm('¿Seguro que quieres eliminar esta sesión?')) return;
+        try {
+            await TrainingDB.sessions.delete(sessionId);
+            setAllSessions(prev => prev.filter(s => s.id !== sessionId));
+        } catch (error) {
+            console.error('Error deleting session:', error);
+            alert('Error al eliminar: ' + error.message);
+        }
+    };
+
+    // Filter exercises for library view using the unified logic
+    const filteredLibraryExercises = filterExerciseList(allExercises, librarySearchTerm, libraryFilters);
+
+    // Filter Toggle Helpers
+    const toggleLibraryFilter = (type, value) => {
+        setLibraryFilters(prev => {
+            const current = prev[type];
+            const updated = current.includes(value)
+                ? current.filter(item => item !== value)
+                : [...current, value];
+            return { ...prev, [type]: updated };
+        });
+    };
+
+    return (
+        <div className="w-full h-full md:max-w-[95vw] md:h-[92vh] md:mx-auto bg-white shadow-2xl md:rounded-3xl border border-slate-200 flex flex-col overflow-hidden relative font-sans transition-all">
+            {/* Main Navigation Tabs */}
+            {/* Main Navigation Tabs - Hide in Embedded Mode */}
+            {!embeddedMode && (
+                <div className="bg-slate-900 text-white p-3 pt-4 shrink-0 shadow-lg z-10">
+                    <div className="flex bg-slate-800/50 p-1 rounded-2xl gap-1">
+                        {[
+                            { id: 'editor', label: 'Editor', icon: <Dumbbell size={16} /> },
+                            { id: 'library', label: 'Biblioteca', icon: <Library size={16} /> },
+                            { id: 'sessions', label: 'Sesiones', icon: <List size={16} /> }
+                        ].map(tab => (
+                            <button
+                                key={tab.id}
+                                onClick={() => setMainView(tab.id)}
+                                className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${mainView === tab.id
+                                    ? 'bg-white text-slate-900 shadow-md transform scale-[1.02]'
+                                    : 'text-slate-400 hover:text-white hover:bg-white/5'
+                                    }`}
+                            >
+                                {tab.icon}
+                                {tab.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Embedded Header with Close Button */}
+            {embeddedMode && (
+                <div className="bg-slate-900 text-white p-3 shrink-0 flex justify-between items-center">
+                    <h3 className="font-bold text-sm flex items-center gap-2">
+                        <Edit2 size={16} /> Editar Sesión
+                        {(isDirty || exDrawerDirty) && <span className="text-[10px] bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full">Sin guardar</span>}
+                    </h3>
+                    <button
+                        onClick={() => {
+                            if (isDirty || exDrawerDirty) {
+                                if (window.confirm('Tienes cambios sin guardar en la sesión. ¿Seguro que quieres cerrar?')) {
+                                    onClose();
+                                }
+                            } else {
+                                onClose();
+                            }
+                        }}
+                        className="p-1 hover:bg-slate-800 rounded-lg transition-colors text-slate-400 hover:text-white"
+                    >
+                        <X size={20} />
+                    </button>
+                </div>
+            )}
+
+            {/* Session Title - Only show in editor mode */}
+            {mainView === 'editor' && (
+
+                <div className="bg-white border-b border-slate-100 px-4 py-3 md:px-6 flex items-center gap-3 sticky top-0 md:relative z-20 shadow-sm md:shadow-none">
+                    {/* Title */}
+                    <input
+                        value={sessionTitle}
+                        onChange={e => setSessionTitle(e.target.value)}
+                        className="bg-transparent text-lg md:text-xl font-black outline-none placeholder:text-slate-300 flex-1 min-w-0 text-slate-900 border-none focus:ring-0 p-0"
+                        placeholder="Nombre de la Sesión"
+                    />
+
+                    {/* Compact Action Bar */}
+                    <div className="flex gap-1.5 shrink-0 items-center">
+                        {/* Type Selector - Click-based */}
+                        <div className="relative">
+                            <button
+                                onClick={() => setPdpDropdownOpen(!pdpDropdownOpen)}
+                                className={`h-8 px-2.5 rounded-lg border flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider transition-all
+                                    ${sessionType === 'PDP-T' ? 'bg-purple-100 text-purple-600 border-purple-200' :
+                                        sessionType === 'PDP-R' ? 'bg-blue-100 text-blue-600 border-blue-200' :
+                                            sessionType === 'PDP-E' ? 'bg-emerald-100 text-emerald-600 border-emerald-200' :
+                                                'bg-slate-50 text-slate-500 border-slate-200'}
+                                `}
+                            >
+                                {sessionType === 'LIBRE' ? 'LIBRE' : sessionType}
+                                <ChevronDown size={12} className={pdpDropdownOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
+                            </button>
+                            {pdpDropdownOpen && (
+                                <>
+                                    <div className="fixed inset-0 z-40" onClick={() => setPdpDropdownOpen(false)} />
+                                    <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-xl border border-slate-100 overflow-hidden z-50 min-w-[120px]">
+                                        {['LIBRE', 'PDP-T', 'PDP-R', 'PDP-E'].map(t => (
+                                            <button
+                                                key={t}
+                                                onClick={() => {
+                                                    if (t === 'LIBRE') {
+                                                        setSessionType(t);
+                                                    } else {
+                                                        applyTemplate(t);
+                                                    }
+                                                    setPdpDropdownOpen(false);
+                                                }}
+                                                className={`w-full text-left px-3 py-1.5 text-xs font-bold hover:bg-slate-50 ${sessionType === t ? 'text-emerald-600 bg-emerald-50' : 'text-slate-700'}`}
+                                            >
+                                                {t === 'LIBRE' ? 'MODO LIBRE' : t}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                        <button
+                            onClick={() => setMainView('sessions')}
+                            className="w-8 h-8 bg-slate-50 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-blue-600 flex items-center justify-center transition-colors border border-slate-200"
+                            title="Cargar Sesión"
+                        >
+                            <Download size={16} />
+                        </button>
+                        <button
+                            onClick={handleClearSession}
+                            className="w-8 h-8 bg-slate-50 hover:bg-red-50 rounded-lg text-slate-500 hover:text-red-500 flex items-center justify-center transition-colors border border-slate-200"
+                            title="Borrar Sesión"
+                        >
+                            <Trash2 size={16} />
+                        </button>
+                    </div>
+                </div>
+            )}
+            {/* Main Content Area - Conditional based on mainView */}
+
+            {/* Main Content Area - Conditional based on mainView */}
+            {
+                mainView === 'editor' && (
+                    <>
+                        <div className="flex-1 overflow-hidden flex flex-col md:flex-row bg-slate-50/50">
+
+                            {/* LEFT: BLOCKS EDITOR (Scrollable) */}
+                            <div className="flex-1 overflow-y-auto p-4 md:p-8 scrollbar-thin scrollbar-thumb-slate-200">
+
+                                {/* Mobile Description (Collapsible) */}
+                                <div className={`md:hidden rounded-2xl mb-6 overflow-hidden transition-all ${descriptionExpanded ? 'bg-indigo-50/50 border border-indigo-100 ring-4 ring-indigo-50/30' : 'bg-white border border-slate-100'}`}>
+                                    <button
+                                        onClick={() => setDescriptionExpanded(!descriptionExpanded)}
+                                        className="w-full px-4 py-3 flex items-center justify-between group active:scale-[0.98] transition-all"
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${descriptionExpanded ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200'}`}>
+                                                <ClipboardList size={16} />
+                                            </div>
+                                            <div className="text-left">
+                                                <span className={`block text-xs font-black uppercase tracking-wider ${descriptionExpanded ? 'text-indigo-900' : 'text-slate-600'}`}>
+                                                    Notas de la Sesión
+                                                </span>
+                                                {!descriptionExpanded && (
+                                                    <span className="text-[10px] text-slate-400 block font-medium truncate max-w-[180px]">
+                                                        {sessionDescription || 'Sin notas...'}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-all ${descriptionExpanded ? 'bg-indigo-200 text-indigo-700 rotate-180' : 'text-slate-300'}`}>
+                                            <ChevronDown size={14} />
+                                        </div>
+                                    </button>
+                                    {descriptionExpanded && (
+                                        <div className="px-4 pb-4">
+                                            <textarea
+                                                value={sessionDescription}
+                                                onChange={(e) => setSessionDescription(e.target.value)}
+                                                className="w-full bg-white border border-indigo-100 rounded-xl p-3 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-indigo-200 resize-none font-medium leading-relaxed placeholder:text-indigo-200/50"
+                                                placeholder="Escribe aquí los objetivos, enfoque o notas para el atleta..."
+                                                rows={4}
+                                                autoFocus
+                                            />
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="max-w-4xl mx-auto space-y-6 pb-24 md:pb-0">
+                                    {blocks.map((block, idx) => (
+                                        <BlockCard
+                                            key={block.id}
+                                            block={block}
+                                            idx={idx}
+                                            onUpdate={(d) => updateBlock(idx, d)}
+                                            onRemove={() => setBlocks(blocks.filter((_, i) => i !== idx))}
+                                            onDuplicate={() => {
+                                                const newBlocks = [...blocks];
+                                                const copy = {
+                                                    ...block,
+                                                    id: crypto.randomUUID(),
+                                                    name: `${block.name} (Copia)`,
+                                                    exercises: block.exercises.map(e => ({ ...e, id: crypto.randomUUID() }))
+                                                };
+                                                newBlocks.splice(idx + 1, 0, copy);
+                                                setBlocks(newBlocks);
+                                            }}
+                                            onSaveModule={() => saveModuleToDB(block)}
+                                            onImportModule={() => {
+                                                setActiveBlockIdxForPicker(idx);
+                                                setModulePickerOpen(true);
+                                            }}
+                                            onAddExercise={() => handleAddExerciseRequest(idx)}
+                                            onOpenConfig={handleOpenConfig}
+                                            onSwapExercise={handleSwapExercise}
+                                        />
+                                    ))}
+
+                                    <button
+                                        onClick={addBlock}
+                                        className="w-full py-6 rounded-2xl border-3 border-dashed border-slate-200 text-slate-400 font-black uppercase tracking-wider hover:bg-white hover:border-emerald-400 hover:text-emerald-600 hover:shadow-lg transition-all flex items-center justify-center gap-3 group"
+                                    >
+                                        <div className="w-8 h-8 rounded-full bg-slate-100 group-hover:bg-emerald-100 flex items-center justify-center transition-colors">
+                                            <Plus size={20} />
+                                        </div>
+                                        Añadir Bloque
+                                    </button>
+
+                                    <div className="h-10 md:hidden" />
+                                </div>
+                            </div>
+
+                            {/* RIGHT: DESKTOP SIDEBAR (Overview & Actions) */}
+                            <div className="hidden md:flex w-80 lg:w-96 flex-col bg-white border-l border-slate-200 p-6 space-y-6 shadow-xl z-20 overflow-y-auto">
+                                <div>
+                                    <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider mb-3">Resumen Sesión</h3>
+                                    <textarea
+                                        value={sessionDescription}
+                                        onChange={(e) => setSessionDescription(e.target.value)}
+                                        className="w-full h-40 bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-slate-200 resize-none leading-relaxed transition-all focus:bg-white"
+                                        placeholder="Describe el objetivo de la sesión, instrucciones generales para el atleta, calentamiento..."
+                                    />
+                                </div>
+
+                                <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-2">
+                                    <div className="flex justify-between text-xs font-bold text-slate-600">
+                                        <span>Bloques</span>
+                                        <span>{blocks.length}</span>
+                                    </div>
+                                    <div className="flex justify-between text-xs font-bold text-slate-600">
+                                        <span>Ejercicios</span>
+                                        <span>{blocks.reduce((acc, b) => acc + b.exercises.length, 0)}</span>
+                                    </div>
+                                </div>
+
+                                <div className="mt-auto pt-6 border-t border-slate-100">
+                                    <button
+                                        onClick={handleSaveSession}
+                                        disabled={isSaving}
+                                        className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-xl font-bold shadow-lg shadow-slate-900/20 active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:scale-100 group"
+                                    >
+                                        {isSaving ? <Loader2 className="animate-spin" /> : <Check className="group-hover:scale-110 transition-transform" />}
+                                        {isSaving ? 'Guardando...' : 'Guardar y Salir'}
+                                    </button>
+                                    <p className="text-[10px] text-center text-slate-400 mt-3 font-medium">
+                                        Cambios guardados en local automáticamente
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* MOBILE FLOATING ACTION (Save) */}
+                            <div className="md:hidden absolute bottom-6 left-1/2 -translate-x-1/2 z-30">
+                                <button
+                                    onClick={handleSaveSession}
+                                    disabled={isSaving}
+                                    className="bg-slate-900 text-white px-6 py-3 rounded-full font-bold shadow-xl shadow-slate-900/40 active:scale-95 transition-transform flex items-center gap-2 disabled:opacity-50"
+                                >
+                                    {isSaving ? <Loader2 className="animate-spin" size={18} /> : <Check size={18} />}
+                                    {isSaving ? '...' : 'Guardar'}
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Exercise Picker Modal */}
+                        <AnimatePresence>
+                            {exercisePickerOpen && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: '100%' }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: '100%' }}
+                                    className="absolute inset-0 bg-white z-50 flex flex-col"
+                                >
+                                    <div className="p-4 border-b space-y-3">
+                                        <div className="flex items-center gap-2 bg-slate-100 p-2 rounded-xl">
+                                            <Search className="text-slate-400" size={20} />
+                                            <input
+                                                autoFocus
+                                                placeholder="Buscar ejercicio..."
+                                                className="flex-1 bg-transparent outline-none font-bold text-slate-800"
+                                                value={pickerSearch}
+                                                onChange={e => setPickerSearch(e.target.value)}
+                                            />
+                                            <button onClick={() => setExercisePickerOpen(false)} className="p-2 bg-white rounded-full shadow-sm"><X size={16} /></button>
+                                        </div>
+
+                                        {/* Tabs */}
+                                        <div className="flex bg-slate-100 p-1 rounded-xl">
+                                            <button
+                                                onClick={() => setPickerTab('library')}
+                                                className={`flex-1 py-2 text-xs font-black uppercase tracking-wider rounded-lg transition-all ${pickerTab === 'library' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400'}`}
+                                            >
+                                                Biblioteca
+                                            </button>
+                                            <button
+                                                onClick={() => setPickerTab('online')}
+                                                className={`flex-1 py-2 text-xs font-black uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-2 ${pickerTab === 'online' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400'}`}
+                                            >
+                                                <UploadCloud size={14} /> Online
+                                            </button>
+                                        </div>
+
+                                        {/* Filter Chips - Only show in Library */}
+                                        {pickerTab === 'library' && (
+                                            <>
+                                                <div className="flex items-center justify-between">
+                                                    <p className="text-xs text-slate-400 font-bold">
+                                                        {(pickerFilter.pattern.length + pickerFilter.equipment.length + pickerFilter.level.length + pickerFilter.quality.length) > 0
+                                                            ? `${pickerFilter.pattern.length + pickerFilter.equipment.length + pickerFilter.level.length + pickerFilter.quality.length} filtros activos`
+                                                            : 'Filtrar por características'}
+                                                    </p>
+                                                    <button
+                                                        onClick={() => setFilterDrawerOpen(!filterDrawerOpen)}
+                                                        className={`p-2 rounded-lg flex items-center gap-2 text-xs font-bold transition-colors ${(pickerFilter.pattern.length + pickerFilter.equipment.length + pickerFilter.level.length + pickerFilter.quality.length) > 0
+                                                            ? 'bg-slate-900 text-white'
+                                                            : 'bg-slate-100 text-slate-500'
+                                                            }`}
+                                                    >
+                                                        <Filter size={14} /> Filtros
+                                                    </button>
+                                                </div>
+
+                                                {/* Collapsible Filter Drawer */}
+                                                <AnimatePresence>
+                                                    {filterDrawerOpen && (
+                                                        <motion.div
+                                                            initial={{ height: 0, opacity: 0 }}
+                                                            animate={{ height: 'auto', opacity: 1 }}
+                                                            exit={{ height: 0, opacity: 0 }}
+                                                            className="overflow-hidden bg-slate-50 rounded-xl border border-slate-200 mt-2"
+                                                        >
+                                                            <div className="p-3 space-y-4">
+                                                                <div>
+                                                                    <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Patrón de Movimiento</p>
+                                                                    <div className="flex flex-wrap gap-2">
+                                                                        {PATTERNS.map(p => (
+                                                                            <button
+                                                                                key={p}
+                                                                                onClick={() => toggleFilter('pattern', p)}
+                                                                                className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${pickerFilter.pattern.includes(p)
+                                                                                    ? 'bg-blue-100 text-blue-700 border-blue-200'
+                                                                                    : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                                                                                    }`}
+                                                                            >
+                                                                                {p}
+                                                                            </button>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                                <div>
+                                                                    <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Equipamiento</p>
+                                                                    <div className="flex flex-wrap gap-2">
+                                                                        {EQUIPMENT.map(e => (
+                                                                            <button
+                                                                                key={e}
+                                                                                onClick={() => toggleFilter('equipment', e)}
+                                                                                className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${pickerFilter.equipment.includes(e)
+                                                                                    ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
+                                                                                    : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                                                                                    }`}
+                                                                            >
+                                                                                {e}
+                                                                            </button>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                                <div>
+                                                                    <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Dificultad (Nivel)</p>
+                                                                    <div className="flex flex-wrap gap-2">
+                                                                        {LEVELS.map(l => (
+                                                                            <button
+                                                                                key={l}
+                                                                                onClick={() => toggleFilter('level', l)}
+                                                                                className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${pickerFilter.level.includes(l)
+                                                                                    ? 'bg-purple-100 text-purple-700 border-purple-200'
+                                                                                    : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                                                                                    }`}
+                                                                            >
+                                                                                {l}
+                                                                            </button>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                                <div>
+                                                                    <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Cualidad</p>
+                                                                    <div className="flex flex-wrap gap-2">
+                                                                        {QUALITIES.map(q => (
+                                                                            <button
+                                                                                key={q.id}
+                                                                                onClick={() => toggleFilter('quality', q.id)}
+                                                                                className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${pickerFilter.quality.includes(q.id)
+                                                                                    ? 'bg-orange-100 text-orange-700 border-orange-200'
+                                                                                    : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                                                                                    }`}
+                                                                            >
+                                                                                {q.label}
+                                                                            </button>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                                <button
+                                                                    onClick={() => setPickerFilter({ pattern: [], equipment: [], level: [], quality: [] })}
+                                                                    className="w-full py-2 text-xs text-red-500 font-bold hover:bg-red-50 rounded-lg"
+                                                                >
+                                                                    Lipiar Filtros
+                                                                </button>
+                                                            </div>
+                                                        </motion.div>
+                                                    )}
+                                                </AnimatePresence>
+                                            </>
+                                        )}
+                                    </div>
+                                    <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                                        {pickerTab === 'library' ? (
+                                            <>
+                                                {/* Bypass / Create Custom Option */}
+                                                {pickerSearch.length > 0 && (
+                                                    <button
+                                                        onClick={handleStartCreation}
+                                                        className="w-full p-4 border-2 border-dashed border-slate-300 rounded-xl flex items-center gap-3 text-slate-500 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-all mb-2"
+                                                    >
+                                                        <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
+                                                            <Plus size={20} />
+                                                        </div>
+                                                        <div className="text-left">
+                                                            <p className="font-bold text-sm">Crear "{pickerSearch}"</p>
+                                                            <p className="text-[10px] font-bold opacity-70">Guardar en base de datos y añadir</p>
+                                                        </div>
+                                                    </button>
+                                                )}
+
+                                                {/* Filtered List */}
+                                                {(() => {
+                                                    const filteredList = filterExerciseList(allExercises, pickerSearch, pickerFilter);
+
+                                                    return (
+                                                        <div className="flex-1 overflow-y-auto p-2 space-y-2">
+                                                            {filteredList.map(ex => (
+                                                                <div key={ex.id} onClick={() => handleExerciseSelect(ex)} className="flex items-center gap-4 p-3 border rounded-xl hover:bg-slate-50 cursor-pointer">
+                                                                    <div className="w-12 h-12 bg-slate-200 rounded-lg overflow-hidden shrink-0">
+                                                                        {(ex.mediaUrl || ex.gifUrl || ex.imageStart || ExerciseAPI.getYoutubeThumbnail(ex.youtubeUrl)) && (
+                                                                            <img src={ex.mediaUrl || ex.gifUrl || ex.imageStart || ExerciseAPI.getYoutubeThumbnail(ex.youtubeUrl)} className="w-full h-full object-cover" />
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <h4 className="font-bold text-slate-800 text-sm truncate">{ex.nameEs || ex.name_es || ex.name}</h4>
+                                                                        {(ex.nameEs || ex.name_es) && (ex.nameEs || ex.name_es) !== ex.name && (
+                                                                            <p className="text-[10px] text-slate-400 truncate">{ex.name}</p>
+                                                                        )}
+                                                                        {(ex.descriptionEs || ex.description || (ex.instructionsEs && ex.instructionsEs.length > 0) || (ex.instructions_es && ex.instructions_es.length > 0) || (ex.instructions && ex.instructions.length > 0)) && (
+                                                                            <p className="text-[10px] text-slate-500 mt-1 line-clamp-2 leading-tight">
+                                                                                {ex.descriptionEs || ex.description || (ex.instructionsEs?.[0]) || (ex.instructions_es?.[0]) || (ex.instructions?.[0]) || ''}
+                                                                            </p>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    );
+                                                })()}
+                                            </>
+                                        ) : (
+                                            <>
+                                                {discoveryMode ? (
+                                                    <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100 mb-2 space-y-3">
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="flex items-center gap-2">
+                                                                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+                                                                <p className="text-[11px] font-bold text-blue-700 uppercase tracking-tighter">Modo Discovery Activo ({bulkExercises.length} items)</p>
+                                                            </div>
+                                                            <button
+                                                                onClick={() => setDiscoveryMode(false)}
+                                                                className="text-[10px] font-black text-blue-500 hover:text-blue-700 uppercase"
+                                                            >
+                                                                Desactivar
+                                                            </button>
+                                                        </div>
+
+                                                        {/* Export/Import Actions */}
+                                                        <div className="flex gap-2">
+                                                            <button
+                                                                onClick={handleExportCatalog}
+                                                                className="flex-1 py-2 px-3 bg-emerald-100 text-emerald-700 rounded-lg text-[10px] font-black uppercase flex items-center justify-center gap-1 hover:bg-emerald-200 transition-colors"
+                                                            >
+                                                                <Download size={14} />
+                                                                Exportar JSON
+                                                            </button>
+                                                            <label className="flex-1 py-2 px-3 bg-purple-100 text-purple-700 rounded-lg text-[10px] font-black uppercase flex items-center justify-center gap-1 hover:bg-purple-200 transition-colors cursor-pointer">
+                                                                <UploadCloud size={14} />
+                                                                Importar Procesado
+                                                                <input
+                                                                    type="file"
+                                                                    accept=".json"
+                                                                    onChange={handleImportProcessedCatalog}
+                                                                    className="hidden"
+                                                                />
+                                                            </label>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <button
+                                                        onClick={handleEnableDiscovery}
+                                                        className="w-full p-4 border border-dashed border-emerald-300 rounded-xl flex items-center justify-center gap-3 text-emerald-600 hover:bg-emerald-50 transition-all mb-4 group"
+                                                    >
+                                                        <Download size={20} className="group-hover:bounce" />
+                                                        <div className="text-left">
+                                                            <p className="font-bold text-sm">Activar Modo Discovery</p>
+                                                            <p className="text-[10px] font-bold opacity-70 italic tracking-tight">Descarga todo el catálogo (1300+) en 1 solo call</p>
+                                                        </div>
+                                                    </button>
+                                                )}
+
+                                                <div className="space-y-3">
+                                                    {isSearchingOnline && (
+                                                        <div className="text-center py-10 space-y-3">
+                                                            <Loader2 className="animate-spin mx-auto text-emerald-500" size={32} />
+                                                            <p className="text-sm font-bold text-slate-400">Buscando en ExerciseDB...</p>
+                                                        </div>
+                                                    )}
+
+                                                    {!isSearchingOnline && onlineResults.length === 0 && (
+                                                        <div className="text-center py-10 px-6">
+                                                            <Search className="mx-auto text-slate-200 mb-4" size={48} />
+                                                            <p className="text-sm font-bold text-slate-500">Busca ejercicios por nombre</p>
+                                                            <p className="text-xs text-slate-400 mt-2 italic">Ej: "Bench Press", "Squat", "Pull up"...</p>
+                                                        </div>
+                                                    )}
+
+                                                    {onlineResults.map(onlineEx => {
+                                                        const isExpanded = expandedOnlineEx === onlineEx.id;
+                                                        return (
+                                                            <div key={onlineEx.id} className="flex flex-col border border-slate-100 rounded-xl bg-white shadow-sm overflow-hidden">
+                                                                <div
+                                                                    className="flex items-center gap-4 p-3 cursor-pointer hover:bg-slate-50 transition-colors"
+                                                                    onClick={() => toggleOnlineExpansion(onlineEx.id)}
+                                                                >
+                                                                    <div className="w-16 h-16 bg-slate-50 rounded-lg overflow-hidden shrink-0 border border-slate-100">
+                                                                        <img src={onlineEx.mediaUrl} className="w-full h-full object-cover" crossOrigin="anonymous" />
+                                                                    </div>
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <div className="flex items-center justify-between">
+                                                                            <p className="font-bold text-slate-800 text-sm truncate uppercase">{onlineEx.name}</p>
+                                                                            {isExpanded ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
+                                                                        </div>
+                                                                        <div className="flex gap-1 mt-1">
+                                                                            <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 uppercase tracking-tighter">{onlineEx.bodyPart}</span>
+                                                                            <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 uppercase tracking-tighter">{onlineEx.equipment}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <button
+                                                                        onClick={(e) => { e.stopPropagation(); handleImportOnlineExercise(onlineEx); }}
+                                                                        className="p-2 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-600 hover:text-white transition-colors"
+                                                                        title="Importar y añadir"
+                                                                    >
+                                                                        <Download size={20} />
+                                                                    </button>
+                                                                </div>
+
+                                                                <AnimatePresence>
+                                                                    {isExpanded && (
+                                                                        <motion.div
+                                                                            initial={{ height: 0, opacity: 0 }}
+                                                                            animate={{ height: 'auto', opacity: 1 }}
+                                                                            exit={{ height: 0, opacity: 0 }}
+                                                                            className="px-4 pb-4 border-t border-slate-50 mt-1"
+                                                                        >
+                                                                            <div className="pt-3 space-y-2">
+                                                                                <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Instructions (English)</p>
+                                                                                <div className="text-[11px] text-slate-600 leading-relaxed italic">
+                                                                                    {(onlineEx.instructions || []).length > 0 ? (
+                                                                                        <ul className="space-y-1">
+                                                                                            {onlineEx.instructions.map((step, idx) => (
+                                                                                                <li key={idx} className="flex gap-2 text-[10px]">
+                                                                                                    <span className="text-blue-500 font-bold">{idx + 1}.</span>
+                                                                                                    <span>{step}</span>
+                                                                                                </li>
+                                                                                            ))}
+                                                                                        </ul>
+                                                                                    ) : (
+                                                                                        <p>No instructions available.</p>
+                                                                                    )}
+                                                                                </div>
+                                                                            </div>
+                                                                        </motion.div>
+                                                                    )}
+                                                                </AnimatePresence>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+
+                        {/* Module Picker Modal (Simple List for now) */}
+                        <AnimatePresence>
+                            {modulePickerOpen && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: '100%' }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: '100%' }}
+                                    className="absolute inset-0 bg-white z-50 flex flex-col"
+                                >
+                                    <div className="p-4 border-b flex items-center gap-2">
+                                        <h2 className="text-lg font-black text-slate-800 flex-1">Importar Módulo</h2>
+                                        <button onClick={() => setModulePickerOpen(false)} className="p-2 bg-slate-100 rounded-full"><X size={20} /></button>
+                                    </div>
+                                    <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                                        {(() => {
+                                            // Filter only new-style block modules (have 'name' and 'exercises')
+                                            const blockModules = allModules.filter(mod => mod.name && mod.exercises);
+                                            const atomicModules = allModules.filter(mod => !mod.name || !mod.exercises);
+
+                                            return (
+                                                <>
+                                                    {blockModules.length === 0 && (
+                                                        <div className="text-center py-10">
+                                                            <p className="text-slate-400 mb-2">No hay módulos de bloque guardados</p>
+                                                            <p className="text-xs text-slate-300">
+                                                                Guarda un bloque usando el botón 💾 en cualquier bloque
+                                                            </p>
+                                                            {atomicModules.length > 0 && (
+                                                                <p className="text-xs text-slate-300 mt-4">
+                                                                    ({atomicModules.length} módulos antiguos no compatibles)
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                    {blockModules.map(mod => (
+                                                        <div key={mod.id} onClick={() => importModule(mod)} className="p-4 border border-slate-200 rounded-xl hover:bg-slate-50 cursor-pointer group transition-all">
+                                                            <div className="flex justify-between items-center mb-2">
+                                                                <h4 className="font-bold text-slate-800 group-hover:text-emerald-600 transition-colors">{mod.name}</h4>
+                                                                <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-1 rounded-full">{mod.exercises?.length || 0} Ejercicios</span>
+                                                            </div>
+                                                            <p className="text-sm text-slate-600 leading-relaxed font-medium">
+                                                                Progressive Density Program basado en {sessionType === 'PDP-T' ? 'Tiempo (DT)' : sessionType === 'PDP-R' ? 'Repeticiones (DR)' : 'EMOM (DE)'}.
+                                                                Formato de trabajo: {
+                                                                    sessionType === 'PDP-T' ? 'completar trabajos de calidad en ventanas de tiempo fijo.' :
+                                                                        sessionType === 'PDP-R' ? 'completar reps target en el menor tiempo posible.' :
+                                                                            'completar trabajo prescrito dentro del minuto.'
+                                                                }
+                                                            </p>
+                                                            <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">
+                                                                {(mod.exercises || []).map(e => e.name).join(', ')}
+                                                            </p>
+                                                        </div>
+                                                    ))}
+                                                </>
+                                            );
+                                        })()}
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+
+                        {/* Quick Exercise Creator Modal */}
+                        <AnimatePresence>
+                            {quickCreatorOpen && (
+                                <motion.div
+                                    initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+                                    className="absolute inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+                                >
+                                    <div className="bg-white w-full max-w-sm max-h-[85vh] rounded-3xl shadow-2xl flex flex-col">
+                                        {/* Fixed Header */}
+                                        <div className="p-4 pb-3 border-b border-slate-100 shrink-0">
+                                            <h3 className="text-lg font-black text-slate-800">Nuevo Ejercicio</h3>
+                                        </div>
+
+                                        {/* Scrollable Content */}
+                                        <div className="flex-1 overflow-y-auto px-4 py-3">
+                                            <div className="space-y-3">
+                                                <div>
+                                                    <label className="text-xs font-bold text-slate-500 mb-1 block">Nombre</label>
+                                                    <input
+                                                        value={creationData.name}
+                                                        onChange={e => setCreationData({ ...creationData, name: e.target.value })}
+                                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-blue-500"
+                                                        placeholder="Nombre del ejercicio"
+                                                    />
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div>
+                                                        <label className="text-xs font-bold text-slate-500 mb-1 block">Patrón</label>
+                                                        <select
+                                                            value={creationData.pattern}
+                                                            onChange={e => setCreationData({ ...creationData, pattern: e.target.value })}
+                                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-bold outline-none focus:border-blue-500"
+                                                        >
+                                                            {PATTERNS.map(p => <option key={p} value={p}>{p}</option>)}
+                                                        </select>
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-xs font-bold text-slate-500 mb-1 block">Equipamiento</label>
+                                                        <select
+                                                            value={creationData.equipment}
+                                                            onChange={e => setCreationData({ ...creationData, equipment: e.target.value })}
+                                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-bold outline-none focus:border-blue-500"
+                                                        >
+                                                            {EQUIPMENT.map(e => <option key={e} value={e}>{e}</option>)}
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div>
+                                                        <label className="text-xs font-bold text-slate-500 mb-1 block">Nivel</label>
+                                                        <select
+                                                            value={creationData.level}
+                                                            onChange={e => setCreationData({ ...creationData, level: e.target.value })}
+                                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-bold outline-none focus:border-blue-500"
+                                                        >
+                                                            {LEVELS.map(l => <option key={l} value={l}>{l}</option>)}
+                                                        </select>
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-xs font-bold text-slate-500 mb-1 block">Cualidad</label>
+                                                        <select
+                                                            value={creationData.quality}
+                                                            onChange={e => setCreationData({ ...creationData, quality: e.target.value })}
+                                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-bold outline-none focus:border-blue-500"
+                                                        >
+                                                            {QUALITIES.map(q => <option key={q.id} value={q.id}>{q.label}</option>)}
+                                                        </select>
+                                                    </div>
+                                                </div>
+
+                                                {/* Loadable Checkbox - Peso Externo */}
+                                                <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                                                    <input
+                                                        type="checkbox"
+                                                        id="loadable-checkbox"
+                                                        checked={creationData.loadable || false}
+                                                        onChange={e => setCreationData({ ...creationData, loadable: e.target.checked })}
+                                                        className="w-4 h-4 text-blue-600 bg-white border-slate-300 rounded focus:ring-blue-500 focus:ring-2"
+                                                    />
+                                                    <label htmlFor="loadable-checkbox" className="text-xs font-bold text-slate-700 flex-1 cursor-pointer">
+                                                        ⚖️ Ejercicio con Peso Externo
+                                                        <span className="block text-[10px] text-slate-400 font-medium mt-0.5">
+                                                            Marca si el ejercicio usa barras, mancuernas, kettlebells, etc.
+                                                        </span>
+                                                    </label>
+                                                </div>
+
+                                                <div>
+                                                    <ImageUploadInput
+                                                        label="GIF / Imagen URL"
+                                                        value={creationData.mediaUrl}
+                                                        onChange={(val) => setCreationData(prev => ({ ...prev, mediaUrl: val }))}
+                                                        placeholder="https://... (o subir foto)"
+                                                    />
+                                                </div>
+
+                                                {/* Auto-GIF Options */}
+                                                <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                                                    <div className="col-span-2">
+                                                        <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">Auto-GIF (Inicio / Fin)</p>
+                                                    </div>
+                                                    <div>
+                                                        <ImageUploadInput
+                                                            label=""
+                                                            placeholder="Foto Inicio"
+                                                            value={creationData.imageStart}
+                                                            onChange={(val) => setCreationData(prev => ({ ...prev, imageStart: val }))}
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <ImageUploadInput
+                                                            label=""
+                                                            placeholder="Foto Fin"
+                                                            value={creationData.imageEnd}
+                                                            onChange={(val) => setCreationData(prev => ({ ...prev, imageEnd: val }))}
+                                                        />
+                                                    </div>
+                                                </div>
+
+                                                <div>
+                                                    <label className="text-xs font-bold text-slate-500 mb-1 block">YouTube URL</label>
+                                                    <input
+                                                        value={creationData.youtubeUrl}
+                                                        onChange={e => setCreationData({ ...creationData, youtubeUrl: e.target.value })}
+                                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-bold outline-none focus:border-blue-500"
+                                                        placeholder="https://youtube.com/watch?v=..."
+                                                    />
+                                                </div>
+
+                                                <div>
+                                                    <label className="text-xs font-bold text-slate-500 mb-1 block">Etiquetas (Tags) - Separadas por comas</label>
+                                                    <input
+                                                        type="text"
+                                                        value={(creationData.tags || []).join(', ')}
+                                                        onChange={e => setCreationData({ ...creationData, tags: e.target.value.split(',').map(t => t.trim()).filter(Boolean) })}
+                                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-bold outline-none focus:border-blue-500"
+                                                        placeholder="Ej: bíceps, secundario"
+                                                    />
+                                                </div>
+
+                                                <div>
+                                                    <label className="text-xs font-bold text-slate-500 mb-1 block">Descripción / Notas</label>
+                                                    <textarea
+                                                        value={creationData.description}
+                                                        onChange={e => setCreationData({ ...creationData, description: e.target.value })}
+                                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-medium outline-none focus:border-blue-500 h-20 resize-none"
+                                                        placeholder="Instrucciones del ejercicio..."
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Fixed Footer with Buttons */}
+                                        <div className="p-3 border-t border-slate-100 shrink-0 bg-white rounded-b-3xl">
+                                            <button
+                                                onClick={handleCreateAndSelect}
+                                                className="w-full bg-slate-900 text-white py-4 rounded-xl font-black text-sm uppercase tracking-widest shadow-lg active:scale-95 transition-all"
+                                            >
+                                                Guardar y Añadir
+                                            </button>
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+
+                        {/* Exercise Config Drawer */}
+                        <ExerciseConfigDrawer
+                            isOpen={configDrawerOpen}
+                            onClose={() => setConfigDrawerOpen(false)}
+                            exercise={activeExerciseObj}
+                            onSave={handleSaveConfig}
+                        />
+                    </>
+                )
+            }
+
+            {/* Library View */}
+            {
+                mainView === 'library' && (
+                    <div className="flex-1 flex flex-col overflow-hidden">
+                        {/* Search & Filter */}
+                        <div className="p-4 border-b border-slate-100 space-y-3 bg-slate-50">
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                <input
+                                    type="text"
+                                    value={librarySearchTerm}
+                                    onChange={(e) => setLibrarySearchTerm(e.target.value)}
+                                    placeholder="Buscar ejercicio..."
+                                    className="w-full pl-10 pr-4 py-3 rounded-xl bg-white border border-slate-200 outline-none focus:border-emerald-500 text-sm font-medium"
+                                />
+                            </div>
+                            <div className="flex items-center justify-between mt-2">
+                                <p className="text-[10px] text-slate-400 font-bold">
+                                    {filteredLibraryExercises.length} ejercicios
+                                    {(libraryFilters.pattern.length + libraryFilters.equipment.length + libraryFilters.level.length + libraryFilters.quality.length) > 0 &&
+                                        ` • Filtros activos`
+                                    }
+                                </p>
+                                <button
+                                    onClick={() => setLibraryFilterDrawerOpen(!libraryFilterDrawerOpen)}
+                                    className={`p-2 rounded-lg flex items-center gap-2 text-xs font-bold transition-colors ${(libraryFilters.pattern.length + libraryFilters.equipment.length + libraryFilters.level.length + libraryFilters.quality.length) > 0
+                                        ? 'bg-slate-900 text-white'
+                                        : 'bg-white text-slate-500 border border-slate-200'
+                                        }`}
+                                >
+                                    <Filter size={14} /> Filtros
+                                </button>
+                            </div>
+
+                            {/* Library Filter Drawer */}
+                            <AnimatePresence>
+                                {libraryFilterDrawerOpen && (
+                                    <motion.div
+                                        initial={{ height: 0, opacity: 0 }}
+                                        animate={{ height: 'auto', opacity: 1 }}
+                                        exit={{ height: 0, opacity: 0 }}
+                                        className="overflow-hidden bg-white rounded-xl border border-slate-200 mt-2"
+                                    >
+                                        <div className="p-3 space-y-4">
+                                            <div>
+                                                <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Patrón</p>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {PATTERNS.map(p => (
+                                                        <button key={p} onClick={() => toggleLibraryFilter('pattern', p)} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${libraryFilters.pattern.includes(p) ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>{p}</button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Equipamiento</p>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {EQUIPMENT.map(e => (
+                                                        <button key={e} onClick={() => toggleLibraryFilter('equipment', e)} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${libraryFilters.equipment.includes(e) ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>{e}</button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Dificultad (Nivel)</p>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {LEVELS.map(l => (
+                                                        <button key={l} onClick={() => toggleLibraryFilter('level', l)} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${libraryFilters.level.includes(l) ? 'bg-orange-100 text-orange-700 border-orange-200' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>{l}</button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Cualidad</p>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {QUALITIES.map(q => (
+                                                        <button key={q.id} onClick={() => toggleLibraryFilter('quality', q.id)} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${libraryFilters.quality.includes(q.id) ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>{q.label}</button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={() => setLibraryFilters({ pattern: [], equipment: [], level: [], quality: [] })}
+                                                className="w-full py-2 text-xs text-red-500 font-bold hover:bg-red-50 rounded-lg"
+                                            >
+                                                Limpiar Filtros
+                                            </button>
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </div>
+
+                        {/* Exercise Grid */}
+                        <div className="flex-1 overflow-y-auto p-4">
+                            <div className="grid grid-cols-1 gap-3">
+                                {filteredLibraryExercises.map(ex => (
+                                    <ExerciseCard
+                                        key={ex.id}
+                                        ex={ex}
+                                        showCheckbox={false}
+                                        onEdit={() => handleLibraryEdit(ex)}
+                                        onDelete={() => handleLibraryDelete(ex.id)}
+                                        onDuplicate={() => handleLibraryDuplicate(ex)}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* Sessions View */}
+            {
+                mainView === 'sessions' && (
+                    <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">{allSessions.length} Sesiones Guardadas</p>
+                        {allSessions.length === 0 ? (
+                            <div className="text-center py-10">
+                                <Dumbbell className="mx-auto text-slate-200 mb-3" size={48} />
+                                <p className="text-sm text-slate-400 font-medium">No hay sesiones guardadas</p>
+                                <p className="text-xs text-slate-300 mt-1">Crea una en el Editor y guárdala</p>
+                            </div>
+                        ) : (
+                            allSessions.map(session => (
+                                <div key={session.id} className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm">
+                                    <div className="flex justify-between items-start mb-2">
+                                        <div>
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <h3 className="font-bold text-slate-800">{session.name}</h3>
+                                                {session.type && (
+                                                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-wider ${session.type === 'PDP-T' ? 'bg-purple-100 text-purple-600' :
+                                                        session.type === 'PDP-R' ? 'bg-blue-100 text-blue-600' :
+                                                            session.type === 'PDP-E' ? 'bg-emerald-100 text-emerald-600' :
+                                                                'bg-slate-100 text-slate-500'
+                                                        }`}>
+                                                        {session.type}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <p className="text-[10px] text-slate-400">{(session.blocks || []).length} bloques</p>
+                                        </div>
+                                        <div className="flex gap-1">
+                                            <button
+                                                onClick={() => handleLoadSession(session)}
+                                                className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                                                title="Cargar"
+                                            >
+                                                <Download size={16} />
+                                            </button>
+                                            <button
+                                                onClick={() => handleDeleteSession(session.id)}
+                                                className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                                title="Eliminar"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                    {session.description && (
+                                        <p className="text-xs text-slate-500 line-clamp-2">{session.description}</p>
+                                    )}
+                                </div>
+                            ))
+                        )}
+                    </div>
+                )
+            }
+
+            {/* Library Edit Drawer */}
+            <ExerciseFormDrawer
+                isOpen={libraryEditDrawerOpen}
+                exercise={libraryEditExercise}
+                onSave={handleLibrarySave}
+                onClose={() => { setLibraryEditDrawerOpen(false); setLibraryEditExercise(null); }}
+            />
+        </div >
+    );
+};
+
+export default GlobalCreator;
