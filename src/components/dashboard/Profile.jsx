@@ -8,6 +8,9 @@ const Profile = () => {
     const navigate = useNavigate();
     const [isEditing, setIsEditing] = React.useState(false);
     const [newName, setNewName] = React.useState('');
+    const [newPhotoURL, setNewPhotoURL] = React.useState('');
+
+    const [uploading, setUploading] = React.useState(false);
 
     // Safety check in case context is slow, though PrivateRoute handles this
     const user = currentUser || { displayName: 'Usuario', email: 'cargando...' };
@@ -21,13 +24,68 @@ const Profile = () => {
 
     const handleStartEdit = () => {
         setNewName(user.displayName || '');
+        setNewPhotoURL(user.photoURL || '');
         setIsEditing(true);
+    };
+
+    const handleFileUpload = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        setUploading(true);
+
+        try {
+            // Convert to Base64 to avoid potential FormData/File object issues with some browser extensions
+            const toBase64 = (file) => new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = error => reject(error);
+            });
+
+            const base64File = await toBase64(file);
+            // Safer extraction of base64 data by splitting at the comma
+            const base64Data = base64File.split(',')[1];
+
+            // Use URLSearchParams to send as application/x-www-form-urlencoded
+            // This avoids issues with FormData/Multipart boundaries for Base64 strings
+            const params = new URLSearchParams();
+            params.append('image', base64Data);
+
+            // Fetch with detailed error logging
+            const apiKey = import.meta.env.VITE_IMGBB_API_KEY;
+            const res = await fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, {
+                method: 'POST',
+                body: params,
+            });
+
+            const data = await res.json();
+
+            if (data.success) {
+                setNewPhotoURL(data.data.url);
+            } else {
+                console.error('ImgBB Upload Error:', data);
+                // Show specific error from API if available
+                const errorMsg = data.error ? (data.error.message || data.error) : 'Error desconocido';
+                alert(`Error al subir imagen (ImgBB): ${errorMsg}`);
+            }
+        } catch (error) {
+            console.error('Upload Exception:', error);
+            alert('Error de conexión al subir imagen. Revisa la consola para más detalles.');
+        } finally {
+            setUploading(false);
+            // Reset input value to allow selecting same file again if needed
+            e.target.value = '';
+        }
     };
 
     const handleSaveProfile = async () => {
         if (!newName.trim()) return;
         try {
-            await updateUserProfile({ displayName: newName });
+            await updateUserProfile({
+                displayName: newName,
+                photoURL: newPhotoURL.trim() || null
+            });
             setIsEditing(false);
         } catch (error) {
             console.error(error);
@@ -38,21 +96,64 @@ const Profile = () => {
     return (
         <div className="p-6 space-y-8">
             <header className="flex flex-col items-center pt-8 pb-4">
-                <div className="w-24 h-24 bg-slate-100 rounded-full flex items-center justify-center text-4xl font-black text-slate-300 border-4 border-white shadow-xl mb-4">
-                    {initial}
+                <div className="relative mb-4 group">
+                    {user.photoURL || newPhotoURL ? (
+                        <img
+                            src={isEditing && newPhotoURL ? newPhotoURL : user.photoURL}
+                            alt="Profile"
+                            className="w-24 h-24 rounded-full object-cover border-4 border-white shadow-xl bg-slate-100"
+                            onError={(e) => {
+                                e.target.onerror = null;
+                                e.target.style.display = 'none';
+                                // This assumes sibling is the fallback div
+                            }}
+                        />
+                    ) : null}
+
+                    {/* Fallback Initial */}
+                    <div className={`w-24 h-24 bg-slate-100 rounded-full flex items-center justify-center text-4xl font-black text-slate-300 border-4 border-white shadow-xl ${(user.photoURL || newPhotoURL) ? 'hidden' : 'flex'}`}>
+                        {initial}
+                    </div>
+
+                    {/* Edit Overlay for Photo */}
+                    {isEditing && (
+                        <label className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-full cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity">
+                            <input type="file" className="hidden" accept="image/*" onChange={handleFileUpload} disabled={uploading} />
+                            {uploading ? (
+                                <div className="w-6 h-6 border-2 border-white/50 border-t-white rounded-full animate-spin"></div>
+                            ) : (
+                                <span className="text-white text-xs font-bold">Cambiar</span>
+                            )}
+                        </label>
+                    )}
                 </div>
 
                 {isEditing ? (
-                    <div className="flex items-center gap-2 mb-2">
+                    <div className="flex flex-col gap-3 w-full max-w-xs items-center">
                         <input
                             autoFocus
-                            className="text-2xl font-black text-slate-900 bg-slate-50 border border-emerald-500 rounded-lg p-1 text-center w-64 outline-none"
+                            className="text-lg font-bold text-slate-900 bg-slate-50 border border-emerald-500 rounded-lg p-2 text-center w-full outline-none"
+                            placeholder="Nombre de usuario"
                             value={newName}
                             onChange={(e) => setNewName(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && handleSaveProfile()}
                         />
-                        <button onClick={handleSaveProfile} className="p-2 bg-emerald-500 text-white rounded-full hover:bg-emerald-600">
-                            <ArrowRight size={16} />
+
+                        {/* Photo URL Input (Still keeping it as fallback or read-only if upload used) */}
+                        <div className="w-full relative">
+                            <input
+                                className="text-xs font-medium text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-2 pr-8 text-center w-full outline-none"
+                                placeholder="Subir foto o pegar URL..."
+                                value={newPhotoURL}
+                                onChange={(e) => setNewPhotoURL(e.target.value)}
+                            />
+                            <label className="absolute right-2 top-1/2 -translate-y-1/2 p-1 bg-slate-200 rounded-md cursor-pointer hover:bg-slate-300 text-slate-600">
+                                <input type="file" className="hidden" accept="image/*" onChange={handleFileUpload} disabled={uploading} />
+                                {uploading ? <div className="w-3 h-3 border-2 border-slate-400 border-t-slate-600 rounded-full animate-spin"></div> : <Edit2 size={12} />}
+                            </label>
+                        </div>
+
+                        <button onClick={handleSaveProfile} className="px-6 py-2 bg-emerald-500 text-white rounded-full hover:bg-emerald-600 font-bold flex items-center gap-2" disabled={uploading}>
+                            <ArrowRight size={16} /> Guardar Cambios
                         </button>
                     </div>
                 ) : (
@@ -66,17 +167,10 @@ const Profile = () => {
 
                 <p className="text-slate-400 font-medium">{user.email}</p>
 
-                <div className="mt-4 flex gap-2">
-                    <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide">Nivel Intermedio</span>
-                    <span className="bg-slate-100 text-slate-500 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide">PDP-R</span>
-                </div>
+
             </header>
 
-            {/* Stats Summary */}
-            <div className="grid grid-cols-2 gap-4">
-                <StatCard label="Sesiones" value="12" />
-                <StatCard label="Racha" value="3 días" />
-            </div>
+
 
             {/* Menu Options */}
             <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">

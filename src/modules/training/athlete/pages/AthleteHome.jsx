@@ -79,7 +79,7 @@ const AthleteHome = () => {
                         <UserIcon size={24} />
                     </Link>
                     <div>
-                        <p className="text-sm text-slate-500 font-bold uppercase tracking-wider">Buenos días</p>
+                        <p className="text-sm text-slate-500 font-bold uppercase tracking-wider">Bienvenido</p>
                         <p className="text-3xl text-slate-900 font-black leading-none tracking-tight">{userName}</p>
                     </div>
                 </div>

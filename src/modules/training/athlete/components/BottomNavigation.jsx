@@ -18,20 +18,26 @@ const BottomNavigation = () => {
                         key={item.path}
                         to={item.path}
                         end={item.end}
+                        onClick={(e) => {
+                            if (item.label === 'Seguimiento') {
+                                e.preventDefault();
+                                alert('¡Módulo de Seguimiento y Evolución próximamente!');
+                            }
+                        }}
                         className={({ isActive }) => `
                             flex flex-col items-center gap-1 p-2 rounded-xl transition-all duration-300
-                            ${isActive ? 'text-slate-900 -translate-y-1' : 'text-slate-300 hover:text-slate-400'}
+                            ${isActive && item.label !== 'Seguimiento' ? 'text-slate-900 -translate-y-1' : 'text-slate-300 hover:text-slate-400'}
                         `}
                     >
                         {({ isActive }) => (
                             <>
-                                <div className={`transition-all duration-300 ${isActive ? 'scale-110 drop-shadow-sm' : ''}`}>
+                                <div className={`transition-all duration-300 ${isActive && item.label !== 'Seguimiento' ? 'scale-110 drop-shadow-sm' : ''}`}>
                                     {item.icon}
                                 </div>
-                                <span className={`text-[9px] font-bold uppercase tracking-wider transition-all duration-300 ${isActive ? 'opacity-100 font-black' : 'opacity-0 scale-0 h-0 w-0 overflow-hidden'}`}>
+                                <span className={`text-[9px] font-bold uppercase tracking-wider transition-all duration-300 ${isActive && item.label !== 'Seguimiento' ? 'opacity-100 font-black' : 'opacity-0 scale-0 h-0 w-0 overflow-hidden'}`}>
                                     {item.label}
                                 </span>
-                                {isActive && (
+                                {isActive && item.label !== 'Seguimiento' && (
                                     <div className="w-1 h-1 rounded-full bg-slate-900 mt-0.5" />
                                 )}
                             </>

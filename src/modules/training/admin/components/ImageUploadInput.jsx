@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { UploadCloud, Loader2 } from 'lucide-react';
 
-const IMGBB_API_KEY = '449a16299afd7e7b126eee3f70280ec2';
+const IMGBB_API_KEY = import.meta.env.VITE_IMGBB_API_KEY;
 
 /**
  * ImageUploadInput - Reusable input component for image URLs with ImgBB upload capability

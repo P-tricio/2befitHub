@@ -76,10 +76,16 @@ export const AuthProvider = ({ children }) => {
         return unsubscribe;
     }, []);
 
-    const updateUserProfile = (data) => {
-        return updateProfile(auth.currentUser, data).then(() => {
-            setCurrentUser({ ...auth.currentUser, ...data });
-        });
+    const updateUserProfile = async (data) => {
+        // 1. Update Auth Profile
+        await updateProfile(auth.currentUser, data);
+
+        // 2. Update Firestore User Document
+        const userRef = doc(db, 'users', auth.currentUser.uid);
+        await setDoc(userRef, data, { merge: true });
+
+        // 3. Update Local State
+        setCurrentUser(prev => ({ ...prev, ...data }));
     };
 
     const value = {
