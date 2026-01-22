@@ -44,7 +44,7 @@ const Login = () => {
             navigate('/');
         } catch (err) {
             console.error(err);
-            setError('Error con Google Sign In.');
+            setError(`Error Google: ${err.code || err.message}`);
         } finally {
             setLoading(false);
         }

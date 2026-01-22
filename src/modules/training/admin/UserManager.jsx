@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Search, User, Calendar, MoreVertical, Shield, ShieldOff, CalendarDays } from 'lucide-react';
 import { TrainingDB } from '../services/db';
-import UserPlanning from './UserPlanning'; // New Planning Component
+import UserPlanning from './UserPlanning';
+import UserTracking from './UserTracking';
+import UserSessionHistory from './UserSessionHistory';
 
 const UserManager = () => {
     const [users, setUsers] = useState([]);
@@ -9,8 +11,10 @@ const UserManager = () => {
     const [searchTerm, setSearchTerm] = useState('');
 
     // State for actions
-    const [planningUser, setPlanningUser] = useState(null); // User object for planning view
-    const [activeMenuId, setActiveMenuId] = useState(null); // ID of user with open menu
+    const [planningUser, setPlanningUser] = useState(null);
+    const [trackingUser, setTrackingUser] = useState(null);
+    const [historyUser, setHistoryUser] = useState(null);
+    const [activeMenuId, setActiveMenuId] = useState(null);
 
     // Close menu when clicking outside
     useEffect(() => {
@@ -52,16 +56,23 @@ const UserManager = () => {
         (u.displayName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         (u.email || '').toLowerCase().includes(searchTerm.toLowerCase())
     );
-
-    // If planning is open, render Full Screen Planning
     if (planningUser) {
         return (
             <UserPlanning
                 user={planningUser}
                 onClose={() => {
                     setPlanningUser(null);
-                    loadData(); // Refresh data on close to see new assignments stats if we add them later
+                    loadData();
                 }}
+            />
+        );
+    }
+
+    if (historyUser) {
+        return (
+            <UserSessionHistory
+                user={historyUser}
+                onClose={() => setHistoryUser(null)}
             />
         );
     }
@@ -148,10 +159,16 @@ const UserManager = () => {
                                             {/* Dropdown */}
                                             {activeMenuId === user.id && (
                                                 <div className="absolute right-0 top-full mt-1 w-40 bg-white rounded-xl shadow-xl border border-slate-100 py-1 z-20 animate-in fade-in zoom-in-95 duration-200">
-                                                    <button className="w-full text-left px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors">
-                                                        Ver Información
+                                                    <button
+                                                        onClick={() => setTrackingUser(user)}
+                                                        className="w-full text-left px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+                                                    >
+                                                        Ver Información / Seguimiento
                                                     </button>
-                                                    <button className="w-full text-left px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors">
+                                                    <button
+                                                        onClick={() => setHistoryUser(user)}
+                                                        className="w-full text-left px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+                                                    >
                                                         Historial
                                                     </button>
                                                 </div>
@@ -220,10 +237,16 @@ const UserManager = () => {
                                 </button>
                                 {activeMenuId === user.id && (
                                     <div className="absolute right-0 bottom-full mb-2 w-40 bg-white rounded-xl shadow-xl border border-slate-100 py-1 z-20 text-left animate-in fade-in zoom-in-95 duration-200">
-                                        <button className="w-full text-left px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors">
-                                            Ver Información
+                                        <button
+                                            onClick={() => setTrackingUser(user)}
+                                            className="w-full text-left px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+                                        >
+                                            Ver Información / Seguimiento
                                         </button>
-                                        <button className="w-full text-left px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors">
+                                        <button
+                                            onClick={() => setHistoryUser(user)}
+                                            className="w-full text-left px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+                                        >
                                             Historial
                                         </button>
                                     </div>

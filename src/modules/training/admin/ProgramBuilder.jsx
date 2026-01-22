@@ -26,8 +26,6 @@ const ProgramBuilder = () => {
     const [pickerSearch, setPickerSearch] = useState('');
 
     // Drag-drop State
-    const [draggedSlot, setDraggedSlot] = useState(null);
-    const [touchTarget, setTouchTarget] = useState(null);
     const [moveMode, setMoveMode] = useState(null); // Click-to-move mode for sessions
     const [moveWeekMode, setMoveWeekMode] = useState(null); // Click-to-move mode for weeks
 
@@ -335,124 +333,49 @@ const ProgramBuilder = () => {
         }
     };
 
-    const handleDragStart = (e, slotId, sessionIndex) => {
-        e.dataTransfer.effectAllowed = 'move';
-        const dragData = JSON.stringify({ slotId, sessionIndex });
-        e.dataTransfer.setData('text/plain', dragData);
-        setDraggedSlot(`${slotId}-${sessionIndex}`);
-    };
+    // --- Framer Motion Drag & Drop ---
+    const handleSessionDragEnd = (event, info, slotId, sessionIndex) => {
+        const dropPoint = { x: info.point.x, y: info.point.y };
+        const elements = document.elementsFromPoint(dropPoint.x, dropPoint.y);
 
-    const handleDragOver = (e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-    };
+        // Find drop target (slot)
+        const slotElement = elements.find(el => el.hasAttribute('data-slot-id'));
+        if (!slotElement) return;
 
-    const handleDrop = (e, targetSlotId) => {
-        e.preventDefault();
+        const targetSlotId = slotElement.getAttribute('data-slot-id');
 
-        const dragData = e.dataTransfer.getData('text/plain');
-        if (!dragData) {
-            setDraggedSlot(null);
-            return;
-        }
+        // If dropped on same slot, do nothing (or reorder if we implemented reordering)
+        if (targetSlotId === slotId) return;
 
-        let sourceSlotId, sourceSessionIndex;
-        try {
-            const parsed = JSON.parse(dragData);
-            sourceSlotId = parsed.slotId;
-            sourceSessionIndex = parsed.sessionIndex;
-        } catch {
-            setDraggedSlot(null);
-            return;
-        }
-
-        if (!sourceSlotId) {
-            setDraggedSlot(null);
-            return;
-        }
-
-        // Move the session to target slot
+        // Move session
         setSchedule(prev => {
             const newSchedule = { ...prev };
-            const sourceSessions = [...(newSchedule[sourceSlotId] || [])];
+            const sourceSessions = [...(newSchedule[slotId] || [])];
             const targetSessions = [...(newSchedule[targetSlotId] || [])];
 
-            const sessionToMove = sourceSessions[sourceSessionIndex];
-            if (!sessionToMove) {
-                return prev;
-            }
+            // Safety check
+            if (!sourceSessions[sessionIndex]) return prev;
+
+            const sessionToMove = sourceSessions[sessionIndex];
 
             // Remove from source
-            sourceSessions.splice(sourceSessionIndex, 1);
+            sourceSessions.splice(sessionIndex, 1);
 
-            // Add to end of target
+            // Add to target
             targetSessions.push(sessionToMove);
 
-            // Update schedule
+            // Cleanup empty source
             if (sourceSessions.length > 0) {
-                newSchedule[sourceSlotId] = sourceSessions;
+                newSchedule[slotId] = sourceSessions;
             } else {
-                delete newSchedule[sourceSlotId];
+                delete newSchedule[slotId];
             }
+
+            // Update target
             newSchedule[targetSlotId] = targetSessions;
 
             return newSchedule;
         });
-
-        setDraggedSlot(null);
-    };
-
-    // Touch handlers for mobile
-    const handleTouchStart = (e, slotId) => {
-        setDraggedSlot(slotId);
-        setTouchTarget(e.currentTarget);
-    };
-
-    const handleTouchMove = (e) => {
-        // Note: preventDefault removed to avoid passive event listener error
-        // The drag will still work, just might scroll slightly on some devices
-    };
-
-    const handleTouchEnd = (e, targetSlotId) => {
-        if (!draggedSlot || draggedSlot === targetSlotId) {
-            setDraggedSlot(null);
-            setTouchTarget(null);
-            return;
-        }
-
-        // Check if touch ended on a valid drop target
-        const touch = e.changedTouches[0];
-        const element = document.elementFromPoint(touch.clientX, touch.clientY);
-
-        // Find the closest slot element
-        const slotElement = element?.closest('[data-slot-id]');
-        if (slotElement) {
-            const actualTargetSlot = slotElement.getAttribute('data-slot-id');
-
-            if (actualTargetSlot && actualTargetSlot !== draggedSlot) {
-                const newSchedule = { ...schedule };
-                const sourceSession = newSchedule[draggedSlot];
-                const targetSession = newSchedule[actualTargetSlot];
-
-                // Swap sessions
-                if (sourceSession) {
-                    newSchedule[actualTargetSlot] = sourceSession;
-                } else {
-                    delete newSchedule[actualTargetSlot];
-                }
-
-                if (targetSession) {
-                    newSchedule[draggedSlot] = targetSession;
-                } else {
-                    delete newSchedule[draggedSlot];
-                }
-
-                setSchedule(newSchedule);
-            }
-        }
-
-        setDraggedSlot(null);
-        setTouchTarget(null);
     };
 
     // Click-to-move (for individual sessions)
@@ -816,9 +739,7 @@ const ProgramBuilder = () => {
                                                             <div
                                                                 key={slotId}
                                                                 data-slot-id={slotId}
-                                                                onDragOver={handleDragOver}
-                                                                onDrop={(e) => handleDrop(e, slotId)}
-                                                                className={`flex md:flex-col md:items-stretch items-center gap-2 p-2 rounded-lg transition-all ${draggedSlot === slotId ? 'opacity-50' : ''} ${!isLastDay ? 'border-b border-slate-100 md:border-b-0' : ''}`}
+                                                                className={`flex md:flex-col md:items-stretch items-center gap-2 p-2 rounded-lg transition-all ${!isLastDay ? 'border-b border-slate-100 md:border-b-0' : ''}`}
                                                             >
                                                                 {/* Day Label */}
                                                                 <div className="w-20 shrink-0 md:w-full md:text-center md:mb-2">
@@ -832,18 +753,18 @@ const ProgramBuilder = () => {
                                                                     {assignedId && assignedId.length > 0 && assignedId.map((sessionId, sessionIdx) => {
                                                                         const isThisSessionMoving = moveMode && moveMode.slotId === slotId && moveMode.sessionIndex === sessionIdx;
                                                                         return (
-                                                                            <div
+                                                                            <motion.div
                                                                                 key={`${slotId}-${sessionIdx}`}
-                                                                                draggable
-                                                                                onDragStart={(e) => handleDragStart(e, slotId, sessionIdx)}
-                                                                                onTouchStart={(e) => handleTouchStart(e, slotId)}
-                                                                                onTouchMove={handleTouchMove}
-                                                                                onTouchEnd={(e) => handleTouchEnd(e, slotId)}
-                                                                                className={`flex items-center justify-between rounded-lg p-2 hover:shadow-sm transition-all cursor-move group touch-manipulation
+                                                                                drag
+                                                                                dragSnapToOrigin
+                                                                                dragMomentum={false}
+                                                                                whileDrag={{ scale: 1.05, zIndex: 50, cursor: 'grabbing', opacity: 0.9 }}
+                                                                                onDragEnd={(e, info) => handleSessionDragEnd(e, info, slotId, sessionIdx)}
+                                                                                className={`flex items-center justify-between rounded-lg p-2 hover:shadow-sm transition-all cursor-grab active:cursor-grabbing group touch-none
                                                                                     ${isThisSessionMoving ? 'bg-blue-100 border-2 border-blue-500 ring-2 ring-blue-200' : 'bg-slate-50 border border-slate-200'}
                                                                                 `}
                                                                             >
-                                                                                <span className="text-sm font-bold text-slate-800 flex-1 truncate">
+                                                                                <span className="text-sm font-bold text-slate-800 flex-1 truncate select-none">
                                                                                     {isThisSessionMoving && '📍 '}
                                                                                     {getSessionName(sessionId)}
                                                                                 </span>
@@ -855,7 +776,7 @@ const ProgramBuilder = () => {
                                                                                         { label: 'Eliminar', icon: <Trash2 size={14} />, onClick: () => handleDeleteSession(slotId, sessionIdx), variant: 'danger' }
                                                                                     ]} />
                                                                                 </div>
-                                                                            </div>
+                                                                            </motion.div>
                                                                         );
                                                                     })}
 
@@ -1245,7 +1166,7 @@ const ProgramBuilder = () => {
                     </motion.div>
                 )}
             </AnimatePresence>
-        </div>
+        </div >
     );
 };
 export default ProgramBuilder;

@@ -11,7 +11,10 @@ import {
     where,
     orderBy,
     limit,
-    serverTimestamp
+    serverTimestamp,
+    setDoc,
+    arrayUnion,
+    arrayRemove
 } from 'firebase/firestore';
 
 /**
@@ -45,8 +48,35 @@ const MODULES = 'training_modules'; // "modules" is a reserved word in some cont
 const SESSIONS = 'training_sessions';
 const PROGRAMS = 'training_programs';
 const LOGS = 'training_logs';
+const FORMS = 'training_forms';
 
 export const TrainingDB = {
+    forms: {
+        async create(data) {
+            return await addDoc(collection(db, FORMS), {
+                ...data,
+                createdAt: serverTimestamp()
+            });
+        },
+        async getAll() {
+            const snapshot = await getDocs(collection(db, FORMS));
+            return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        },
+        async getById(id) {
+            const snapshot = await getDoc(doc(db, FORMS, id));
+            return snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null;
+        },
+        async update(id, data) {
+            const ref = doc(db, FORMS, id);
+            await updateDoc(ref, {
+                ...data,
+                updatedAt: serverTimestamp()
+            });
+        },
+        async delete(id) {
+            await deleteDoc(doc(db, FORMS, id));
+        }
+    },
     // --- EXERCISES (Atoms) ---
     exercises: {
         async getAll() {
@@ -191,6 +221,96 @@ export const TrainingDB = {
             updates.updatedAt = serverTimestamp();
 
             await updateDoc(ref, updates);
+        },
+        async addTaskToSchedule(userId, date, task) {
+            // task: object { type, title, id, ... }
+            const ref = doc(db, 'users', userId);
+            const updateKey = `schedule.${date}`;
+            await updateDoc(ref, {
+                [updateKey]: arrayUnion(task),
+                updatedAt: serverTimestamp()
+            });
+        },
+        async removeTaskFromSchedule(userId, date, task) {
+            const ref = doc(db, 'users', userId);
+            const updateKey = `schedule.${date}`;
+            await updateDoc(ref, {
+                [updateKey]: arrayRemove(task),
+                updatedAt: serverTimestamp()
+            });
+        },
+        async updateTaskInSchedule(userId, date, taskId, updateData) {
+            const ref = doc(db, 'users', userId);
+            const snap = await getDoc(ref);
+            if (!snap.exists()) return;
+
+            const data = snap.data();
+            const schedule = data.schedule || {};
+            const dailyTasks = schedule[date] || [];
+
+            const taskIndex = dailyTasks.findIndex(t => t.id === taskId);
+            if (taskIndex === -1) return;
+
+            // Update specific task
+            const updatedTask = { ...dailyTasks[taskIndex], ...updateData };
+            dailyTasks[taskIndex] = updatedTask;
+
+            // Write back entire array
+            const updateKey = `schedule.${date}`;
+            await updateDoc(ref, {
+                [updateKey]: dailyTasks,
+                updatedAt: serverTimestamp()
+            });
+        },
+        async updateProfile(userId, data) {
+            const ref = doc(db, 'users', userId);
+            await updateDoc(ref, {
+                ...data,
+                updatedAt: serverTimestamp()
+            });
+        },
+        async updateSessionTaskInSchedule(userId, date, sessionId, updateData) {
+            // Find task by sessionId (for session-type tasks) instead of task.id
+            const ref = doc(db, 'users', userId);
+            const snap = await getDoc(ref);
+            if (!snap.exists()) {
+                console.warn('[updateSessionTaskInSchedule] User document not found:', userId);
+                return;
+            }
+
+            const data = snap.data();
+            const schedule = data.schedule || {};
+            const dailyTasks = schedule[date] || [];
+
+            console.log('[updateSessionTaskInSchedule] Looking for sessionId:', sessionId, 'on date:', date);
+            console.log('[updateSessionTaskInSchedule] Daily tasks:', dailyTasks);
+
+            const taskIndex = dailyTasks.findIndex(t => t.type === 'session' && t.sessionId === sessionId);
+            if (taskIndex === -1) {
+                console.warn('[updateSessionTaskInSchedule] Task not found. Looking for sessionId:', sessionId);
+                console.warn('[updateSessionTaskInSchedule] Available tasks:', JSON.stringify(dailyTasks.map(t => ({ type: t.type, sessionId: t.sessionId })), null, 2));
+                return;
+            }
+            console.log('[updateSessionTaskInSchedule] Found task at index:', taskIndex, 'Updating with:', updateData);
+
+            // Update specific task
+            const updatedTask = { ...dailyTasks[taskIndex], ...updateData };
+            dailyTasks[taskIndex] = updatedTask;
+
+            // Write back entire array
+            const updateKey = `schedule.${date}`;
+            await updateDoc(ref, {
+                [updateKey]: dailyTasks,
+                updatedAt: serverTimestamp()
+            });
+        },
+        async updateCustomMeasurements(userId, measurements) {
+            // measurements: string[] (e.g. ['Bíceps', 'Muslo', 'Pecho'])
+            const ref = doc(db, 'users', userId);
+            await updateDoc(ref, {
+                customMeasurements: measurements,
+                updatedAt: serverTimestamp()
+            });
         }
     },
 
@@ -199,8 +319,9 @@ export const TrainingDB = {
         async create(userId, data) {
             return await addDoc(collection(db, LOGS), {
                 userId,
-                ...data, // result: { reps, time, weight, rpe }, moduleId, sessionId
-                date: serverTimestamp()
+                ...data,
+                date: data.date || serverTimestamp(),
+                timestamp: data.timestamp || new Date().toISOString()
             });
         },
         async getHistory(userId, moduleId) {
@@ -229,6 +350,71 @@ export const TrainingDB = {
                 console.warn('Could not fetch last log (may need Firestore index):', error);
                 return null; // Gracefully return null if query fails
             }
+        },
+        async getBySession(userId, sessionId, dateKey) {
+            // Get all logs for a specific session on a specific date
+            // dateKey format: "YYYY-MM-DD"
+            try {
+                const q = query(
+                    collection(db, LOGS),
+                    where('userId', '==', userId),
+                    where('sessionId', '==', sessionId),
+                    orderBy('date', 'asc')
+                );
+                const snapshot = await getDocs(q);
+                // Filter by date client-side (timestamp includes time)
+                return snapshot.docs
+                    .map(d => ({ id: d.id, ...d.data() }))
+                    .filter(log => log.timestamp?.startsWith(dateKey));
+            } catch (error) {
+                console.warn('Could not fetch session logs:', error);
+                return [];
+            }
+        }
+    },
+    // --- TRACKING (Check-ins: Weight, Steps, etc.) ---
+    tracking: {
+        async addEntry(userId, data) {
+            // data: { date: "YYYY-MM-DD", weight, steps, ... }
+            // Use date as doc ID for easy idempotent access
+            const dateKey = data.date;
+            const ref = doc(db, 'users', userId, 'tracking', dateKey);
+
+            // Allow merge to update fields lazily
+            await setDoc(ref, {
+                ...data,
+                updatedAt: serverTimestamp()
+            }, { merge: true });
+        },
+        async updateEntry(userId, date, data) {
+            const ref = doc(db, 'users', userId, 'tracking', date);
+            await updateDoc(ref, {
+                ...data,
+                updatedAt: serverTimestamp()
+            });
+        },
+        async getByDate(userId, date) {
+            const ref = doc(db, 'users', userId, 'tracking', date);
+            const snap = await getDoc(ref);
+            return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+        },
+        async getHistory(userId, limitCount = 30) {
+            // Last 30 entries for charts
+            const q = query(
+                collection(db, 'users', userId, 'tracking'),
+                orderBy('date', 'desc'),
+                limit(limitCount)
+            );
+            const snapshot = await getDocs(q);
+            return snapshot.docs.map(d => ({ id: d.id, ...d.data() })).reverse(); // Return chronological for charts
+        },
+        async getAll(userId) {
+            const q = query(
+                collection(db, 'users', userId, 'tracking'),
+                orderBy('date', 'desc')
+            );
+            const snapshot = await getDocs(q);
+            return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
         }
     }
 };

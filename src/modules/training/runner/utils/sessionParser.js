@@ -86,6 +86,18 @@ export const parseNewStructure = async (sessionData, globalProtocol) => {
         // Normalize all exercises in block
         const normalizedExercises = normalizeExercises(enrichedExercises);
 
+        // Logic to derive EMOM params if missing (fallback for sessions created in UI)
+        let finalEmomParams = block.emomParams;
+        if (!finalEmomParams && normalizedExercises.length > 0) {
+            const firstExConfig = normalizedExercises[0].config;
+            if (firstExConfig?.isEMOM) {
+                finalEmomParams = {
+                    durationMinutes: firstExConfig.sets?.length || 4,
+                    density: 'normal'
+                };
+            }
+        }
+
         const builtModule = {
             id: block.id,
             name: blockName,
@@ -94,7 +106,7 @@ export const parseNewStructure = async (sessionData, globalProtocol) => {
             exerciseNames: getExerciseNames(normalizedExercises),
             blockType: blockName,
             targeting: block.targeting || [{ volume: 0, timeCap: 240, instruction: 'Completar Tarea' }],
-            emomParams: block.emomParams
+            emomParams: finalEmomParams
         };
 
         allModules.push(builtModule);

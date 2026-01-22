@@ -1,14 +1,23 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { TrainingDB } from '../services/db';
 import { useAuth } from '../../../context/AuthContext';
 import { ChevronLeft, Play, AlertCircle, CheckCircle, Clock, Plus, TrendingUp, TrendingDown, Minus, Info } from 'lucide-react';
 import { useSessionData } from './hooks/useSessionData.js';
+import { useKeepAwake } from '../../../hooks/useKeepAwake';
+import { useAudioFeedback } from '../../../hooks/useAudioFeedback';
 
 const SessionRunner = () => {
+    // Keep screen awake during session
+    useKeepAwake();
+
+    // Audio System
+    const { playCountdownShort, playCountdownFinal, playSuccess, playFailure, initAudio } = useAudioFeedback();
+
     const { sessionId } = useParams();
     const navigate = useNavigate();
+    const location = useLocation();
     const { currentUser } = useAuth();
 
     // Data State - now using the new hook
@@ -48,9 +57,16 @@ const SessionRunner = () => {
         if (currentStep.type === 'SUMMARY') {
             // Generate analysis insights
             const insights = [];
+            let totalElapsed = 0; // Track total session time
+
             Object.entries(sessionState.results).forEach(([stepIndex, res]) => {
                 const step = timeline[stepIndex];
                 if (!step || step.type !== 'WORK') return;
+
+                // Accumulate elapsed time from each block
+                if (res.elapsed) {
+                    totalElapsed += res.elapsed;
+                }
 
                 const exercises = step.module.exercises || [];
                 if (exercises.length === 0) return;
@@ -105,14 +121,49 @@ const SessionRunner = () => {
                 });
             });
 
+            // Determine the target date for markers and logs
+            const scheduledDate = location.state?.scheduledDate;
+            const targetDate = scheduledDate || new Date().toISOString().split('T')[0];
+
             // Save feedback AND analysis
             await TrainingDB.logs.create(currentUser.uid, {
                 sessionId: session.id,
-                date: new Date().toISOString(),
+                timestamp: new Date().toISOString(),
+                scheduledDate: targetDate,
                 type: 'SESSION_FEEDBACK',
                 ...sessionState.feedback,
-                analysis: insights // Save the insights
+                analysis: insights
             });
+
+            // Mark session as completed in user's schedule
+            const durationMin = Math.round(totalElapsed / 60);
+            const rpe = sessionState.feedback.rpe;
+            const summary = rpe
+                ? `${durationMin || '?'} min • RPE ${rpe}`
+                : `${durationMin || '?'} min`;
+
+            // Find task with this sessionId in today's schedule and update it
+            try {
+                await TrainingDB.users.updateSessionTaskInSchedule(
+                    currentUser.uid,
+                    targetDate,
+                    session.id, // sessionId to find the task
+                    {
+                        status: 'completed',
+                        completedAt: new Date().toISOString(),
+                        summary: summary,
+                        results: {
+                            durationMinutes: durationMin,
+                            rpe: rpe,
+                            notes: sessionState.feedback.comment,
+                            analysis: insights
+                        }
+                    }
+                );
+            } catch (err) {
+                console.warn('Could not update task in schedule:', err);
+            }
+
             navigate(-1);
             return;
         }
@@ -122,41 +173,61 @@ const SessionRunner = () => {
         }
     };
 
-    // Modified to accept results
+    const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+    const [pendingResults, setPendingResults] = useState(null);
+
+    // Initial log save logic moved to after feedback
     const handleStepComplete = async (results) => {
         const currentStep = timeline[currentIndex];
 
         if (currentStep.type === 'WORK') {
-            // Sanitize weights
-            const sanitizedWeights = {};
-            if (results.weights) {
-                Object.keys(results.weights).forEach(k => {
-                    sanitizedWeights[k] = results.weights[k] === undefined ? null : results.weights[k];
-                });
-            }
+            // Store results and open feedback modal
+            setPendingResults(results);
+            setShowFeedbackModal(true);
+        } else {
+            // Warmup/Summary don't need block RPE
+            handleNext();
+        }
+    };
 
-            // Save LOCALLY for Summary Analysis
-            setSessionState(prev => ({
-                ...prev,
-                results: {
-                    ...prev.results,
-                    [currentIndex]: { ...results, weights: sanitizedWeights }
-                }
-            }));
+    const handleBlockFeedbackConfirm = async (feedbackData) => {
+        const currentStep = timeline[currentIndex];
 
-            // Sync to Firestore
-            const logEntry = {
-                userId: currentUser.uid,
-                sessionId: session.id,
-                moduleId: currentStep.module.id,
-                blockType: currentStep.blockType,
-                protocol: currentStep.module.protocol,
-                timestamp: new Date().toISOString(),
-                results: { ...results, weights: sanitizedWeights }
-            };
-            await TrainingDB.logs.create(currentUser.uid, logEntry);
+        // Sanitize weights
+        const sanitizedWeights = {};
+        if (pendingResults.weights) {
+            Object.keys(pendingResults.weights).forEach(k => {
+                sanitizedWeights[k] = pendingResults.weights[k] === undefined ? null : pendingResults.weights[k];
+            });
         }
 
+        // Save LOCALLY for Summary Analysis
+        setSessionState(prev => ({
+            ...prev,
+            results: {
+                ...prev.results,
+                [currentIndex]: { ...pendingResults, weights: sanitizedWeights }
+            }
+        }));
+
+        // Sync to Firestore including Feedback
+        // feedbackData: { rpe: number, notes: string }
+        const logEntry = {
+            userId: currentUser.uid,
+            sessionId: session.id,
+            moduleId: currentStep.module.id,
+            blockType: currentStep.blockType,
+            protocol: currentStep.module.protocol,
+            timestamp: new Date().toISOString(),
+            scheduledDate: location.state?.scheduledDate || new Date().toISOString().split('T')[0],
+            results: { ...pendingResults, weights: sanitizedWeights },
+            feedback: feedbackData // { rpe, notes }
+        };
+
+        await TrainingDB.logs.create(currentUser.uid, logEntry);
+
+        setShowFeedbackModal(false);
+        setPendingResults(null);
         handleNext();
     };
 
@@ -271,7 +342,10 @@ const SessionRunner = () => {
 
                     <div className="fixed bottom-0 left-0 w-full p-4 bg-gradient-to-t from-slate-900 via-slate-900 to-transparent z-20">
                         <button
-                            onClick={handleNext}
+                            onClick={() => {
+                                initAudio();
+                                handleNext();
+                            }}
                             className="w-full bg-emerald-500 hover:bg-emerald-400 text-white font-black text-xl py-5 rounded-2xl shadow-lg shadow-emerald-900/50 active:scale-95 transition-all"
                         >
                             CONFIRMAR Y EMPEZAR
@@ -359,6 +433,10 @@ const SessionRunner = () => {
                                 plan={sessionState.plans[currentStep.module.id]}
                                 onComplete={handleStepComplete}
                                 onSelectExercise={(ex) => setSessionState(prev => ({ ...prev, selectedExercise: ex }))}
+                                playCountdownShort={playCountdownShort}
+                                playCountdownFinal={playCountdownFinal}
+                                playSuccess={playSuccess}
+                                initAudio={initAudio}
                             />
                         )}
 
@@ -375,6 +453,15 @@ const SessionRunner = () => {
                     </motion.div>
                 </AnimatePresence>
             </main>
+
+            <AnimatePresence>
+                {showFeedbackModal && (
+                    <BlockFeedbackModal
+                        onConfirm={handleBlockFeedbackConfirm}
+                        blockType={currentStep?.blockType}
+                    />
+                )}
+            </AnimatePresence>
 
             <AnimatePresence>
                 {sessionState.selectedExercise && (
@@ -769,7 +856,7 @@ const WarmupBlock = ({ step, plan, onComplete }) => {
     );
 };
 
-const WorkBlock = ({ step, plan, onComplete, onSelectExercise }) => {
+const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShort, playCountdownFinal, playSuccess, initAudio }) => {
     const { module, blockType } = step;
     const protocol = module.protocol; // T, R, E
     const exercises = module.exercises || []; // full objects
@@ -867,7 +954,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise }) => {
 
             if (allTargetsReached) {
                 setIsActive(false);
-                playBeep(880, 0.15); // Success beep
+                playSuccess(); // Success beep from hook
             }
         }
     }, [repsDone, protocol, isActive, exercises, module]);
@@ -922,21 +1009,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise }) => {
         });
     };
 
-    // Audio Refs
-    const audioContext = useRef(null);
-    const playBeep = (freq = 440, duration = 0.1) => {
-        if (!audioContext.current) {
-            audioContext.current = new (window.AudioContext || window.webkitAudioContext)();
-        }
-        const ctx = audioContext.current;
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.frequency.value = freq;
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start();
-        osc.stop(ctx.currentTime + duration);
-    };
+
 
     // Initialize Timer
     useEffect(() => {
@@ -960,9 +1033,14 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise }) => {
 
                 if (protocol === 'T') {
                     setTimeLeft(prev => {
+                        // Countdown Logic: Beep at 3, 2, 1
+                        if (prev === 4) playCountdownShort();
+                        if (prev === 3) playCountdownShort();
+                        if (prev === 2) playCountdownShort();
+
                         if (prev <= 1) {
                             setIsActive(false);
-                            playBeep(220, 0.5); // Time fail beep
+                            playCountdownFinal(); // Time fail/complete beep
                             return 0;
                         }
                         return prev - 1;
@@ -971,17 +1049,21 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise }) => {
                     // Logic for EMOM: One minute cycles
                     setTimeLeft(prev => {
                         // prev is seconds remaining in CURRENT MINUTE (60 to 0)
+                        if (prev === 4) playCountdownShort();
+                        if (prev === 3) playCountdownShort();
+                        if (prev === 2) playCountdownShort();
+
                         if (prev <= 1) {
                             // End of a minute
                             const totalDurationMin = (module.emomParams?.durationMinutes || 4);
                             if (currentMinute >= totalDurationMin) {
                                 setIsActive(false);
-                                playBeep(220, 0.8); // Finished all rounds
+                                playCountdownFinal(); // Finished all rounds
                                 return 0;
                             } else {
                                 // Next round
                                 setCurrentMinute(m => m + 1);
-                                playBeep(660, 0.2); // New round beep
+                                playSuccess(); // New round beep
                                 return 60; // Reset to 60s
                             }
                         }
@@ -991,7 +1073,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise }) => {
             }, 1000);
         }
         return () => clearInterval(interval);
-    }, [isActive, protocol, currentMinute, module]);
+    }, [isActive, protocol, currentMinute, module, playCountdownShort, playCountdownFinal, playSuccess]);
 
     const formatTime = (seconds) => {
         const m = Math.floor(seconds / 60);
@@ -1110,7 +1192,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise }) => {
                                             if (prevReps || prevWeight) {
                                                 return (
                                                     <span className="text-blue-400 text-[9px] font-black uppercase bg-blue-500/10 px-1 rounded border border-blue-500/20">
-                                                        Anterior: {prevWeight && `${prevWeight}kg`}{prevWeight && prevReps && ' • '}{prevReps && `${prevReps}r`}
+                                                        Anterior: {prevWeight && `${parseFloat(prevWeight || 0)}kg`}{prevWeight && prevReps && ' • '}{prevReps && `${prevReps}r`}
                                                     </span>
                                                 );
                                             }
@@ -1217,6 +1299,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise }) => {
                         <div className="flex gap-3 mt-3">
                             <button
                                 onClick={() => {
+                                    initAudio(); // Initialize audio context
                                     if (!isActive && protocol === 'E' && timeLeft === 0) {
                                         // Restart EMOM
                                         setTimeLeft(60);
@@ -1420,6 +1503,86 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise }) => {
                 </button>
             </div>
         </div >
+    );
+};
+
+
+const BlockFeedbackModal = ({ onConfirm, blockType }) => {
+    const [rpe, setRpe] = useState(null);
+    const [notes, setNotes] = useState('');
+
+    const handleConfirm = () => {
+        if (rpe === null) return;
+        onConfirm({ rpe, notes });
+    };
+
+    return (
+        <div className="fixed inset-0 z-[6000] flex items-center justify-center p-6">
+            <motion.div
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                className="absolute inset-0 bg-slate-900/90 backdrop-blur-md"
+            />
+            <motion.div
+                initial={{ scale: 0.9, opacity: 0, y: 20 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                className="bg-slate-800 w-full max-w-sm rounded-[2rem] border border-slate-700 shadow-2xl relative z-10 overflow-hidden"
+            >
+                <div className="p-6 text-center">
+                    <div className="flex justify-between items-center mb-6">
+                        <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 bg-emerald-500/10 rounded-full flex items-center justify-center border border-emerald-500/20">
+                                <CheckCircle size={18} className="text-emerald-500" />
+                            </div>
+                            <h2 className="text-lg font-black text-white">Bloque {blockType}</h2>
+                        </div>
+                        <button
+                            onClick={() => onConfirm({ rpe: null, notes: '' })}
+                            className="text-[10px] font-bold text-slate-500 hover:text-white uppercase tracking-widest px-2 py-1"
+                        >
+                            Saltar
+                        </button>
+                    </div>
+
+                    <div className="space-y-6">
+                        <div>
+                            <div className="flex justify-between items-end mb-4 px-1">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Esfuerzo (RPE 0-10)</span>
+                                <span className="text-4xl font-black text-white">{rpe !== null ? rpe : '-'}</span>
+                            </div>
+
+                            <div className="grid grid-cols-6 gap-1.5 md:grid-cols-11">
+                                {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(val => (
+                                    <button
+                                        key={val}
+                                        onClick={() => setRpe(val)}
+                                        className={`h-10 rounded-lg font-bold border transition-all text-xs ${rpe === val
+                                            ? 'bg-emerald-500 text-white border-emerald-500 shadow-lg shadow-emerald-500/30'
+                                            : 'bg-slate-700/50 text-slate-400 border-slate-700 hover:bg-slate-700'
+                                            }`}
+                                    >
+                                        {val}
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="flex justify-between text-[8px] text-slate-500 font-bold uppercase mt-2 px-1">
+                                <span>Muy Suave</span>
+                                <span>Intermedio</span>
+                                <span>Al Fallo</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button
+                        onClick={handleConfirm}
+                        disabled={rpe === null}
+                        className="w-full mt-8 py-4 bg-emerald-500 text-white rounded-xl font-black text-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-emerald-400 transition-colors shadow-lg shadow-emerald-900/20"
+                    >
+                        Continuar
+                    </button>
+                </div>
+            </motion.div>
+        </div>
     );
 };
 

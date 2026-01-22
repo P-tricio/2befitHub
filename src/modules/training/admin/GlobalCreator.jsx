@@ -17,7 +17,7 @@ const IMGBB_API_KEY = import.meta.env.VITE_IMGBB_API_KEY;
 // --- Sub-components ---
 
 // ExerciseItem Component
-const ExerciseItem = ({ ex, idx, isGrouped, isFirstInGroup, isLastInGroup, onConfigure, onRemove, onDuplicate, onSwap, onToggleGroup, isLinkMode, nextIsGrouped, onUpdateDuration }) => {
+const ExerciseItem = ({ ex, idx, isGrouped, isFirstInGroup, isLastInGroup, onConfigure, onRemove, onDuplicate, onSwap, onToggleGroup, isLinkMode, nextIsGrouped, onUpdateDuration, isMobileLandscape }) => {
     const [currentImage, setCurrentImage] = useState(ex.mediaUrl || ex.imageStart || ExerciseAPI.getYoutubeThumbnail(ex.youtubeUrl) || null);
 
     // Auto-GIF Logic (Flicker)
@@ -208,7 +208,7 @@ const ExerciseItem = ({ ex, idx, isGrouped, isFirstInGroup, isLastInGroup, onCon
 };
 
 // 2. Block Card Component
-const BlockCard = ({ block, idx, onUpdate, onRemove, onDuplicate, onAddExercise, onSaveModule, onImportModule, onOpenConfig, onSwapExercise }) => {
+const BlockCard = ({ block, idx, onUpdate, onRemove, onDuplicate, onAddExercise, onSaveModule, onImportModule, onOpenConfig, onSwapExercise, isMobileLandscape }) => {
     const [isExpanded, setIsExpanded] = useState(true);
     const [linkMode, setLinkMode] = useState(false); // Toggle for connecting exercises
 
@@ -232,40 +232,50 @@ const BlockCard = ({ block, idx, onUpdate, onRemove, onDuplicate, onAddExercise,
     };
 
     return (
-        <div className="bg-slate-50/50 rounded-2xl border border-slate-200 overflow-hidden mb-4">
+        <div data-block-id={idx} className={`bg-white md:bg-slate-50/50 rounded-2xl border border-slate-200 overflow-hidden mb-4 relative transition-all ${isMobileLandscape ? 'mb-2 rounded-xl' : ''}`}>
             {/* Header */}
-            <div className="bg-white p-4 border-b border-slate-100 flex justify-between items-center sticky top-0 z-10">
+            <div className={`bg-white border-b border-slate-100 flex justify-between items-center sticky top-0 z-10 transition-all ${isMobileLandscape ? 'p-2' : 'p-4'}`}>
                 <div className="flex items-center gap-3 flex-1 min-w-0 mr-2">
-                    <span className="w-6 h-6 rounded bg-slate-900 text-white text-xs font-bold flex items-center justify-center shrink-0">
+                    <span className={`rounded bg-slate-900 text-white font-bold flex items-center justify-center shrink-0 transition-all ${isMobileLandscape ? 'w-5 h-5 text-[10px]' : 'w-6 h-6 text-xs'}`}>
                         {idx + 1}
                     </span>
                     <input
                         type="text"
                         value={block.name}
                         onChange={(e) => onUpdate({ ...block, name: e.target.value })}
-                        className="font-black text-slate-900 bg-transparent outline-none focus:bg-slate-50 px-2 rounded -ml-2 w-full truncate"
+                        className={`font-black text-slate-900 bg-transparent outline-none focus:bg-slate-50 px-2 rounded -ml-2 w-full truncate transition-all ${isMobileLandscape ? 'text-xs' : ''}`}
                         placeholder="Nombre del Bloque"
                     />
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                     <button
                         onClick={onImportModule}
-                        className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        className={`text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors ${isMobileLandscape ? 'p-1' : 'p-1.5'}`}
                         title="Importar Módulo"
                     >
-                        <Download size={16} />
+                        <Download size={isMobileLandscape ? 14 : 16} />
                     </button>
                     <button
                         onClick={onSaveModule}
-                        className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                        className={`text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors ${isMobileLandscape ? 'p-1' : 'p-1.5'}`}
                         title="Guardar como Módulo"
                     >
-                        <Save size={16} />
+                        <UploadCloud size={isMobileLandscape ? 14 : 16} />
                     </button>
-                    <ActionMenu actions={[
-                        { label: 'Duplicar', icon: <Copy size={16} />, onClick: onDuplicate },
-                        { label: 'Eliminar', icon: <Trash2 size={16} />, onClick: onRemove, variant: 'danger' }
-                    ]} />
+                    <button
+                        onClick={onDuplicate}
+                        className={`text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors ${isMobileLandscape ? 'p-1' : 'p-1.5'}`}
+                        title="Duplicar Bloque"
+                    >
+                        <Copy size={isMobileLandscape ? 14 : 16} />
+                    </button>
+                    <button
+                        onClick={onRemove}
+                        className={`text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors ${isMobileLandscape ? 'p-1' : 'p-1.5'}`}
+                        title="Eliminar Bloque"
+                    >
+                        <Trash2 size={isMobileLandscape ? 14 : 16} />
+                    </button>
                     <button onClick={() => setIsExpanded(!isExpanded)} className="p-1 text-slate-400">
                         {isExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
                     </button>
@@ -273,7 +283,7 @@ const BlockCard = ({ block, idx, onUpdate, onRemove, onDuplicate, onAddExercise,
             </div>
 
             {/* Body */}
-            <AnimatePresence>
+            < AnimatePresence >
                 {isExpanded && (
                     <motion.div
                         initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }}
@@ -375,8 +385,8 @@ const BlockCard = ({ block, idx, onUpdate, onRemove, onDuplicate, onAddExercise,
                         </div>
                     </motion.div>
                 )}
-            </AnimatePresence>
-        </div>
+            </AnimatePresence >
+        </div >
     );
 };
 
@@ -697,6 +707,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
         { id: '1', name: 'Bloque 1', exercises: [] }
     ]);
     const [sessionType, setSessionType] = useState(initialSession?.type || 'LIBRE'); // LIBRE, PDP-T, PDP-R, PDP-E
+    const [rightSidebarView, setRightSidebarView] = useState('overview'); // 'overview' | 'library'
 
     // Config State
     const [configDrawerOpen, setConfigDrawerOpen] = useState(false);
@@ -798,6 +809,23 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
     // Track dirty state
     const [isDirty, setIsDirty] = useState(false);
     const [exDrawerDirty, setExDrawerDirty] = useState(false); // Track child drawer
+    const [isMobileLandscape, setIsMobileLandscape] = useState(false);
+    const [isMobilePortrait, setIsMobilePortrait] = useState(false);
+    const [isLibraryDragging, setIsLibraryDragging] = useState(false);
+    const [sidebarFilterOpen, setSidebarFilterOpen] = useState(false);
+
+    useEffect(() => {
+        const checkOrientation = () => {
+            // landscape if width > height AND height is small (mobile-like)
+            const landscape = window.innerWidth > window.innerHeight && window.innerHeight <= 540;
+            const portrait = window.innerWidth < 768 && window.innerHeight > window.innerWidth;
+            setIsMobileLandscape(landscape);
+            setIsMobilePortrait(portrait);
+        };
+        window.addEventListener('resize', checkOrientation);
+        checkOrientation();
+        return () => window.removeEventListener('resize', checkOrientation);
+    }, []);
     const [initialState, setInitialState] = useState(null);
 
     // Initialize state logic
@@ -1527,6 +1555,27 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
             return;
         }
 
+        // Calculate Metadata
+        const blockCount = blocks.length;
+
+        let totalDurationMin = 0;
+        blocks.forEach(block => {
+            // Priority 1: Time Cap (PDP-T)
+            if (block.params?.timeCap) {
+                totalDurationMin += (parseInt(block.params.timeCap) / 60);
+            }
+            // Priority 2: EMOM (PDP-E)
+            else if (block.params?.emomMinutes) {
+                totalDurationMin += parseInt(block.params.emomMinutes);
+            }
+            // Priority 3: Fallback estimate for Reps/Other (approx 5 min/block)
+            else {
+                totalDurationMin += 5;
+            }
+        });
+
+        const calculatedDuration = Math.ceil(totalDurationMin);
+
         setIsSaving(true);
         try {
             // Helper to remove undefined values recursively
@@ -1540,6 +1589,10 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                 name: sessionTitle,
                 description: sessionDescription,
                 type: sessionType,
+                duration: calculatedDuration, // New Field
+                blockCount: blockCount,       // New Field
+                totalExercises: exercisesCount, // New Field
+
                 blocks: blocks.map(block => ({
                     id: block.id,
                     name: block.name,
@@ -1623,6 +1676,39 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
         setExercisePickerOpen(true);
     };
 
+    // Library Drag & Drop Handler
+    const handleLibraryDragEnd = (e, info, exercise) => {
+        // Detect drop target using pointer coordinates
+        const elements = document.elementsFromPoint(info.point.x, info.point.y);
+        const blockElement = elements.find(el => el.hasAttribute('data-block-id'));
+
+        if (blockElement) {
+            const blockIdx = parseInt(blockElement.getAttribute('data-block-id'));
+            if (!isNaN(blockIdx) && blocks[blockIdx]) {
+                // Add exercise to this block
+                const newEx = {
+                    ...exercise,
+                    id: crypto.randomUUID(),
+                    // Ensure fresh config
+                    config: exercise.config || { volType: 'REPS', intType: 'RIR', sets: [] },
+                    isGrouped: false,
+                    // Preserve media
+                    mediaUrl: exercise.mediaUrl || exercise.gifUrl || '',
+                    imageStart: exercise.imageStart || '',
+                    imageEnd: exercise.imageEnd || '',
+                    youtubeUrl: exercise.youtubeUrl || ''
+                };
+
+                const newBlocks = [...blocks];
+                newBlocks[blockIdx].exercises.push(newEx);
+                setBlocks(newBlocks);
+
+                // Optional: Provide feedback or flash the block
+            }
+        }
+        setIsLibraryDragging(false);
+    };
+
     // Library CRUD Handlers
     const handleLibraryEdit = (ex) => {
         setLibraryEditExercise(ex);
@@ -1699,9 +1785,8 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
 
     return (
         <div className="w-full h-full md:max-w-[95vw] md:h-[92vh] md:mx-auto bg-white shadow-2xl md:rounded-3xl border border-slate-200 flex flex-col overflow-hidden relative font-sans transition-all">
-            {/* Main Navigation Tabs */}
-            {/* Main Navigation Tabs - Hide in Embedded Mode */}
-            {!embeddedMode && (
+            {/* Main Navigation Tabs - Hide in Embedded Mode or Mobile Landscape */}
+            {!embeddedMode && !isMobileLandscape && (
                 <div className="bg-slate-900 text-white p-3 pt-4 shrink-0 shadow-lg z-10">
                     <div className="flex bg-slate-800/50 p-1 rounded-2xl gap-1">
                         {[
@@ -1727,9 +1812,9 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
 
             {/* Embedded Header with Close Button */}
             {embeddedMode && (
-                <div className="bg-slate-900 text-white p-3 shrink-0 flex justify-between items-center">
-                    <h3 className="font-bold text-sm flex items-center gap-2">
-                        <Edit2 size={16} /> Editar Sesión
+                <div className={`bg-slate-900 text-white shrink-0 flex justify-between items-center transition-all ${isMobileLandscape ? 'p-1 px-4' : 'p-3'}`}>
+                    <h3 className={`font-bold flex items-center gap-2 transition-all ${isMobileLandscape ? 'text-[10px]' : 'text-sm'}`}>
+                        <Edit2 size={isMobileLandscape ? 12 : 16} /> Editar Sesión
                         {(isDirty || exDrawerDirty) && <span className="text-[10px] bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full">Sin guardar</span>}
                     </h3>
                     <button
@@ -1749,32 +1834,32 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                 </div>
             )}
 
-            {/* Session Title - Only show in editor mode */}
+            {/* Session Title - Only show in editor mode and not in extreme landscape mobile unless we compact it */}
             {mainView === 'editor' && (
-
-                <div className="bg-white border-b border-slate-100 px-4 py-3 md:px-6 flex items-center gap-3 sticky top-0 md:relative z-20 shadow-sm md:shadow-none">
+                <div className={`bg-white border-b border-slate-100 px-4 flex items-center gap-3 sticky top-0 md:relative z-20 shadow-sm md:shadow-none transition-all ${isMobileLandscape ? 'py-1' : 'py-3 md:px-6'}`}>
                     {/* Title */}
                     <input
                         value={sessionTitle}
                         onChange={e => setSessionTitle(e.target.value)}
-                        className="bg-transparent text-lg md:text-xl font-black outline-none placeholder:text-slate-300 flex-1 min-w-0 text-slate-900 border-none focus:ring-0 p-0"
+                        className={`bg-transparent font-black outline-none placeholder:text-slate-300 flex-1 min-w-0 text-slate-900 border-none focus:ring-0 p-0 transition-all ${isMobileLandscape ? 'text-sm' : 'text-lg md:text-xl'}`}
                         placeholder="Nombre de la Sesión"
                     />
 
                     {/* Compact Action Bar */}
                     <div className="flex gap-1.5 shrink-0 items-center">
-                        {/* Type Selector - Click-based */}
+                        {/* Type Selector - Hide labels in landscape */}
                         <div className="relative">
                             <button
                                 onClick={() => setPdpDropdownOpen(!pdpDropdownOpen)}
-                                className={`h-8 px-2.5 rounded-lg border flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider transition-all
+                                className={`px-2.5 rounded-lg border flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider transition-all
+                                    ${isMobileLandscape ? 'h-6' : 'h-8'}
                                     ${sessionType === 'PDP-T' ? 'bg-purple-100 text-purple-600 border-purple-200' :
                                         sessionType === 'PDP-R' ? 'bg-blue-100 text-blue-600 border-blue-200' :
                                             sessionType === 'PDP-E' ? 'bg-emerald-100 text-emerald-600 border-emerald-200' :
                                                 'bg-slate-50 text-slate-500 border-slate-200'}
                                 `}
                             >
-                                {sessionType === 'LIBRE' ? 'LIBRE' : sessionType}
+                                {isMobileLandscape ? sessionType.replace('PDP-', '') : (sessionType === 'LIBRE' ? 'LIBRE' : sessionType)}
                                 <ChevronDown size={12} className={pdpDropdownOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
                             </button>
                             {pdpDropdownOpen && (
@@ -1803,17 +1888,31 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                         </div>
                         <button
                             onClick={() => setMainView('sessions')}
-                            className="w-8 h-8 bg-slate-50 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-blue-600 flex items-center justify-center transition-colors border border-slate-200"
+                            className={`bg-slate-50 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-blue-600 flex items-center justify-center transition-colors border border-slate-200 ${isMobileLandscape ? 'w-6 h-6' : 'w-8 h-8'}`}
                             title="Cargar Sesión"
                         >
-                            <Download size={16} />
+                            <Download size={isMobileLandscape ? 12 : 16} />
                         </button>
+                        {!isMobilePortrait && (
+                            <button
+                                onClick={() => setRightSidebarView(prev => prev === 'library' ? 'overview' : 'library')}
+                                className={`px-3 rounded-lg border flex items-center gap-2 text-xs font-bold transition-all
+                                    ${isMobileLandscape ? 'h-6 text-[10px]' : 'h-8'}
+                                    ${rightSidebarView === 'library'
+                                        ? 'bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-200'
+                                        : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:text-blue-600'
+                                    }`}
+                            >
+                                <Library size={14} />
+                                {!isMobileLandscape && 'Biblioteca'}
+                            </button>
+                        )}
                         <button
                             onClick={handleClearSession}
-                            className="w-8 h-8 bg-slate-50 hover:bg-red-50 rounded-lg text-slate-500 hover:text-red-500 flex items-center justify-center transition-colors border border-slate-200"
+                            className={`bg-slate-50 hover:bg-red-50 rounded-lg text-slate-500 hover:text-red-500 flex items-center justify-center transition-colors border border-slate-200 ${isMobileLandscape ? 'w-6 h-6' : 'w-8 h-8'}`}
                             title="Borrar Sesión"
                         >
-                            <Trash2 size={16} />
+                            <Trash2 size={isMobileLandscape ? 12 : 16} />
                         </button>
                     </div>
                 </div>
@@ -1824,7 +1923,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
             {
                 mainView === 'editor' && (
                     <>
-                        <div className="flex-1 overflow-hidden flex flex-col md:flex-row bg-slate-50/50">
+                        <div className={`flex-1 flex bg-slate-50/50 transition-all ${(isMobileLandscape && rightSidebarView === 'library') ? 'flex-row' : 'flex-col md:flex-row'} ${isLibraryDragging ? 'overflow-visible' : 'overflow-hidden'}`}>
 
                             {/* LEFT: BLOCKS EDITOR (Scrollable) */}
                             <div className="flex-1 overflow-y-auto p-4 md:p-8 scrollbar-thin scrollbar-thumb-slate-200">
@@ -1874,6 +1973,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                                             key={block.id}
                                             block={block}
                                             idx={idx}
+                                            isMobileLandscape={isMobileLandscape}
                                             onUpdate={(d) => updateBlock(idx, d)}
                                             onRemove={() => setBlocks(blocks.filter((_, i) => i !== idx))}
                                             onDuplicate={() => {
@@ -1913,54 +2013,236 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                             </div>
 
                             {/* RIGHT: DESKTOP SIDEBAR (Overview & Actions) */}
-                            <div className="hidden md:flex w-80 lg:w-96 flex-col bg-white border-l border-slate-200 p-6 space-y-6 shadow-xl z-20 overflow-y-auto">
-                                <div>
-                                    <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider mb-3">Resumen Sesión</h3>
-                                    <textarea
-                                        value={sessionDescription}
-                                        onChange={(e) => setSessionDescription(e.target.value)}
-                                        className="w-full h-40 bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-slate-200 resize-none leading-relaxed transition-all focus:bg-white"
-                                        placeholder="Describe el objetivo de la sesión, instrucciones generales para el atleta, calentamiento..."
-                                    />
-                                </div>
+                            {/* RIGHT: DESKTOP SIDEBAR (Overview & Library) - Conditional visibility in Mobile Landscape */}
+                            {(!isMobileLandscape || rightSidebarView === 'library') && (
+                                <div className={`flex flex-col bg-white border-l border-slate-200 shadow-xl transition-all
+                                    ${isMobileLandscape
+                                        ? 'w-72 shrink-0 border-l-4 border-blue-500 relative z-20'
+                                        : 'hidden md:flex w-80 lg:w-96 z-20'
+                                    }
+                                    ${isLibraryDragging ? 'overflow-visible' : 'overflow-hidden'}
+                                `}>
+                                    {rightSidebarView === 'overview' ? (
+                                        /* OVERVIEW MODE */
+                                        <div className="flex-1 flex flex-col p-6 space-y-6 overflow-y-auto">
+                                            <div>
+                                                <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider mb-3">Resumen Sesión</h3>
+                                                <textarea
+                                                    value={sessionDescription}
+                                                    onChange={(e) => setSessionDescription(e.target.value)}
+                                                    className="w-full h-40 bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-slate-200 resize-none leading-relaxed transition-all focus:bg-white"
+                                                    placeholder="Describe el objetivo de la sesión, instrucciones generales para el atleta, calentamiento..."
+                                                />
+                                            </div>
 
-                                <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-2">
-                                    <div className="flex justify-between text-xs font-bold text-slate-600">
-                                        <span>Bloques</span>
-                                        <span>{blocks.length}</span>
-                                    </div>
-                                    <div className="flex justify-between text-xs font-bold text-slate-600">
-                                        <span>Ejercicios</span>
-                                        <span>{blocks.reduce((acc, b) => acc + b.exercises.length, 0)}</span>
-                                    </div>
-                                </div>
+                                            <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-2">
+                                                <div className="flex justify-between text-xs font-bold text-slate-600">
+                                                    <span>Bloques</span>
+                                                    <span>{blocks.length}</span>
+                                                </div>
+                                                <div className="flex justify-between text-xs font-bold text-slate-600">
+                                                    <span>Ejercicios</span>
+                                                    <span>{blocks.reduce((acc, b) => acc + b.exercises.length, 0)}</span>
+                                                </div>
+                                            </div>
 
-                                <div className="mt-auto pt-6 border-t border-slate-100">
+                                            <div className="mt-auto pt-6 border-t border-slate-100">
+                                                <button
+                                                    onClick={handleSaveSession}
+                                                    disabled={isSaving}
+                                                    className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-xl font-bold shadow-lg shadow-slate-900/20 active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:scale-100 group"
+                                                >
+                                                    {isSaving ? <Loader2 className="animate-spin" /> : <Check className="group-hover:scale-110 transition-transform" />}
+                                                    {isSaving ? 'Guardando...' : 'Guardar y Salir'}
+                                                </button>
+                                                <p className="text-[10px] text-center text-slate-400 mt-3 font-medium">
+                                                    Cambios guardados en local automáticamente
+                                                </p>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        /* LIBRARY MODE (Draggable) */
+                                        <div className="flex-1 flex flex-col bg-slate-50">
+                                            {/* Header / Search */}
+                                            <div className="p-4 bg-white border-b border-slate-200 shadow-sm z-10 space-y-3">
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex flex-col">
+                                                        <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider">Biblioteca de Ejercicios</h3>
+                                                        <span className="text-[10px] text-blue-600 font-bold">Arrastra al editor</span>
+                                                    </div>
+                                                    {isMobileLandscape && (
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); setRightSidebarView('overview'); }}
+                                                            className="p-2 -mr-1 text-slate-400 hover:text-slate-600 transition-colors"
+                                                        >
+                                                            <X size={18} />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <div className="flex-1 flex items-center gap-2 bg-slate-100 p-2 rounded-xl border border-slate-200 focus-within:ring-2 focus-within:ring-blue-200 transition-all">
+                                                        <Search className="text-slate-400" size={16} />
+                                                        <input
+                                                            autoFocus
+                                                            placeholder="Buscar..."
+                                                            className="flex-1 bg-transparent outline-none font-bold text-slate-800 text-xs"
+                                                            value={pickerSearch}
+                                                            onChange={e => setPickerSearch(e.target.value)}
+                                                        />
+                                                        {pickerSearch && <button onClick={() => setPickerSearch('')} className="p-1 hover:bg-white rounded-full"><X size={14} /></button>}
+                                                    </div>
+                                                    <button
+                                                        onClick={() => setSidebarFilterOpen(!sidebarFilterOpen)}
+                                                        className={`p-2 rounded-xl flex items-center justify-center transition-colors ${sidebarFilterOpen ? 'bg-slate-900 text-white shadow-lg' : 'bg-white border border-slate-200 text-slate-500 hover:border-blue-300'}`}
+                                                    >
+                                                        <Filter size={16} />
+                                                    </button>
+                                                </div>
+
+                                                {/* Collapsible Sidebar Filter Drawer */}
+                                                <AnimatePresence>
+                                                    {sidebarFilterOpen && (
+                                                        <motion.div
+                                                            initial={{ height: 0, opacity: 0 }}
+                                                            animate={{ height: 'auto', opacity: 1 }}
+                                                            exit={{ height: 0, opacity: 0 }}
+                                                            className="overflow-hidden bg-slate-50 rounded-xl border border-slate-200"
+                                                        >
+                                                            <div className="p-3 space-y-4 max-h-[300px] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-200">
+                                                                <div>
+                                                                    <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Patrón</p>
+                                                                    <div className="flex flex-wrap gap-1.5">
+                                                                        {PATTERNS.map(p => (
+                                                                            <button
+                                                                                key={p}
+                                                                                onClick={() => toggleFilter('pattern', p)}
+                                                                                className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors ${pickerFilter.pattern.includes(p) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}
+                                                                            >
+                                                                                {p}
+                                                                            </button>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+
+                                                                <div>
+                                                                    <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Equipamiento</p>
+                                                                    <div className="flex flex-wrap gap-1.5">
+                                                                        {EQUIPMENT.map(eq => (
+                                                                            <button
+                                                                                key={eq}
+                                                                                onClick={() => toggleFilter('equipment', eq)}
+                                                                                className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors ${pickerFilter.equipment.includes(eq) ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm' : 'bg-white text-slate-500 border-slate-200 hover:border-emerald-200 hover:text-emerald-600'}`}
+                                                                            >
+                                                                                {eq}
+                                                                            </button>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="grid grid-cols-2 gap-4">
+                                                                    <div>
+                                                                        <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Nivel</p>
+                                                                        <div className="flex flex-col gap-1.5">
+                                                                            {LEVELS.map(l => (
+                                                                                <button
+                                                                                    key={l}
+                                                                                    onClick={() => toggleFilter('level', l)}
+                                                                                    className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors text-left ${pickerFilter.level.includes(l) ? 'bg-amber-500 text-white border-amber-600' : 'bg-white text-slate-500 border-slate-200'}`}
+                                                                                >
+                                                                                    {l}
+                                                                                </button>
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+                                                                    <div>
+                                                                        <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Cualidad</p>
+                                                                        <div className="flex flex-col gap-1.5">
+                                                                            {QUALITIES.map(q => (
+                                                                                <button
+                                                                                    key={q.id}
+                                                                                    onClick={() => toggleFilter('quality', q.id)}
+                                                                                    className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors text-left ${pickerFilter.quality.includes(q.id) ? 'bg-indigo-500 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}
+                                                                                >
+                                                                                    {q.label}
+                                                                                </button>
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </motion.div>
+                                                    )}
+                                                </AnimatePresence>
+                                            </div>
+
+                                            {/* Draggable List */}
+                                            <div className="flex-1 overflow-y-auto p-3 space-y-2 scrollbar-thin scrollbar-thumb-slate-400 scrollbar-track-transparent hover:scrollbar-thumb-slate-500 flex flex-col min-h-0">
+                                                {filterExerciseList(allExercises, pickerSearch, pickerFilter).map(ex => (
+                                                    <motion.div
+                                                        key={ex.id}
+                                                        drag
+                                                        dragSnapToOrigin
+                                                        dragMomentum={false}
+                                                        whileDrag={{ scale: 1.05, zIndex: 1000, cursor: 'grabbing', opacity: 1, rotate: 2 }}
+                                                        whileHover={{ scale: 1.02 }}
+                                                        onDragStart={() => setIsLibraryDragging(true)}
+                                                        onDragEnd={(e, info) => handleLibraryDragEnd(e, info, ex)}
+                                                        className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm hover:shadow-md cursor-grab active:cursor-grabbing flex items-center gap-3 select-none group relative overflow-hidden"
+                                                    >
+
+                                                        {/* Image */}
+                                                        <div className="w-10 h-10 bg-slate-50 rounded-lg overflow-hidden shrink-0 border border-slate-100">
+                                                            {(ex.mediaUrl || ex.gifUrl || ex.imageStart || ExerciseAPI.getYoutubeThumbnail(ex.youtubeUrl)) ? (
+                                                                <img src={ex.mediaUrl || ex.gifUrl || ex.imageStart || ExerciseAPI.getYoutubeThumbnail(ex.youtubeUrl)} className="w-full h-full object-cover" />
+                                                            ) : (
+                                                                <div className="w-full h-full flex items-center justify-center text-slate-300"><Dumbbell size={16} /></div>
+                                                            )}
+                                                        </div>
+
+                                                        {/* Info */}
+                                                        <div className="flex-1 min-w-0">
+                                                            <h4 className="font-bold text-slate-800 text-xs truncate leading-tight group-hover:text-blue-600 transition-colors">
+                                                                {ex.nameEs || ex.name_es || ex.name}
+                                                            </h4>
+                                                            <div className="flex items-center gap-1 mt-1">
+                                                                <span className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">
+                                                                    {ex.pattern || 'Global'}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Drag Handle Indicator */}
+                                                        <div className="opacity-0 group-hover:opacity-100 text-slate-300 transition-opacity">
+                                                            <Move size={14} />
+                                                        </div>
+                                                    </motion.div>
+                                                ))}
+
+                                                {/* Empty State */}
+                                                {filterExerciseList(allExercises, pickerSearch, pickerFilter).length === 0 && (
+                                                    <div className="text-center py-10 opacity-50">
+                                                        <p className="text-xs font-bold">No se encontraron ejercicios</p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* MOBILE FLOATING ACTION (Save) - Hide in landscape mobile */}
+                            {!isMobileLandscape && (
+                                <div className="md:hidden absolute bottom-6 left-1/2 -translate-x-1/2 z-30">
                                     <button
                                         onClick={handleSaveSession}
                                         disabled={isSaving}
-                                        className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-xl font-bold shadow-lg shadow-slate-900/20 active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:scale-100 group"
+                                        className="bg-slate-900 text-white px-6 py-3 rounded-full font-bold shadow-xl shadow-slate-900/40 active:scale-95 transition-transform flex items-center gap-2 disabled:opacity-50"
                                     >
-                                        {isSaving ? <Loader2 className="animate-spin" /> : <Check className="group-hover:scale-110 transition-transform" />}
-                                        {isSaving ? 'Guardando...' : 'Guardar y Salir'}
+                                        {isSaving ? <Loader2 className="animate-spin" size={18} /> : <Check size={18} />}
+                                        {isSaving ? '...' : 'Guardar'}
                                     </button>
-                                    <p className="text-[10px] text-center text-slate-400 mt-3 font-medium">
-                                        Cambios guardados en local automáticamente
-                                    </p>
                                 </div>
-                            </div>
-
-                            {/* MOBILE FLOATING ACTION (Save) */}
-                            <div className="md:hidden absolute bottom-6 left-1/2 -translate-x-1/2 z-30">
-                                <button
-                                    onClick={handleSaveSession}
-                                    disabled={isSaving}
-                                    className="bg-slate-900 text-white px-6 py-3 rounded-full font-bold shadow-xl shadow-slate-900/40 active:scale-95 transition-transform flex items-center gap-2 disabled:opacity-50"
-                                >
-                                    {isSaving ? <Loader2 className="animate-spin" size={18} /> : <Check size={18} />}
-                                    {isSaving ? '...' : 'Guardar'}
-                                </button>
-                            </div>
+                            )}
                         </div>
 
                         {/* Exercise Picker Modal */}
