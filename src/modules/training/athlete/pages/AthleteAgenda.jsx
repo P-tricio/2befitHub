@@ -94,8 +94,12 @@ const AthleteAgenda = () => {
         <div className="p-6 max-w-lg mx-auto space-y-6 pb-32">
             <header className="flex justify-between items-center mb-6">
                 <div className="flex items-center gap-3">
-                    <Link to="/profile" className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center border border-slate-200 text-slate-400 hover:text-slate-600 transition-all shrink-0">
-                        <UserIcon size={20} />
+                    <Link to="/training/profile" className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center border border-slate-200 text-slate-400 hover:text-slate-600 transition-all shrink-0 overflow-hidden">
+                        {currentUser?.photoURL ? (
+                            <img src={currentUser.photoURL} alt="Profile" className="w-full h-full object-cover" />
+                        ) : (
+                            <UserIcon size={20} />
+                        )}
                     </Link>
                     <h1 className="text-3xl font-black text-slate-900 tracking-tight">Agenda</h1>
                 </div>

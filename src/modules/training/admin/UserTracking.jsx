@@ -228,9 +228,9 @@ const UserTracking = ({ user, onClose }) => {
                                                 {entry.notes || '-'}
                                             </td>
                                             <td className="p-4">
-                                                {entry.photos && entry.photos.length > 0 ? (
+                                                {entry.photos ? (
                                                     <div className="flex -space-x-2">
-                                                        {entry.photos.map((url, i) => (
+                                                        {Object.values(entry.photos).filter(Boolean).map((url, i) => (
                                                             <div key={i} className="w-8 h-8 rounded-full border-2 border-white bg-slate-200 overflow-hidden">
                                                                 <img src={url} alt="Progress" className="w-full h-full object-cover" />
                                                             </div>

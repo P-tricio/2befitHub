@@ -7,11 +7,10 @@ import { BrandLogo } from '../common/BrandLogo';
 
 const MainLayout = () => {
     const [isMenuOpen, setIsMenuOpen] = useState(false);
-    const [isNavExpanded, setIsNavExpanded] = useState(false);
     const location = useLocation();
     const { logout } = useAuth();
 
-    const isHome = location.pathname === '/';
+    const isHome = location.pathname === '/hub' || location.pathname === '/';
 
     return (
         <div className="flex flex-col h-screen max-w-md mx-auto bg-slate-50 relative overflow-hidden shadow-2xl">
@@ -36,49 +35,6 @@ const MainLayout = () => {
                 <Outlet />
             </main>
 
-            {/* Bottom Navigation Dock (Collapsible) - Fixed Left Anchor */}
-            <div className="fixed bottom-6 left-6 z-40 pointer-events-none">
-                <AnimatePresence mode="wait">
-                    {!isNavExpanded ? (
-                        <motion.button
-                            key="minimized"
-                            layoutId="nav-container"
-                            initial={{ scale: 0, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0, opacity: 0 }}
-                            onClick={() => setIsNavExpanded(true)}
-                            className="pointer-events-auto w-14 h-14 bg-slate-900 text-white rounded-full shadow-xl shadow-slate-900/30 flex items-center justify-center active:scale-95 transition-all border border-slate-700"
-                        >
-                            <LayoutGrid size={24} />
-                        </motion.button>
-                    ) : (
-                        <>
-                            {/* Backdrop to close */}
-                            <motion.div
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                exit={{ opacity: 0 }}
-                                onClick={() => setIsNavExpanded(false)}
-                                className="fixed inset-0 z-[-1] pointer-events-auto w-screen h-screen left-[-24px] bottom-[-24px]"
-                                style={{ transform: 'none' }} // Ensure backdrop covers everything
-                            />
-
-                            <motion.div
-                                key="expanded"
-                                layoutId="nav-container"
-                                className="pointer-events-auto glass px-6 py-3 rounded-full shadow-2xl shadow-emerald-900/20 flex items-center gap-6 border border-white/80 bg-white/95 backdrop-blur-xl absolute bottom-0 left-0 min-w-max"
-                            >
-                                <NavItem to="/" icon={Home} label="Hub" onClick={() => setIsNavExpanded(false)} />
-                                <NavItem to="/training" icon={Dumbbell} label="Train" onClick={() => setIsNavExpanded(false)} />
-                                <NavItem to="/profile" icon={User} label="Perfil" onClick={() => setIsNavExpanded(false)} />
-                                <button onClick={() => setIsNavExpanded(false)} className="text-slate-400 hover:text-red-500 transition-colors">
-                                    <X size={20} />
-                                </button>
-                            </motion.div>
-                        </>
-                    )}
-                </AnimatePresence>
-            </div>
 
             {/* Mobile Menu Overlay */}
             <AnimatePresence>

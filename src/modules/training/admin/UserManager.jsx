@@ -77,6 +77,15 @@ const UserManager = () => {
         );
     }
 
+    if (trackingUser) {
+        return (
+            <UserTracking
+                user={trackingUser}
+                onClose={() => setTrackingUser(null)}
+            />
+        );
+    }
+
     return (
         <div className="max-w-5xl mx-auto relative p-6">
             <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">

@@ -761,6 +761,7 @@ const UserPlanning = ({ user, onClose }) => {
                             setAddTaskModalOpen(false);
                             setEditingTask(null);
                         }}
+                        onAssignSession={handleAssignSession}
                         onAssignProgram={handleAssignProgram}
                         onOpenForms={() => setIsFormCreatorOpen(true)}
                         getTaskName={getTaskName}
@@ -769,7 +770,10 @@ const UserPlanning = ({ user, onClose }) => {
                             appendTask(selectedDate, {
                                 id: crypto.randomUUID(),
                                 type,
-                                title: type === 'neat' ? 'Objetivo Movimiento' : (type === 'nutrition' ? 'Hábitos Nutricionales' : 'Control y Seguimiento'),
+                                title: type === 'neat' ? 'Objetivo Movimiento'
+                                    : (type === 'nutrition' ? 'Hábitos Nutricionales'
+                                        : (type === 'free_training' ? 'Entrenamiento Libre'
+                                            : 'Control y Seguimiento')),
                                 completed: false,
                                 config: config
                             });
@@ -1117,6 +1121,16 @@ const AddTaskModal = ({ user, date, sessions, programs, availableForms, taskToEd
                         initialConfig={taskToEdit?.type === 'checkin' ? taskToEdit.config : null}
                         isEdit={!!taskToEdit}
                     />
+
+                    <GenericTaskSection
+                        id="free_training"
+                        label="Entrenamiento Libre"
+                        icon={<Dumbbell size={20} className="text-slate-600" />}
+                        expanded={expanded === 'free_training'}
+                        toggle={() => toggle('free_training')}
+                        onAssign={(config) => taskToEdit ? onUpdateTask(taskToEdit.id, config) : onAssignGeneric('free_training', config)}
+                        initialConfig={taskToEdit?.type === 'free_training' ? taskToEdit.config : null}
+                    />
                 </div>
             </motion.div>
         </div>
@@ -1213,11 +1227,11 @@ const GenericTaskSection = ({ id, label, icon, expanded, toggle, onAssign, avail
                                 </div>
                             </div>
 
-                            {user?.userMinimums && user.userMinimums.length > 0 && (
+                            {user?.minimums && user.minimums.length > 0 && (
                                 <div>
                                     <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">Mis Mínimos (Atleta)</label>
                                     <div className="grid grid-cols-1 gap-2">
-                                        {user.userMinimums.map(habit => (
+                                        {user.minimums.map(habit => (
                                             <button
                                                 key={habit}
                                                 onClick={() => handleToggleHabit(habit)}

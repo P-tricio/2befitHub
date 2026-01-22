@@ -13,7 +13,10 @@ const SessionRunner = () => {
     useKeepAwake();
 
     // Audio System
-    const { playCountdownShort, playCountdownFinal, playSuccess, playFailure, initAudio } = useAudioFeedback();
+    const { playCountdownShort, playCountdownFinal, playHalfway, playMinuteWarning, playSuccess, playFailure, initAudio } = useAudioFeedback();
+
+    const [globalTime, setGlobalTime] = useState(0);
+    const [isGlobalActive, setIsGlobalActive] = useState(false);
 
     const { sessionId } = useParams();
     const navigate = useNavigate();
@@ -37,7 +40,18 @@ const SessionRunner = () => {
         results: {}, // { timelineIndex: { reps: {}, weights: {} } }
         feedback: { rpe: null, comment: '' },
         selectedExercise: null, // For Modal
+        globalTime: 0,
     });
+
+    useEffect(() => {
+        let interval;
+        if (isGlobalActive) {
+            interval = setInterval(() => {
+                setGlobalTime(prev => prev + 1);
+            }, 1000);
+        }
+        return () => clearInterval(interval);
+    }, [isGlobalActive]);
     const [descriptionOpen, setDescriptionOpen] = useState(true);
 
     const updatePlan = (moduleId, exIdx, weight) => {
@@ -125,6 +139,8 @@ const SessionRunner = () => {
             const scheduledDate = location.state?.scheduledDate;
             const targetDate = scheduledDate || new Date().toISOString().split('T')[0];
 
+            setIsGlobalActive(false);
+
             // Save feedback AND analysis
             await TrainingDB.logs.create(currentUser.uid, {
                 sessionId: session.id,
@@ -136,7 +152,7 @@ const SessionRunner = () => {
             });
 
             // Mark session as completed in user's schedule
-            const durationMin = Math.round(totalElapsed / 60);
+            const durationMin = Math.round(globalTime / 60);
             const rpe = sessionState.feedback.rpe;
             const summary = rpe
                 ? `${durationMin || '?'} min • RPE ${rpe}`
@@ -435,8 +451,13 @@ const SessionRunner = () => {
                                 onSelectExercise={(ex) => setSessionState(prev => ({ ...prev, selectedExercise: ex }))}
                                 playCountdownShort={playCountdownShort}
                                 playCountdownFinal={playCountdownFinal}
+                                playHalfway={playHalfway}
+                                playMinuteWarning={playMinuteWarning}
                                 playSuccess={playSuccess}
-                                initAudio={initAudio}
+                                initAudio={() => {
+                                    initAudio();
+                                    setIsGlobalActive(true); // Start global timer on first interaction
+                                }}
                             />
                         )}
 
@@ -856,7 +877,7 @@ const WarmupBlock = ({ step, plan, onComplete }) => {
     );
 };
 
-const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShort, playCountdownFinal, playSuccess, initAudio }) => {
+const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShort, playCountdownFinal, playHalfway, playMinuteWarning, playSuccess, initAudio }) => {
     const { module, blockType } = step;
     const protocol = module.protocol; // T, R, E
     const exercises = module.exercises || []; // full objects
@@ -1033,6 +1054,10 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
 
                 if (protocol === 'T') {
                     setTimeLeft(prev => {
+                        const total = module.targeting?.[0]?.timeCap || 240;
+                        if (prev === Math.floor(total / 2) + 1) playHalfway();
+                        if (prev === 61) playMinuteWarning();
+
                         // Countdown Logic: Beep at 3, 2, 1
                         if (prev === 4) playCountdownShort();
                         if (prev === 3) playCountdownShort();
@@ -1048,6 +1073,8 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                 } else if (protocol === 'E') {
                     // Logic for EMOM: One minute cycles
                     setTimeLeft(prev => {
+                        if (prev === 31) playHalfway(); // Halfway through the minute
+
                         // prev is seconds remaining in CURRENT MINUTE (60 to 0)
                         if (prev === 4) playCountdownShort();
                         if (prev === 3) playCountdownShort();
@@ -1073,7 +1100,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
             }, 1000);
         }
         return () => clearInterval(interval);
-    }, [isActive, protocol, currentMinute, module, playCountdownShort, playCountdownFinal, playSuccess]);
+    }, [isActive, protocol, currentMinute, module, playCountdownShort, playCountdownFinal, playHalfway, playMinuteWarning, playSuccess]);
 
     const formatTime = (seconds) => {
         const m = Math.floor(seconds / 60);

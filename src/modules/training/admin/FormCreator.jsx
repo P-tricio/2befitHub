@@ -54,6 +54,15 @@ const FormCreator = ({ onClose, isInline = false }) => {
                 await TrainingDB.forms.create(formData);
             }
 
+            alert('Formulario guardado con éxito');
+            loadForms();
+
+            if (isInline && !isEditing) {
+                setName('');
+                setDescription('');
+                setFields([{ id: 1, name: '', type: 'text', options: '' }]);
+            }
+
             if (onClose) onClose();
         } catch (e) {
             console.error(e);
@@ -81,19 +90,19 @@ const FormCreator = ({ onClose, isInline = false }) => {
     const content = (
         <div className={`bg-white w-full ${isInline ? 'h-full' : 'max-w-4xl h-[90vh] rounded-[3rem] shadow-2xl z-10'} flex flex-col overflow-hidden`}>
             {/* Header */}
-            <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+            <div className="p-4 md:p-8 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-50/50">
                 <div>
-                    <h2 className="text-3xl font-black text-slate-900 tracking-tight">Formularios de Seguimiento</h2>
-                    <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Crea cuestionarios personalizados para tus atletas</p>
+                    <h2 className="text-xl md:text-3xl font-black text-slate-900 tracking-tight">Formularios de Seguimiento</h2>
+                    <p className="text-[10px] md:text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Crea cuestionarios personalizados para tus atletas</p>
                 </div>
-                <div className="flex gap-3">
+                <div className="flex gap-2 w-full md:w-auto">
                     <button
                         onClick={handleSave}
                         disabled={saving}
-                        className="bg-slate-900 text-white px-6 py-3 rounded-2xl font-black flex items-center gap-2 hover:bg-slate-800 transition-all disabled:opacity-50 shadow-xl shadow-slate-900/10"
+                        className="flex-1 md:flex-none bg-slate-900 text-white px-4 md:px-6 py-3 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-slate-800 transition-all disabled:opacity-50 shadow-xl shadow-slate-900/10 text-xs md:text-sm"
                     >
                         <Save size={18} />
-                        {saving ? 'GUARDANDO...' : 'GUARDAR FORMULARIO'}
+                        {saving ? 'GUARDANDO...' : 'GUARDAR'}
                     </button>
                     {onClose && (
                         <button onClick={onClose} className="p-3 bg-white border border-slate-200 rounded-2xl hover:bg-slate-50 text-slate-400">
@@ -103,11 +112,11 @@ const FormCreator = ({ onClose, isInline = false }) => {
                 </div>
             </div>
 
-            <div className="flex-1 flex overflow-hidden">
+            <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
                 {/* Sidebar: Library of Forms */}
-                <div className="w-80 border-r border-slate-100 bg-slate-50/30 overflow-y-auto p-6 space-y-4">
-                    <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Mis Formularios</h3>
+                <div className="w-full md:w-80 border-b md:border-b-0 md:border-r border-slate-100 bg-slate-50/30 overflow-y-auto p-4 md:p-6 space-y-4 max-h-48 md:max-h-full">
+                    <div className="flex justify-between items-center mb-2 md:mb-4">
+                        <h3 className="text-[10px] md:text-xs font-black text-slate-400 uppercase tracking-widest">Mis Formularios</h3>
                         <button
                             onClick={() => {
                                 setIsEditing(null);
@@ -148,16 +157,15 @@ const FormCreator = ({ onClose, isInline = false }) => {
                 </div>
 
                 {/* Editor */}
-                <div className="flex-1 overflow-y-auto p-12 bg-white">
+                <div className="flex-1 overflow-y-auto p-4 md:p-12 bg-white">
                     <div className="max-w-2xl mx-auto space-y-12">
-                        {/* Basics */}
-                        <div className="space-y-6">
+                        <div className="space-y-4 md:space-y-6">
                             <input
                                 type="text"
                                 value={name}
                                 onChange={e => setName(e.target.value)}
-                                placeholder="Nombre del Formulario..."
-                                className="w-full text-5xl font-black text-slate-900 border-none outline-none placeholder:text-slate-100 tracking-tight"
+                                placeholder="Nombre..."
+                                className="w-full text-2xl md:text-5xl font-black text-slate-900 border-none outline-none placeholder:text-slate-100 tracking-tight"
                             />
                             <textarea
                                 value={description}
@@ -178,25 +186,25 @@ const FormCreator = ({ onClose, isInline = false }) => {
                                 <motion.div
                                     layout
                                     key={field.id}
-                                    className="p-6 bg-white rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-all flex gap-6"
+                                    className="p-4 md:p-6 bg-white rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row gap-4 md:gap-6 relative"
                                 >
-                                    <div className="w-10 h-10 rounded-full bg-slate-50 text-slate-300 flex items-center justify-center shrink-0 cursor-move">
+                                    <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-slate-50 text-slate-300 flex items-center justify-center shrink-0 cursor-move">
                                         <GripVertical size={20} />
                                     </div>
 
                                     <div className="flex-1 space-y-4">
-                                        <div className="flex gap-4">
+                                        <div className="flex flex-col md:flex-row gap-2 md:gap-4">
                                             <input
                                                 type="text"
                                                 value={field.label}
                                                 onChange={e => updateField(field.id, { label: e.target.value })}
                                                 placeholder="Escribe la pregunta aquí..."
-                                                className="flex-1 bg-transparent text-lg font-black text-slate-800 outline-none border-b border-dashed border-slate-200 focus:border-emerald-500 pb-1"
+                                                className="flex-1 bg-transparent text-base md:text-lg font-black text-slate-800 outline-none border-b border-dashed border-slate-200 focus:border-emerald-500 pb-1"
                                             />
                                             <select
                                                 value={field.type}
                                                 onChange={e => updateField(field.id, { type: e.target.value })}
-                                                className="bg-slate-50 text-slate-600 font-bold px-4 py-2 rounded-xl text-xs border border-slate-100 outline-none"
+                                                className="bg-slate-50 text-slate-600 font-bold px-3 md:px-4 py-2 rounded-xl text-[10px] md:text-xs border border-slate-100 outline-none w-full md:w-auto"
                                             >
                                                 <option value="text">Texto Corto</option>
                                                 <option value="number">Número</option>
@@ -221,7 +229,7 @@ const FormCreator = ({ onClose, isInline = false }) => {
 
                                     <button
                                         onClick={() => removeField(field.id)}
-                                        className="p-2 text-slate-300 hover:text-red-500 transition-colors"
+                                        className="absolute top-4 right-4 md:relative md:top-0 md:right-0 p-2 text-slate-300 hover:text-red-500 transition-colors"
                                     >
                                         <Trash2 size={20} />
                                     </button>

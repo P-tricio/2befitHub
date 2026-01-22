@@ -81,7 +81,7 @@ const AthleteHome = () => {
 
                 {/* Bottom Row: Greeting */}
                 <div className="flex items-center gap-4">
-                    <Link to="/profile" className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center border border-slate-200 text-slate-400 hover:text-slate-600 hover:border-slate-300 transition-all shrink-0 overflow-hidden">
+                    <Link to="/training/profile" className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center border border-slate-200 text-slate-400 hover:text-slate-600 hover:border-slate-300 transition-all shrink-0 overflow-hidden">
                         {currentUser?.photoURL ? (
                             <img src={currentUser.photoURL} alt="Profile" className="w-full h-full object-cover" />
                         ) : (
@@ -304,6 +304,7 @@ const AddTaskModal = ({ onClose, onTaskCreated, userId }) => {
         else if (type === 'nutrition') { newTask.title = 'Nutrición'; }
         else if (type === 'checkin') { newTask.title = 'Check-in'; }
         else if (type === 'tracking') { newTask.title = 'Seguimiento'; }
+        else if (type === 'free_training') { newTask.title = 'Entrenamiento Libre'; }
 
         try {
             await TrainingDB.users.addTaskToSchedule(userId, today, newTask);
@@ -337,7 +338,8 @@ const AddTaskModal = ({ onClose, onTaskCreated, userId }) => {
                         { id: 'neat', label: 'Movimiento', icon: <Footprints size={20} />, color: 'emerald' },
                         { id: 'nutrition', label: 'Nutrición', icon: <Utensils size={20} />, color: 'orange' },
                         { id: 'checkin', label: 'Check-in', icon: <ClipboardList size={20} />, color: 'blue' },
-                        { id: 'tracking', label: 'Seguimiento', icon: <Scale size={20} />, color: 'indigo' }
+                        { id: 'tracking', label: 'Seguimiento', icon: <Scale size={20} />, color: 'indigo' },
+                        { id: 'free_training', label: 'Entreno Libre', icon: <Dumbbell size={20} />, color: 'slate' }
                     ].map(btn => (
                         <button
                             key={btn.id}

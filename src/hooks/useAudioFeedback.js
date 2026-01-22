@@ -46,28 +46,40 @@ export const useAudioFeedback = () => {
     }, []);
 
     // Patterns
-    const playTick = useCallback(() => playTone(880, 'sine', 0.05, 0.05), [playTone]); // Subtle tick
+    const playTick = useCallback(() => playTone(880, 'sine', 0.05, 0.1), [playTone]);
 
-    // Countdown: 3.. 2.. (Short)
-    const playCountdownShort = useCallback(() => playTone(660, 'sine', 0.1, 0.1), [playTone]);
+    // Countdown: 3.. 2.. (Short) - Pulse
+    const playCountdownShort = useCallback(() => playTone(660, 'sine', 0.15, 0.2), [playTone]);
 
-    // Countdown: 1 (Long/Finish)
-    const playCountdownFinal = useCallback(() => playTone(880, 'square', 0.4, 0.1), [playTone]); // BEEEEEP
+    // Countdown: 1 (Long/Finish) - Sharp
+    const playCountdownFinal = useCallback(() => playTone(440, 'square', 0.5, 0.15), [playTone]);
+
+    // Warning: Halfway point - Double beep
+    const playHalfway = useCallback(() => {
+        playTone(523, 'sine', 0.1, 0.15);
+        setTimeout(() => playTone(523, 'sine', 0.1, 0.15), 200);
+    }, [playTone]);
+
+    // Warning: 1 Minute - Low pulse
+    const playMinuteWarning = useCallback(() => {
+        playTone(330, 'triangle', 0.3, 0.2);
+    }, [playTone]);
 
     const playSuccess = useCallback(() => {
         if (!audioCtx.current) return;
-        // Simple ascending arpeggio
-        const now = audioCtx.current.currentTime;
         [523.25, 659.25, 783.99, 1046.50].forEach((freq, i) => {
-            // We can't reuse playTone easily for sequence without timing, so manual inline here or generic sequencer
-            setTimeout(() => playTone(freq, 'sine', 0.1, 0.1), i * 100);
+            setTimeout(() => playTone(freq, 'sine', 0.15, 0.15), i * 100);
         });
     }, [playTone]);
 
-    const playFailure = useCallback(() => playTone(150, 'sawtooth', 0.4, 0.2), [playTone]);
+    const playFailure = useCallback(() => playTone(150, 'sawtooth', 0.4, 0.25), [playTone]);
 
-    // Exposed method to force resume context on user interaction (e.g. Start Button)
+    // Exposed method to force resume context on user interaction
     const initAudio = useCallback(() => {
+        if (!audioCtx.current) {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            if (AudioContext) audioCtx.current = new AudioContext();
+        }
         if (audioCtx.current && audioCtx.current.state === 'suspended') {
             console.log('Resuming AudioContext on user gesture');
             audioCtx.current.resume();
@@ -78,6 +90,8 @@ export const useAudioFeedback = () => {
         playTick,
         playCountdownShort,
         playCountdownFinal,
+        playHalfway,
+        playMinuteWarning,
         playSuccess,
         playFailure,
         initAudio

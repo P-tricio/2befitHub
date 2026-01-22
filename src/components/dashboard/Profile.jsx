@@ -44,19 +44,15 @@ const Profile = () => {
             });
 
             const base64File = await toBase64(file);
-            // Safer extraction of base64 data by splitting at the comma
             const base64Data = base64File.split(',')[1];
 
-            // Use URLSearchParams to send as application/x-www-form-urlencoded
-            // This avoids issues with FormData/Multipart boundaries for Base64 strings
-            const params = new URLSearchParams();
-            params.append('image', base64Data);
+            const formData = new FormData();
+            formData.append('image', base64Data);
 
-            // Fetch with detailed error logging
             const apiKey = import.meta.env.VITE_IMGBB_API_KEY;
             const res = await fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, {
                 method: 'POST',
-                body: params,
+                body: formData,
             });
 
             const data = await res.json();
@@ -180,6 +176,13 @@ const Profile = () => {
 
                     <ProfileLink icon={Settings} label="Configuración" />
                     <ProfileLink icon={Shield} label="Privacidad" />
+                    <div className="my-2 border-t border-slate-50"></div>
+                    <ProfileLink
+                        icon={ArrowRight}
+                        label="Volver al HUB (Módulos)"
+                        onClick={() => navigate('/hub')}
+                        className="text-emerald-600 bg-emerald-50/30"
+                    />
                 </div>
             </div>
 

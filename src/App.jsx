@@ -35,14 +35,28 @@ const router = createBrowserRouter([
     path: "/",
     element: (
       <PrivateRoute>
+        <Navigate to="/training" replace />
+      </PrivateRoute>
+    ),
+  },
+  {
+    path: "/hub",
+    element: (
+      <PrivateRoute>
         <MainLayout />
       </PrivateRoute>
     ),
     children: [
       { index: true, element: <Home /> },
-      { path: "profile", element: <Profile /> },
-      { path: "*", element: <Navigate to="/" replace /> },
     ],
+  },
+  {
+    path: "/profile",
+    element: (
+      <PrivateRoute>
+        <Navigate to="/training/profile" replace />
+      </PrivateRoute>
+    ),
   },
 ]);
 

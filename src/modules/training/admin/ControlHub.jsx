@@ -7,19 +7,19 @@ const ControlHub = () => {
     const [activeTab, setActiveTab] = useState('forms'); // 'forms' | 'metrics'
 
     return (
-        <div className="max-w-6xl mx-auto p-6">
-            <header className="mb-8">
-                <h1 className="text-3xl font-black text-slate-900">Control o Seguimiento</h1>
-                <p className="text-slate-500 text-sm">Gestiona formularios de check-in y métricas personalizadas.</p>
+        <div className="max-w-6xl mx-auto p-3 md:p-6">
+            <header className="mb-6 md:mb-8">
+                <h1 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">Control o Seguimiento</h1>
+                <p className="text-slate-500 text-[10px] md:text-sm">Gestiona formularios de check-in y métricas personalizadas.</p>
             </header>
 
             {/* Tabs */}
-            <div className="flex gap-4 mb-8">
+            <div className="flex gap-2 md:gap-4 mb-6 md:mb-8">
                 <button
                     onClick={() => setActiveTab('forms')}
-                    className={`flex items-center gap-3 px-6 py-3 rounded-2xl font-bold transition-all ${activeTab === 'forms'
-                            ? 'bg-slate-900 text-white shadow-lg'
-                            : 'bg-white text-slate-500 hover:bg-slate-50 border border-slate-100'
+                    className={`flex-1 md:flex-none flex items-center justify-center md:justify-start gap-2 md:gap-3 px-4 md:px-6 py-2.5 md:py-3 rounded-2xl font-bold transition-all text-xs md:text-base ${activeTab === 'forms'
+                        ? 'bg-slate-900 text-white shadow-lg'
+                        : 'bg-white text-slate-500 hover:bg-slate-50 border border-slate-100'
                         }`}
                 >
                     <ClipboardList size={20} />
@@ -27,9 +27,9 @@ const ControlHub = () => {
                 </button>
                 <button
                     onClick={() => setActiveTab('metrics')}
-                    className={`flex items-center gap-3 px-6 py-3 rounded-2xl font-bold transition-all ${activeTab === 'metrics'
-                            ? 'bg-slate-900 text-white shadow-lg'
-                            : 'bg-white text-slate-500 hover:bg-slate-50 border border-slate-100'
+                    className={`flex-1 md:flex-none flex items-center justify-center md:justify-start gap-2 md:gap-3 px-4 md:px-6 py-2.5 md:py-3 rounded-2xl font-bold transition-all text-xs md:text-base ${activeTab === 'metrics'
+                        ? 'bg-slate-900 text-white shadow-lg'
+                        : 'bg-white text-slate-500 hover:bg-slate-50 border border-slate-100'
                         }`}
                 >
                     <Activity size={20} />
