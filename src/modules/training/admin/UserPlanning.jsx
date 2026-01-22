@@ -578,7 +578,7 @@ const UserPlanning = ({ user, onClose }) => {
                                                             <button
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
-                                                                    setSessionResultsTask({ task, session: sessions.find(s => s.id === task.sessionId) });
+                                                                    setSessionResultsTask(task);
                                                                 }}
                                                                 className="ml-1 p-0.5 bg-white/20 rounded hover:bg-white/40 transition-colors"
                                                                 title="Ver Resultados"
@@ -691,7 +691,7 @@ const UserPlanning = ({ user, onClose }) => {
                                                             {/* Result Link for Admins */}
                                                             {task.status === 'completed' && task.type === 'session' && (
                                                                 <button
-                                                                    onClick={() => setSessionResultsTask({ task, session: sessions.find(s => s.id === task.sessionId) })}
+                                                                    onClick={() => setSessionResultsTask(task)}
                                                                     className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-lg text-[10px] font-black uppercase hover:bg-emerald-200 transition-colors"
                                                                 >
                                                                     Ver Datos
@@ -802,6 +802,10 @@ const UserPlanning = ({ user, onClose }) => {
                             setAddTaskModalOpen(true);
                         }}
                         onDeleteTask={handleDeleteTask}
+                        onViewResults={(task) => {
+                            setDayDetailOpen(false);
+                            setSessionResultsTask(task);
+                        }}
                         getSessionName={getSessionName}
                         getSessionDetails={getSessionDetails}
                     />
@@ -861,6 +865,17 @@ const UserPlanning = ({ user, onClose }) => {
                     </div>
                 )}
             </AnimatePresence>
+            {/* Session Results Modal */}
+            <AnimatePresence>
+                {sessionResultsTask && (
+                    <SessionResultsModal
+                        task={sessionResultsTask}
+                        session={getSessionDetails(sessionResultsTask.sessionId)}
+                        userId={user.id}
+                        onClose={() => setSessionResultsTask(null)}
+                    />
+                )}
+            </AnimatePresence>
             {/* Form Creator Modal */}
             <AnimatePresence>
                 {isFormCreatorOpen && (
@@ -876,7 +891,7 @@ const UserPlanning = ({ user, onClose }) => {
 };
 
 // Sub-component for Day Details
-const DayDetailModal = ({ date, tasks, onClose, onAddSession, onAddProgram, onAddGeneric, onEditTask, onDeleteTask, getSessionName, getSessionDetails }) => {
+const DayDetailModal = ({ date, tasks, onClose, onAddSession, onAddProgram, onAddGeneric, onEditTask, onDeleteTask, onViewResults, getSessionName, getSessionDetails }) => {
     return (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
             <motion.div
@@ -920,7 +935,15 @@ const DayDetailModal = ({ date, tasks, onClose, onAddSession, onAddProgram, onAd
                                 </div>
                             )}
                             {tasks.map(task => (
-                                <div key={task.id} className="p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4 group">
+                                <div
+                                    key={task.id}
+                                    onClick={() => {
+                                        if (task.type === 'session' && (task.status === 'completed' || task.results)) {
+                                            onViewResults(task);
+                                        }
+                                    }}
+                                    className={`p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4 group ${task.type === 'session' && (task.status === 'completed' || task.results) ? 'cursor-pointer hover:border-slate-900 transition-all' : ''}`}
+                                >
                                     <div className={`
                                         w-10 h-10 rounded-full flex items-center justify-center text-white font-bold
                                         ${task.type === 'session' ? 'bg-slate-900' : ''}
@@ -934,8 +957,13 @@ const DayDetailModal = ({ date, tasks, onClose, onAddSession, onAddProgram, onAd
                                         {task.type === 'checkin' && <ClipboardList size={18} />}
                                     </div>
                                     <div className="flex-1">
-                                        <div className="font-bold text-slate-900">
-                                            {task.type === 'session' ? getSessionName(task.sessionId) : task.title}
+                                        <div className="flex items-center gap-2">
+                                            <div className="font-bold text-slate-900">
+                                                {task.type === 'session' ? getSessionName(task.sessionId) : task.title}
+                                            </div>
+                                            {task.status === 'completed' && (
+                                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                            )}
                                         </div>
                                         <div className="text-xs text-slate-500 capitalize">
                                             {task.type === 'session' ? (() => {
@@ -945,12 +973,21 @@ const DayDetailModal = ({ date, tasks, onClose, onAddSession, onAddProgram, onAd
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button onClick={() => onDeleteTask(task.id)} className="p-2 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-lg transition-colors">
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                onDeleteTask(task.id);
+                                            }}
+                                            className="p-2 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-lg transition-colors"
+                                        >
                                             <Trash2 size={16} />
                                         </button>
                                         {task.type !== 'session' && (
                                             <button
-                                                onClick={() => onEditTask(task)}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    onEditTask(task);
+                                                }}
                                                 className="p-2 hover:bg-slate-100 text-slate-400 hover:text-slate-900 rounded-lg transition-colors"
                                             >
                                                 <Edit2 size={16} />

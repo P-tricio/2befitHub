@@ -182,6 +182,10 @@ export const TrainingDB = {
             const snapshot = await getDocs(collection(db, 'users'));
             return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
         },
+        async getById(id) {
+            const snap = await getDoc(doc(db, 'users', id));
+            return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+        },
         async assignProgram(userId, programId) {
             const ref = doc(db, 'users', userId);
             await updateDoc(ref, {
