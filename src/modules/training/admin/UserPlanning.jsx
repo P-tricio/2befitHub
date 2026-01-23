@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, ChevronLeft, ChevronRight, Plus, X, Search, Check, Dumbbell, Footprints, ClipboardList, Utensils, Layers, MoreVertical, Trash2, Copy, Edit2, ArrowRight, Copy as DuplicateIcon, Scale, Ruler, Camera, Settings2, FileText, Zap } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight, Plus, X, Search, Check, Dumbbell, Footprints, ClipboardList, Utensils, Layers, MoreVertical, Trash2, Copy, Edit2, ArrowRight, Copy as DuplicateIcon, Scale, Ruler, Camera, Settings2, FileText, Zap, CheckSquare, Package, ListFilter } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TrainingDB } from '../services/db';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, getDay, addDays, startOfDay } from 'date-fns';
 import { es } from 'date-fns/locale';
 import SessionResultsModal from '../components/SessionResultsModal';
+import TaskResultsModal from '../components/TaskResultsModal';
 import FormCreator from './FormCreator';
 
-const UserPlanning = ({ user, onClose }) => {
+const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [schedule, setSchedule] = useState({}); // { "YYYY-MM-DD": sessionId }
     const [sessions, setSessions] = useState([]);
@@ -34,6 +35,7 @@ const UserPlanning = ({ user, onClose }) => {
     });
 
     const [sessionResultsTask, setSessionResultsTask] = useState(null);
+    const [taskResultsTask, setTaskResultsTask] = useState(null);
     const [isFormCreatorOpen, setIsFormCreatorOpen] = useState(false);
     const [availableForms, setAvailableForms] = useState([]);
 
@@ -130,8 +132,8 @@ const UserPlanning = ({ user, onClose }) => {
         switch (task.type) {
             case 'session': return <Dumbbell size={16} className="text-slate-900" />;
             case 'neat': return <Footprints size={16} className="text-emerald-500" />;
-            case 'nutrition': return <Utensils size={16} className="text-orange-400" />;
-            case 'checkin': return <ClipboardList size={16} className="text-blue-500" />;
+            case 'nutrition': return <CheckSquare size={16} className="text-orange-400" />;
+            case 'tracking': return <ClipboardList size={16} className="text-blue-500" />;
             default: return null;
         }
     };
@@ -140,8 +142,8 @@ const UserPlanning = ({ user, onClose }) => {
         switch (task.type) {
             case 'session': return sessions.find(s => s.id === task.sessionId)?.name || 'Sesión de Entrenamiento';
             case 'neat': return task.title || 'Actividad NEAT';
-            case 'nutrition': return task.title || 'Plan Nutricional';
-            case 'checkin': return task.title || 'Control';
+            case 'nutrition': return task.title || (task.config?.category ? `Hábitos ${task.config.category}` : 'Hábitos');
+            case 'tracking': return task.title || 'Seguimiento';
             default: return 'Tarea';
         }
     };
@@ -167,7 +169,8 @@ const UserPlanning = ({ user, onClose }) => {
         await appendTask(selectedDate, {
             id: crypto.randomUUID(),
             type: 'session',
-            sessionId: sessionId
+            sessionId: sessionId,
+            admin_assigned: true
         });
         setAddTaskModalOpen(false);
     };
@@ -197,7 +200,8 @@ const UserPlanning = ({ user, onClose }) => {
                 const newTasksForDay = sessionIds.map(sid => ({
                     id: crypto.randomUUID(),
                     type: 'session',
-                    sessionId: sid
+                    sessionId: sid,
+                    admin_assigned: true
                 }));
 
                 newScheduleItems[dateKey] = [...currentTasks, ...newTasksForDay];
@@ -402,28 +406,30 @@ const UserPlanning = ({ user, onClose }) => {
         setDragActionModal({ isOpen: false, task: null, sourceDate: null, targetDate: null });
     };
 
-    return (
-        <div className="fixed inset-0 z-[60] bg-white flex flex-col animate-in slide-in-from-right duration-300">
+    const content = (
+        <>
             {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-white gap-2">
-                <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-500 shrink-0">
-                        <ChevronLeft size={24} />
-                    </button>
-                    <div className="min-w-0">
-                        <h2 className="text-xl font-black text-slate-900 truncate">{user.displayName}</h2>
-                        <p className="text-xs text-slate-500 truncate">Planificación de Entrenamientos</p>
+            {!isEmbedded && (
+                <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-white gap-2">
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-500 shrink-0">
+                            <ChevronLeft size={24} />
+                        </button>
+                        <div className="min-w-0">
+                            <h2 className="text-xl font-black text-slate-900 truncate">{user.displayName}</h2>
+                            <p className="text-xs text-slate-500 truncate">Planificación de Entrenamientos</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                        <button
+                            onClick={() => { setSelectedDate(new Date()); setAddTaskModalOpen(true); }}
+                            className="px-4 py-2 bg-slate-900 text-white rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-slate-800 transition-colors"
+                        >
+                            <Plus size={16} /> <span className="hidden sm:inline">Añadir</span>
+                        </button>
                     </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                    <button
-                        onClick={() => { setSelectedDate(new Date()); setAddTaskModalOpen(true); }}
-                        className="px-4 py-2 bg-slate-900 text-white rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-slate-800 transition-colors"
-                    >
-                        <Plus size={16} /> <span className="hidden sm:inline">Añadir</span>
-                    </button>
-                </div>
-            </div>
+            )}
 
             {/* Calendar Controls */}
             <div className="flex items-center justify-between p-6 max-w-5xl mx-auto w-full">
@@ -557,8 +563,8 @@ const UserPlanning = ({ user, onClose }) => {
                                                             flex items-center gap-1 px-1 py-0.5 overflow-hidden cursor-grab active:cursor-grabbing touch-none
                                                             ${task.type === 'session' ? (task.status === 'completed' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-900 text-white') : ''}
                                                             ${task.type === 'neat' ? 'bg-emerald-500 text-white' : ''}
-                                                            ${task.type === 'nutrition' ? 'bg-orange-400 text-white' : ''}
-                                                            ${task.type === 'checkin' ? 'bg-blue-500 text-white' : ''}
+                                                            ${task.type === 'nutrition' ? 'bg-orange-500 text-white' : ''}
+                                                            ${task.type === 'tracking' || task.type === 'checkin' ? 'bg-blue-500 text-white' : ''}
                                                         `}
                                                     >
                                                         <div className="shrink-0 opacity-90">
@@ -566,8 +572,8 @@ const UserPlanning = ({ user, onClose }) => {
                                                                 <>
                                                                     {task.type === 'session' && <Dumbbell size={10} className="text-current" />}
                                                                     {task.type === 'neat' && <Footprints size={10} className="text-current" />}
-                                                                    {task.type === 'nutrition' && <Utensils size={10} className="text-current" />}
-                                                                    {task.type === 'checkin' && <ClipboardList size={10} className="text-current" />}
+                                                                    {task.type === 'nutrition' && <CheckSquare size={10} className="text-current" />}
+                                                                    {(task.type === 'tracking' || task.type === 'checkin') && <ClipboardList size={10} className="text-current" />}
                                                                 </>
                                                             )}
                                                         </div>
@@ -578,7 +584,11 @@ const UserPlanning = ({ user, onClose }) => {
                                                             <button
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
-                                                                    setSessionResultsTask(task);
+                                                                    if (task.type === 'session') {
+                                                                        setSessionResultsTask(task);
+                                                                    } else {
+                                                                        setTaskResultsTask(task);
+                                                                    }
                                                                 }}
                                                                 className="ml-1 p-0.5 bg-white/20 rounded hover:bg-white/40 transition-colors"
                                                                 title="Ver Resultados"
@@ -655,14 +665,14 @@ const UserPlanning = ({ user, onClose }) => {
                                                                 w-10 h-10 rounded-full flex items-center justify-center text-white shrink-0
                                                                 ${task.type === 'session' ? 'bg-slate-900' : ''}
                                                                 ${task.type === 'neat' ? 'bg-emerald-500' : ''}
-                                                                ${task.type === 'nutrition' ? 'bg-orange-400' : ''}
+                                                                ${task.type === 'nutrition' ? 'bg-orange-500' : ''}
                                                                 ${task.type === 'checkin' ? 'bg-blue-500' : ''}
                                                             `}>
                                                                 {task.status === 'completed' ? <Check size={18} strokeWidth={3} /> : (
                                                                     <>
                                                                         {task.type === 'session' && <Dumbbell size={18} />}
                                                                         {task.type === 'neat' && <Footprints size={18} />}
-                                                                        {task.type === 'nutrition' && <Utensils size={18} />}
+                                                                        {task.type === 'nutrition' && <CheckSquare size={18} />}
                                                                         {task.type === 'checkin' && <ClipboardList size={18} />}
                                                                     </>
                                                                 )}
@@ -683,15 +693,21 @@ const UserPlanning = ({ user, onClose }) => {
                                                                         })()
                                                                     )}
                                                                     {task.type === 'neat' && !task.status && 'NEAT'}
-                                                                    {task.type === 'nutrition' && !task.status && 'Nutrición'}
+                                                                    {task.type === 'nutrition' && !task.status && 'Hábitos'}
                                                                     {task.type === 'checkin' && !task.status && 'Control'}
                                                                 </div>
                                                             </div>
 
                                                             {/* Result Link for Admins */}
-                                                            {task.status === 'completed' && task.type === 'session' && (
+                                                            {task.status === 'completed' && (
                                                                 <button
-                                                                    onClick={() => setSessionResultsTask(task)}
+                                                                    onClick={() => {
+                                                                        if (task.type === 'session') {
+                                                                            setSessionResultsTask(task);
+                                                                        } else {
+                                                                            setTaskResultsTask(task);
+                                                                        }
+                                                                    }}
                                                                     className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-lg text-[10px] font-black uppercase hover:bg-emerald-200 transition-colors"
                                                                 >
                                                                     Ver Datos
@@ -771,11 +787,12 @@ const UserPlanning = ({ user, onClose }) => {
                                 id: crypto.randomUUID(),
                                 type,
                                 title: type === 'neat' ? 'Objetivo Movimiento'
-                                    : (type === 'nutrition' ? 'Hábitos Nutricionales'
+                                    : (type === 'nutrition' ? (config.category ? `Hábitos: ${config.category}` : 'Hábitos')
                                         : (type === 'free_training' ? 'Entrenamiento Libre'
-                                            : 'Control y Seguimiento')),
+                                            : 'Seguimiento')),
                                 completed: false,
-                                config: config
+                                config: config,
+                                admin_assigned: true
                             });
                             setAddTaskModalOpen(false);
                         }}
@@ -805,6 +822,10 @@ const UserPlanning = ({ user, onClose }) => {
                         onViewResults={(task) => {
                             setDayDetailOpen(false);
                             setSessionResultsTask(task);
+                        }}
+                        onViewTaskResults={(task) => {
+                            setDayDetailOpen(false);
+                            setTaskResultsTask(task);
                         }}
                         getSessionName={getSessionName}
                         getSessionDetails={getSessionDetails}
@@ -876,6 +897,16 @@ const UserPlanning = ({ user, onClose }) => {
                     />
                 )}
             </AnimatePresence>
+            {/* Task Results Modal */}
+            <AnimatePresence>
+                {taskResultsTask && (
+                    <TaskResultsModal
+                        task={taskResultsTask}
+                        onClose={() => setTaskResultsTask(null)}
+                    />
+                )}
+            </AnimatePresence>
+
             {/* Form Creator Modal */}
             <AnimatePresence>
                 {isFormCreatorOpen && (
@@ -886,12 +917,20 @@ const UserPlanning = ({ user, onClose }) => {
                     }} />
                 )}
             </AnimatePresence>
+        </>
+    );
+
+    if (isEmbedded) return content;
+
+    return (
+        <div className="fixed inset-0 z-[60] bg-white flex flex-col animate-in slide-in-from-right duration-300">
+            {content}
         </div>
     );
 };
 
 // Sub-component for Day Details
-const DayDetailModal = ({ date, tasks, onClose, onAddSession, onAddProgram, onAddGeneric, onEditTask, onDeleteTask, onViewResults, getSessionName, getSessionDetails }) => {
+const DayDetailModal = ({ date, tasks, onClose, onAddSession, onAddProgram, onAddGeneric, onEditTask, onDeleteTask, onViewResults, onViewTaskResults, getSessionName, getSessionDetails }) => {
     return (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
             <motion.div
@@ -938,23 +977,29 @@ const DayDetailModal = ({ date, tasks, onClose, onAddSession, onAddProgram, onAd
                                 <div
                                     key={task.id}
                                     onClick={() => {
-                                        if (task.type === 'session' && (task.status === 'completed' || task.results)) {
-                                            onViewResults(task);
+                                        if (task.results || task.status === 'completed') {
+                                            if (task.type === 'session') {
+                                                onViewResults(task);
+                                            } else {
+                                                onViewTaskResults(task);
+                                            }
+                                        } else {
+                                            onEditTask(task);
                                         }
                                     }}
-                                    className={`p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4 group ${task.type === 'session' && (task.status === 'completed' || task.results) ? 'cursor-pointer hover:border-slate-900 transition-all' : ''}`}
+                                    className={`p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4 group cursor-pointer hover:border-slate-900 transition-all ${(task.status === 'completed' || task.results) ? 'bg-slate-50' : ''}`}
                                 >
                                     <div className={`
                                         w-10 h-10 rounded-full flex items-center justify-center text-white font-bold
                                         ${task.type === 'session' ? 'bg-slate-900' : ''}
                                         ${task.type === 'neat' ? 'bg-emerald-500' : ''}
                                         ${task.type === 'nutrition' ? 'bg-orange-400' : ''}
-                                        ${task.type === 'checkin' ? 'bg-blue-500' : ''}
+                                        ${task.type === 'tracking' || task.type === 'checkin' ? 'bg-blue-500' : ''}
                                     `}>
                                         {task.type === 'session' && <Dumbbell size={18} />}
                                         {task.type === 'neat' && <Footprints size={18} />}
-                                        {task.type === 'nutrition' && <Utensils size={18} />}
-                                        {task.type === 'checkin' && <ClipboardList size={18} />}
+                                        {task.type === 'nutrition' && <CheckSquare size={18} />}
+                                        {(task.type === 'tracking' || task.type === 'checkin') && <ClipboardList size={18} />}
                                     </div>
                                     <div className="flex-1">
                                         <div className="flex items-center gap-2">
@@ -982,7 +1027,7 @@ const DayDetailModal = ({ date, tasks, onClose, onAddSession, onAddProgram, onAd
                                         >
                                             <Trash2 size={16} />
                                         </button>
-                                        {task.type !== 'session' && (
+                                        {!((task.status === 'completed' || task.results)) && (
                                             <button
                                                 onClick={(e) => {
                                                     e.stopPropagation();
@@ -1076,8 +1121,8 @@ const AddTaskModal = ({ user, date, sessions, programs, availableForms, taskToEd
                                     {sessions.filter(s => s.name.toLowerCase().includes(search.toLowerCase())).map(s => (
                                         <button
                                             key={s.id}
-                                            onClick={() => onAssignSession(s.id)}
-                                            className="w-full text-left p-3 rounded-lg hover:bg-emerald-50 hover:text-emerald-700 text-sm font-medium transition-colors"
+                                            onClick={() => taskToEdit ? onUpdateTask(taskToEdit.id, { sessionId: s.id }) : onAssignSession(s.id)}
+                                            className={`w-full text-left p-3 rounded-lg hover:bg-emerald-50 hover:text-emerald-700 text-sm font-medium transition-colors ${taskToEdit?.sessionId === s.id ? 'bg-emerald-50 text-emerald-700 font-bold' : ''}`}
                                         >
                                             {s.name}
                                         </button>
@@ -1139,8 +1184,8 @@ const AddTaskModal = ({ user, date, sessions, programs, availableForms, taskToEd
                     />
                     <GenericTaskSection
                         id="nutrition"
-                        label="Hábitos Nutricionales"
-                        icon={<Utensils size={20} className="text-orange-600" />}
+                        label="Hábitos / Mínimos"
+                        icon={<CheckSquare size={20} className="text-orange-600" />}
                         expanded={expanded === 'nutrition'}
                         toggle={() => toggle('nutrition')}
                         onAssign={(config) => taskToEdit ? onUpdateTask(taskToEdit.id, config) : onAssignGeneric('nutrition', config)}
@@ -1148,14 +1193,14 @@ const AddTaskModal = ({ user, date, sessions, programs, availableForms, taskToEd
                         user={user}
                     />
                     <GenericTaskSection
-                        id="checkin"
-                        label="Control / Seguimiento"
+                        id="tracking"
+                        label="Seguimiento"
                         icon={<ClipboardList size={20} className="text-blue-600" />}
-                        expanded={expanded === 'checkin'}
-                        toggle={() => toggle('checkin')}
-                        onAssign={(config) => taskToEdit ? onUpdateTask(taskToEdit.id, config) : onAssignGeneric('checkin', config)}
+                        expanded={expanded === 'tracking'}
+                        toggle={() => toggle('tracking')}
+                        onAssign={(config) => taskToEdit ? onUpdateTask(taskToEdit.id, config) : onAssignGeneric('tracking', config)}
                         availableForms={availableForms}
-                        initialConfig={taskToEdit?.type === 'checkin' ? taskToEdit.config : null}
+                        initialConfig={taskToEdit?.type === 'tracking' || taskToEdit?.type === 'checkin' ? taskToEdit.config : null}
                         isEdit={!!taskToEdit}
                     />
 
@@ -1184,20 +1229,20 @@ const GenericTaskSection = ({ id, label, icon, expanded, toggle, onAssign, avail
             return;
         }
         if (id === 'neat') setConfig({ type: 'steps', target: 10000 });
-        if (id === 'nutrition') setConfig({ habits: ['Azúcar', 'Alcohol', 'Procesados'] });
-        if (id === 'checkin') setConfig({ weight: true, metrics: true, photos: true, formId: null });
+        if (id === 'nutrition') setConfig({ habits: [], categories: ['nutrition'] });
+        if (id === 'tracking' || id === 'checkin') setConfig({ weight: true, metrics: true, photos: true, formId: null });
     }, [id, initialConfig]);
 
     const handleConfigChange = (key, value) => {
         setConfig(prev => ({ ...prev, [key]: value }));
     };
 
-    const handleToggleHabit = (habit) => {
-        const current = config.habits || [];
-        const updated = current.includes(habit)
-            ? current.filter(h => h !== habit)
-            : [...current, habit];
-        handleConfigChange('habits', updated);
+    const handleToggleCategory = (catId) => {
+        const current = config.categories || [];
+        const updated = current.includes(catId)
+            ? current.filter(c => c !== catId)
+            : [...current, catId];
+        handleConfigChange('categories', updated);
     };
 
     return (
@@ -1247,47 +1292,35 @@ const GenericTaskSection = ({ id, label, icon, expanded, toggle, onAssign, avail
                     {id === 'nutrition' && (
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">Hábitos Predefinidos (Admin)</label>
-                                <div className="grid grid-cols-1 gap-2">
-                                    {['Azúcar', 'Alcohol', 'Procesados', 'Agua (2L)', 'Fruta/Verdura'].map(habit => (
+                                <div className="flex justify-between items-center mb-2">
+                                    <label className="block text-[10px] font-bold text-slate-400 uppercase">Categorías de Hábitos</label>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 mb-4">
+                                    {[
+                                        { id: 'nutrition', label: 'Nutrición' },
+                                        { id: 'movement', label: 'Movimiento' },
+                                        { id: 'health', label: 'Salud' }
+                                    ].map(cat => (
                                         <button
-                                            key={habit}
-                                            onClick={() => handleToggleHabit(habit)}
-                                            className={`flex items-center justify-between p-3 rounded-xl border transition-all ${config.habits?.includes(habit) ? 'bg-orange-50 border-orange-200 text-orange-700' : 'bg-white border-slate-100 text-slate-500'}`}
+                                            key={cat.id}
+                                            onClick={() => handleToggleCategory(cat.id)}
+                                            className={`py-2 rounded-xl text-xs font-bold border transition-all ${config.categories?.includes(cat.id) ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-slate-500 border-slate-100 hover:bg-slate-50'}`}
                                         >
-                                            <span className="text-xs font-bold">{habit}</span>
-                                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${config.habits?.includes(habit) ? 'bg-orange-500 border-orange-500 text-white' : 'border-slate-200'}`}>
-                                                {config.habits?.includes(habit) && <Check size={12} strokeWidth={4} />}
+                                            <div className="flex items-center justify-center gap-2">
+                                                {config.categories?.includes(cat.id) && <Check size={12} />}
+                                                {cat.label}
                                             </div>
                                         </button>
                                     ))}
                                 </div>
+                                <p className="text-[10px] text-slate-400 italic">
+                                    El atleta marcará los hábitos de los grupos seleccionados.
+                                </p>
                             </div>
-
-                            {user?.minimums && user.minimums.length > 0 && (
-                                <div>
-                                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">Mis Mínimos (Atleta)</label>
-                                    <div className="grid grid-cols-1 gap-2">
-                                        {user.minimums.map(habit => (
-                                            <button
-                                                key={habit}
-                                                onClick={() => handleToggleHabit(habit)}
-                                                className={`flex items-center justify-between p-3 rounded-xl border transition-all ${config.habits?.includes(habit) ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-white border-slate-100 text-slate-500'}`}
-                                            >
-                                                <span className="text-xs font-bold">{habit}</span>
-                                                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${config.habits?.includes(habit) ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-200'}`}>
-                                                    {config.habits?.includes(habit) && <Check size={12} strokeWidth={4} />}
-                                                </div>
-                                            </button>
-                                        ))}
-                                    </div>
-                                    <p className="text-[10px] text-slate-400 mt-2 italic">* Estos hábitos han sido definidos por el propio atleta.</p>
-                                </div>
-                            )}
                         </div>
                     )}
 
-                    {id === 'checkin' && (
+                    {(id === 'tracking' || id === 'checkin') && (
                         <div className="space-y-3">
                             <label className="block text-[10px] font-bold text-slate-400 uppercase">Variables de seguimiento</label>
                             <div className="space-y-2">
@@ -1335,7 +1368,7 @@ const GenericTaskSection = ({ id, label, icon, expanded, toggle, onAssign, avail
                         onClick={() => onAssign(config)}
                         className="w-full py-3 bg-slate-900 text-white rounded-xl text-sm font-bold shadow-lg shadow-slate-900/20 active:scale-95 transition-all"
                     >
-                        Asignar Tarea
+                        {isEdit ? 'Guardar Cambios' : 'Asignar Tarea'}
                     </button>
                 </div>
             )}

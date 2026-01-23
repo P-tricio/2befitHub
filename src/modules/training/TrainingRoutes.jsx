@@ -5,6 +5,8 @@ import AthleteLayout from './athlete/AthleteLayout';
 import AthleteHome from './athlete/pages/AthleteHome';
 import AthleteAgenda from './athlete/pages/AthleteAgenda';
 import AthleteTracking from './athlete/pages/AthleteTracking';
+import AthleteHistory from './athlete/pages/AthleteHistory';
+import AthleteHabits from './athlete/pages/AthleteHabits';
 import Profile from '../../components/dashboard/Profile';
 
 // Admin Import (Lazy load or direct if needed)
@@ -34,10 +36,12 @@ const TrainingRoutes = () => {
                 <Route index element={<AthleteHome />} />
                 <Route path="agenda" element={<AthleteAgenda />} />
                 <Route path="tracking" element={<AthleteTracking />} />
+                <Route path="history" element={<AthleteHistory />} />
                 <Route path="profile" element={<Profile />} />
                 <Route path="shop" element={<div className='p-6 text-center text-slate-400'>Tienda (Próximamente)</div>} />
                 <Route path="bookings" element={<div className='p-6 text-center text-slate-400'>Reservas (Próximamente)</div>} />
-                <Route path="nutrition" element={<div className='p-6 text-center text-slate-400'>Nutrición (Próximamente)</div>} />
+                <Route path="nutrition" element={<Navigate to="/training/habits" replace />} />
+                <Route path="habits" element={<AthleteHabits />} />
             </Route>
 
             <Route path="session/:sessionId" element={<SessionRunner />} />

@@ -6,7 +6,7 @@ import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
 import SessionResultsModal from '../components/SessionResultsModal';
 
-const UserSessionHistory = ({ user, onClose }) => {
+const UserSessionHistory = ({ user, onClose, isEmbedded = false }) => {
     const [history, setHistory] = useState([]);
     const [sessionsMap, setSessionsMap] = useState({});
     const [loading, setLoading] = useState(true);
@@ -59,31 +59,33 @@ const UserSessionHistory = ({ user, onClose }) => {
         item.scheduledDate.includes(searchTerm)
     );
 
-    return (
-        <div className="fixed inset-0 z-[60] bg-white flex flex-col animate-in slide-in-from-right duration-300">
+    const content = (
+        <>
             {/* Header */}
-            <header className="flex items-center justify-between p-4 border-b border-slate-100 bg-white shrink-0">
-                <div className="flex items-center gap-3">
-                    <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-500">
-                        <X size={24} />
-                    </button>
-                    <div>
-                        <h2 className="text-xl font-black text-slate-900">{user.displayName}</h2>
-                        <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Historial de Entrenamientos</p>
+            {!isEmbedded && (
+                <header className="flex items-center justify-between p-4 border-b border-slate-100 bg-white shrink-0">
+                    <div className="flex items-center gap-3">
+                        <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-500">
+                            <X size={24} />
+                        </button>
+                        <div>
+                            <h2 className="text-xl font-black text-slate-900">{user.displayName}</h2>
+                            <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Historial de Entrenamientos</p>
+                        </div>
                     </div>
-                </div>
 
-                <div className="relative hidden md:block">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                    <input
-                        type="text"
-                        placeholder="Buscar por sesión o fecha..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:border-slate-900 transition-colors w-64"
-                    />
-                </div>
-            </header>
+                    <div className="relative hidden md:block">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                        <input
+                            type="text"
+                            placeholder="Buscar por sesión o fecha..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:border-slate-900 transition-colors w-64"
+                        />
+                    </div>
+                </header>
+            )}
 
             {/* List */}
             <div className="flex-1 overflow-y-auto bg-slate-50/50 p-4 md:p-8">
@@ -158,6 +160,14 @@ const UserSessionHistory = ({ user, onClose }) => {
                     />
                 )}
             </AnimatePresence>
+        </>
+    );
+
+    if (isEmbedded) return content;
+
+    return (
+        <div className="fixed inset-0 z-[60] bg-white flex flex-col animate-in slide-in-from-right duration-300">
+            {content}
         </div>
     );
 };

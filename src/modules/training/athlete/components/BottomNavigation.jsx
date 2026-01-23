@@ -1,13 +1,13 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Home, Calendar, ShoppingCart, CheckCircle2, Utensils, BarChart2 } from 'lucide-react';
+import { Home, Calendar, ShoppingCart, CheckSquare, BarChart2 } from 'lucide-react';
 
 const BottomNavigation = () => {
     const navItems = [
         { path: '/training', end: true, icon: <Home size={24} />, label: 'Home' },
         { path: '/training/agenda', icon: <Calendar size={24} />, label: 'Agenda' },
         { path: '/training/tracking', icon: <BarChart2 size={24} />, label: 'Seguimiento' },
-        { path: '/training/nutrition', icon: <Utensils size={24} />, label: 'Nutrición' },
+        { path: '/training/habits', icon: <CheckSquare size={24} />, label: 'Hábitos' },
     ];
 
     return (

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format } from 'date-fns';
-import { Camera, Trash2, X, Check, Footprints, Clock, Flame, Zap, Scale, Ruler, Utensils, FileText } from 'lucide-react';
+import { Camera, Trash2, X, Check, Footprints, Clock, Flame, Zap, Scale, Ruler, Utensils, FileText, Dumbbell } from 'lucide-react';
 import { TrainingDB } from '../../services/db';
 
 const IMGBB_API_KEY = import.meta.env.VITE_IMGBB_API_KEY;
@@ -20,7 +20,7 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
     const [uploading, setUploading] = useState(false);
 
     // Nutrition State
-    const [habitsResults, setHabitsResults] = useState({}); // { 'Azúcar': true, ... }
+    const [habitsResults, setHabitsResults] = useState({}); // { habitName: true/false }
 
     // Custom Metrics State
     const [customValues, setCustomValues] = useState({});
@@ -33,7 +33,18 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
     // Custom Form State
     const [formDefinition, setFormDefinition] = useState(null);
     const [formAnswers, setFormAnswers] = useState({});
-    const [userMinimums, setUserMinimums] = useState([]);
+    const [userMinimums, setUserMinimums] = useState({ nutrition: [], movement: [], health: [], uncategorized: [] });
+
+    const normalizeMinimums = (m) => {
+        if (!m) return { nutrition: [], movement: [], health: [], uncategorized: [] };
+        if (Array.isArray(m)) return { nutrition: m, movement: [], health: [], uncategorized: [] };
+        return {
+            nutrition: m.nutrition || [],
+            movement: m.movement || [],
+            health: m.health || [],
+            uncategorized: m.uncategorized || []
+        };
+    };
 
     // Determines the effective date for this checkin
     const dateKey = format(targetDate || new Date(), 'yyyy-MM-dd');
@@ -83,11 +94,13 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                     setFormDefinition(form);
                 }
 
-                // If nutrition, fetch user minimums
-                if (task.type === 'nutrition') {
+                // If nutrition/habits OR neat, fetch user minimums
+                if (task.type === 'nutrition' || task.type === 'neat') {
                     const snap = await TrainingDB.users.getAll();
                     const profile = snap.find(u => u.id === userId);
-                    if (profile?.minimums) setUserMinimums(profile.minimums);
+                    if (profile?.minimums) {
+                        setUserMinimums(normalizeMinimums(profile.minimums));
+                    }
                 }
             } catch (e) { console.error(e); }
         };
@@ -98,6 +111,12 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
         if (e.target.files && e.target.files[0]) {
             setPhotos(prev => ({ ...prev, [type]: e.target.files[0] }));
         }
+    };
+
+    const handleActivityTypeChange = (type) => {
+        setActivityType(type);
+        setDuration(0);
+        setRpe(null);
     };
 
     const handleCustomMetricChange = (metric, value) => {
@@ -121,15 +140,34 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                     taskSummary = `${duration} pasos`;
                 } else {
                     updateData.duration = parseInt(duration);
-                    taskSummary = `${duration} min • RPE ${rpe}`;
+                    taskSummary = `${duration} min`;
                 }
-                updateData.rpe = rpe;
-                taskResults = { duration, rpe, activityType };
+                taskResults = { duration, activityType };
             } else if (task.type === 'nutrition') {
                 updateData.habitsResults = habitsResults;
-                const totalHabitsList = [...(task.config?.habits || []), ...userMinimums];
-                const doneCount = Object.values(habitsResults).filter(v => v === true).length;
-                const totalCount = totalHabitsList.length;
+
+                const selectedCategories = task.config?.categories || (task.config?.category ? [task.config.category] : []);
+                let habitsToShow = [];
+
+                if (selectedCategories.length > 0 && !selectedCategories.includes('general')) {
+                    selectedCategories.forEach(cat => {
+                        if (userMinimums[cat]) {
+                            habitsToShow = [...habitsToShow, ...(userMinimums[cat] || [])];
+                        }
+                    });
+                } else {
+                    habitsToShow = [
+                        ...(task.config?.habits || []),
+                        ...userMinimums.nutrition,
+                        ...userMinimums.movement,
+                        ...userMinimums.health,
+                        ...userMinimums.uncategorized
+                    ];
+                }
+                habitsToShow = Array.from(new Set(habitsToShow));
+
+                const doneCount = habitsToShow.filter(h => habitsResults[h] === true).length;
+                const totalCount = habitsToShow.length;
                 taskSummary = `${doneCount}/${totalCount} hábitos`;
             } else if (task.type === 'checkin' || task.type === 'tracking') {
                 // Weight
@@ -197,6 +235,12 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                     updateData.formAnswers = formAnswers;
                     if (!taskSummary) taskSummary = "Formulario completo";
                 }
+            } else if (task.type === 'free_training') {
+                updateData.activityType = activityType;
+                updateData.duration = parseInt(duration);
+                updateData.rpe = rpe;
+                taskSummary = `${duration} min • RPE ${rpe} • ${activityType === 'gym' ? 'Fuerza' : activityType === 'cardio' ? 'Cardio' : 'Otro'}`;
+                taskResults = { duration, rpe, activityType };
             }
 
             if (notes) updateData[`notes_${task.type}`] = notes;
@@ -208,7 +252,8 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
             await TrainingDB.users.updateTaskInSchedule(userId, dateKey, task.id, {
                 summary: taskSummary || "Completado",
                 status: 'completed',
-                results: taskResults
+                results: taskResults,
+                is_new: false
             });
 
             onClose(true);
@@ -235,6 +280,7 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
     const isNeat = task.type === 'neat';
     const isNutrition = task.type === 'nutrition';
     const isCheckin = task.type === 'checkin' || task.type === 'tracking';
+    const isFreeTraining = task.type === 'free_training';
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
@@ -252,18 +298,21 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                 <div className="p-6 pb-4 border-b border-slate-50 flex justify-between items-center bg-slate-50/50 shrink-0">
                     <div>
                         <h3 className="text-xl font-black text-slate-900 flex items-center gap-2">
-                            {isNeat && 'Objetivo Movimiento'}
-                            {isNutrition && 'Hábitos Nutricionales'}
-                            {isCheckin && 'Control y Seguimiento'}
+                            {isNeat && 'Movimiento Extra'}
+                            {isFreeTraining && 'Entrenamiento Libre'}
+                            {isCheckin && 'Seguimiento'}
+                            {isNutrition && (task.config?.categories ? `Hábitos: ${task.config.categories.join(' + ')}` : 'Seguimiento de Hábitos')}
                         </h3>
                         <p className="text-xs text-slate-500 font-medium capitalize">
                             {format(new Date(dateKey + 'T12:00:00'), 'EEEE dd MMMM', { locale: undefined })}
                         </p>
                     </div>
                     <div className="flex gap-2">
-                        <button onClick={handleDelete} className="p-2 bg-red-50 border border-red-100 rounded-full hover:bg-red-100 shadow-sm text-red-400">
-                            <Trash2 size={18} />
-                        </button>
+                        {!task.admin_assigned && (
+                            <button onClick={handleDelete} className="p-2 bg-red-50 border border-red-100 rounded-full hover:bg-red-100 shadow-sm text-red-400">
+                                <Trash2 size={18} />
+                            </button>
+                        )}
                         <button onClick={() => onClose(false)} className="p-2 bg-white border border-slate-100 rounded-full hover:bg-slate-50 shadow-sm">
                             <X size={18} className="text-slate-400" />
                         </button>
@@ -271,57 +320,69 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                 </div>
 
                 <div className="p-6 space-y-8 overflow-y-auto">
-                    {/* --- NEAT Target Info --- */}
-                    {isNeat && task.config && (
-                        <div className="p-5 bg-emerald-50 rounded-[1.8rem] border border-emerald-100">
-                            <span className="text-[10px] font-black text-emerald-600 uppercase block mb-1 tracking-widest">Objetivo Semanal</span>
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-white rounded-xl shadow-sm">
-                                    {task.config.type === 'steps' ? <Footprints size={18} className="text-emerald-500" /> : <Clock size={18} className="text-emerald-500" />}
-                                </div>
-                                <span className="font-black text-emerald-900 text-xl">
-                                    {task.config.target} {task.config.type === 'steps' ? 'Pasos' : 'Minutos'}
-                                </span>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* --- NUTRITION HABITS --- */}
-                    {isNutrition && (
+                    {/* --- CATEGORIZED HABITS (Integrated) --- */}
+                    {(isNeat || isNutrition) && (
                         <div className="space-y-4">
-                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Hábitos de Hoy</label>
+                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">
+                                {isNeat ? 'Mínimos de Movimiento' : 'Hábitos de Hoy'}
+                            </label>
                             <div className="grid grid-cols-1 gap-2">
-                                {Array.from(new Set([...(task.config?.habits || ['Azúcar', 'Alcohol', 'Procesados']), ...userMinimums])).map(habit => {
-                                    const status = habitsResults[habit]; // true, false, or null/undefined
-                                    return (
-                                        <button
-                                            key={habit}
-                                            onClick={() => {
-                                                setHabitsResults(prev => {
-                                                    const current = prev[habit];
-                                                    if (current === true) return { ...prev, [habit]: false };
-                                                    if (current === false) return { ...prev, [habit]: null };
-                                                    return { ...prev, [habit]: true };
-                                                });
-                                            }}
-                                            className={`flex items-center justify-between p-4 rounded-3xl border transition-all 
-                                                ${status === true ? 'bg-emerald-50 border-emerald-200 text-emerald-700 shadow-md ring-1 ring-emerald-200' : ''}
-                                                ${status === false ? 'bg-red-50 border-red-200 text-red-700 shadow-md ring-1 ring-red-200' : ''}
-                                                ${status === null || status === undefined ? 'bg-white border-slate-100 text-slate-500' : ''}
-                                            `}
-                                        >
-                                            <span className="font-black">{habit}</span>
-                                            <div className={`w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all 
-                                                ${status === true ? 'bg-emerald-500 border-emerald-500 text-white scale-110' : ''}
-                                                ${status === false ? 'bg-red-500 border-red-500 text-white scale-110' : ''}
-                                                ${status === null || status === undefined ? 'border-slate-200' : ''}
-                                            `}>
-                                                {status === true && <Check size={16} strokeWidth={4} />}
-                                                {status === false && <X size={16} strokeWidth={4} />}
-                                            </div>
-                                        </button>
-                                    );
-                                })}
+                                {(() => {
+                                    let selectedCategories = task.config?.categories || (task.config?.category ? [task.config.category] : []);
+
+                                    // Default category for NEAT is movement
+                                    if (isNeat && selectedCategories.length === 0) {
+                                        selectedCategories = ['movement'];
+                                    }
+
+                                    let habitsToShow = [];
+                                    if (selectedCategories.length > 0 && !selectedCategories.includes('general')) {
+                                        selectedCategories.forEach(cat => {
+                                            if (userMinimums[cat]) {
+                                                habitsToShow = [...habitsToShow, ...(userMinimums[cat] || [])];
+                                            }
+                                        });
+                                    } else {
+                                        habitsToShow = [
+                                            ...(task.config?.habits || []),
+                                            ...userMinimums.nutrition,
+                                            ...userMinimums.movement,
+                                            ...userMinimums.health,
+                                            ...userMinimums.uncategorized
+                                        ];
+                                    }
+                                    return Array.from(new Set(habitsToShow)).map(habit => {
+                                        const status = habitsResults[habit];
+                                        return (
+                                            <button
+                                                key={habit}
+                                                onClick={() => {
+                                                    setHabitsResults(prev => {
+                                                        const current = prev[habit];
+                                                        if (current === true) return { ...prev, [habit]: false };
+                                                        if (current === false) return { ...prev, [habit]: null };
+                                                        return { ...prev, [habit]: true };
+                                                    });
+                                                }}
+                                                className={`flex items-center justify-between p-4 rounded-3xl border transition-all 
+                                                    ${status === true ? 'bg-emerald-50 border-emerald-200 text-emerald-700 shadow-md ring-1 ring-emerald-200' : ''}
+                                                    ${status === false ? 'bg-red-50 border-red-200 text-red-700 shadow-md ring-1 ring-red-200' : ''}
+                                                    ${status === null || status === undefined ? 'bg-white border-slate-100 text-slate-500' : ''}
+                                                `}
+                                            >
+                                                <span className="font-black text-sm">{habit}</span>
+                                                <div className={`w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all 
+                                                    ${status === true ? 'bg-emerald-500 border-emerald-500 text-white scale-110' : ''}
+                                                    ${status === false ? 'bg-red-500 border-red-500 text-white scale-110' : ''}
+                                                    ${status === null || status === undefined ? 'border-slate-200' : ''}
+                                                `}>
+                                                    {status === true && <Check size={16} strokeWidth={4} />}
+                                                    {status === false && <X size={16} strokeWidth={4} />}
+                                                </div>
+                                            </button>
+                                        );
+                                    });
+                                })()}
                             </div>
                         </div>
                     )}
@@ -332,12 +393,11 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                             <div className="flex gap-2">
                                 {[
                                     { id: 'steps', label: 'Pasos', icon: <Footprints size={20} /> },
-                                    { id: 'cardio', label: 'Cardio', icon: <Flame size={20} /> },
-                                    { id: 'other', label: 'Otros', icon: <Zap size={20} /> }
+                                    { id: 'time', label: 'Tiempo (min)', icon: <Clock size={20} /> }
                                 ].map(type => (
                                     <button
                                         key={type.id}
-                                        onClick={() => setActivityType(type.id)}
+                                        onClick={() => handleActivityTypeChange(type.id)}
                                         className={`flex-1 flex flex-col items-center gap-2 py-5 rounded-3xl border-2 transition-all ${activityType === type.id ? 'bg-slate-900 border-slate-900 text-white shadow-xl' : 'bg-white border-slate-100 text-slate-400 hover:border-emerald-200'}`}
                                     >
                                         {type.icon}
@@ -361,26 +421,82 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                                     className="w-full h-3 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-emerald-500"
                                 />
                             </div>
+                        </div>
+                    )}
 
-                            {activityType !== 'steps' && (
-                                <div>
-                                    <div className="flex justify-between items-end mb-5 px-1">
-                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Esfuerzo (RPE)</span>
-                                        <span className="text-4xl font-black text-slate-900">{rpe !== null ? rpe : '-'}</span>
-                                    </div>
-                                    <div className="grid grid-cols-5 gap-2">
-                                        {[2, 4, 6, 8, 10].map(val => (
-                                            <button
-                                                key={val}
-                                                onClick={() => setRpe(val)}
-                                                className={`h-14 rounded-2xl font-black text-lg border transition-all ${rpe === val ? 'bg-emerald-500 text-white border-emerald-500 scale-105 shadow-xl' : 'bg-white text-slate-400 border-slate-100 hover:bg-slate-50'}`}
-                                            >
-                                                {val}
-                                            </button>
-                                        ))}
-                                    </div>
+                    {/* --- FREE TRAINING FORM --- */}
+                    {isFreeTraining && (
+                        <div className="space-y-8">
+                            <div className="flex gap-2">
+                                {[
+                                    { id: 'gym', label: 'Fuerza', icon: <Dumbbell size={20} /> },
+                                    { id: 'cardio', label: 'Cardio', icon: <Flame size={20} /> },
+                                    { id: 'other', label: 'Otros', icon: <Zap size={20} /> }
+                                ].map(type => (
+                                    <button
+                                        key={type.id}
+                                        onClick={() => {
+                                            setActivityType(type.id);
+                                            if (type.id !== activityType) {
+                                                setDuration(0);
+                                                setRpe(null);
+                                            }
+                                        }}
+                                        className={`flex-1 flex flex-col items-center gap-2 py-5 rounded-3xl border-2 transition-all ${activityType === type.id ? 'bg-slate-900 border-slate-900 text-white shadow-xl' : 'bg-white border-slate-100 text-slate-400 hover:border-emerald-200'}`}
+                                    >
+                                        {type.icon}
+                                        <span className="text-[10px] font-black uppercase tracking-wider">{type.label}</span>
+                                    </button>
+                                ))}
+                            </div>
+
+                            <div>
+                                <div className="flex justify-between items-end mb-4 px-1">
+                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Duración</span>
+                                    <span className="text-4xl font-black text-slate-900">{duration} <span className="text-base text-slate-400 font-bold">min</span></span>
                                 </div>
-                            )}
+                                <input
+                                    type="range"
+                                    min="5"
+                                    max="180"
+                                    step="5"
+                                    value={duration}
+                                    onChange={e => setDuration(parseInt(e.target.value))}
+                                    className="w-full h-3 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                                />
+                            </div>
+
+                            <div>
+                                <div className="flex justify-between items-end mb-4 px-1">
+                                    <div className="space-y-1">
+                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Esfuerzo (RPE)</span>
+                                        <span className="text-xs font-bold text-emerald-600 uppercase tracking-widest">
+                                            {rpe === 0 ? 'Descanso' :
+                                                rpe <= 2 ? 'Muy Fácil' :
+                                                    rpe <= 4 ? 'Fácil' :
+                                                        rpe <= 6 ? 'Moderado' :
+                                                            rpe <= 8 ? 'Duro' :
+                                                                rpe === 9 ? 'Muy Duro' :
+                                                                    rpe === 10 ? 'Máximo' : '-'}
+                                        </span>
+                                    </div>
+                                    <span className="text-4xl font-black text-slate-900">{rpe !== null ? rpe : '-'}</span>
+                                </div>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="10"
+                                    step="1"
+                                    value={rpe || 0}
+                                    onChange={e => setRpe(parseInt(e.target.value))}
+                                    className="w-full h-3 bg-slate-100 rounded-full appearance-none cursor-pointer accent-emerald-500"
+                                />
+                                <div className="flex justify-between mt-2 px-1 text-[8px] font-black text-slate-300 uppercase tracking-widest">
+                                    <span>Muy Suave</span>
+                                    <span>Moderado</span>
+                                    <span>Máximo</span>
+                                </div>
+                            </div>
                         </div>
                     )}
 
@@ -563,7 +679,8 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                         disabled={saving}
                         className={`w-full py-5 text-white rounded-[2rem] font-black text-lg hover:brightness-105 active:scale-[0.98] transition-all disabled:opacity-50 shadow-2xl flex items-center justify-center gap-3 ${isNeat ? 'bg-emerald-500 shadow-emerald-500/30' :
                             isNutrition ? 'bg-orange-500 shadow-orange-500/30' :
-                                'bg-slate-900 shadow-slate-900/30'
+                                isFreeTraining ? 'bg-indigo-500 shadow-indigo-500/30' :
+                                    'bg-slate-900 shadow-slate-900/30'
                             }`}
                     >
                         {saving ? (

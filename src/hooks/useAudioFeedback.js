@@ -54,16 +54,27 @@ export const useAudioFeedback = () => {
     // Countdown: 1 (Long/Finish) - Sharp
     const playCountdownFinal = useCallback(() => playTone(440, 'square', 0.5, 0.15), [playTone]);
 
-    // Warning: Halfway point - Double beep
+    const speak = useCallback((text) => {
+        if (!window.speechSynthesis) return;
+        // Cancel any ongoing speech to avoid overlap
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'es-ES';
+        utterance.rate = 1.1; // Slightly faster for responsiveness
+        window.speechSynthesis.speak(utterance);
+    }, []);
+
+    // Warning: Halfway point - Speech + Beep
     const playHalfway = useCallback(() => {
         playTone(523, 'sine', 0.1, 0.15);
-        setTimeout(() => playTone(523, 'sine', 0.1, 0.15), 200);
-    }, [playTone]);
+        speak("Falta la mitad");
+    }, [playTone, speak]);
 
-    // Warning: 1 Minute - Low pulse
+    // Warning: 1 Minute - Speech + Beep
     const playMinuteWarning = useCallback(() => {
         playTone(330, 'triangle', 0.3, 0.2);
-    }, [playTone]);
+        speak("Un minuto");
+    }, [playTone, speak]);
 
     const playSuccess = useCallback(() => {
         if (!audioCtx.current) return;
@@ -94,6 +105,7 @@ export const useAudioFeedback = () => {
         playMinuteWarning,
         playSuccess,
         playFailure,
-        initAudio
+        initAudio,
+        speak
     };
 };

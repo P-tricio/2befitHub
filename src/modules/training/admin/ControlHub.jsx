@@ -1,16 +1,17 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ClipboardList, Activity, ChevronRight } from 'lucide-react';
+import { ClipboardList, Activity, ChevronRight, Package } from 'lucide-react';
 import FormCreator from './FormCreator';
+import HabitPackCreator from './HabitPackCreator';
 
 const ControlHub = () => {
-    const [activeTab, setActiveTab] = useState('forms'); // 'forms' | 'metrics'
+    const [activeTab, setActiveTab] = useState('forms'); // 'forms' | 'metrics' | 'packs'
 
     return (
         <div className="max-w-6xl mx-auto p-3 md:p-6">
             <header className="mb-6 md:mb-8">
                 <h1 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">Control o Seguimiento</h1>
-                <p className="text-slate-500 text-[10px] md:text-sm">Gestiona formularios de check-in y métricas personalizadas.</p>
+                <p className="text-slate-500 text-[10px] md:text-sm">Gestiona formularios de check-in, métricas personalizadas y packs de hábitos.</p>
             </header>
 
             {/* Tabs */}
@@ -35,18 +36,24 @@ const ControlHub = () => {
                     <Activity size={20} />
                     Métricas Custom
                 </button>
+                <button
+                    onClick={() => setActiveTab('packs')}
+                    className={`flex-1 md:flex-none flex items-center justify-center md:justify-start gap-2 md:gap-3 px-4 md:px-6 py-2.5 md:py-3 rounded-2xl font-bold transition-all text-xs md:text-base ${activeTab === 'packs'
+                        ? 'bg-slate-900 text-white shadow-lg'
+                        : 'bg-white text-slate-500 hover:bg-slate-50 border border-slate-100'
+                        }`}
+                >
+                    <Package size={20} />
+                    Packs de Hábitos
+                </button>
             </div>
 
             <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden min-h-[600px]">
                 {activeTab === 'forms' ? (
                     <div className="h-full">
-                        {/* We use FormCreator here, but we might need to adjust it to be "inline" rather than a full-screen modal if possible, 
-                            or just let it behave as it does. Actually FormCreator is currently a fixed inset-0 modal. 
-                            Let's refactor it to be used as a component.
-                        */}
                         <FormCreator isInline={true} />
                     </div>
-                ) : (
+                ) : activeTab === 'metrics' ? (
                     <div className="p-12 flex flex-col items-center justify-center text-center space-y-4">
                         <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center text-slate-300">
                             <Activity size={32} />
@@ -61,6 +68,10 @@ const ControlHub = () => {
                                 Característica en Desarrollo
                             </span>
                         </div>
+                    </div>
+                ) : (
+                    <div className="h-full">
+                        <HabitPackCreator isInline={true} />
                     </div>
                 )}
             </div>

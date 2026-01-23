@@ -4,7 +4,7 @@ import { TrainingDB } from '../../services/db';
 import { useAuth } from '../../../../context/AuthContext';
 import { onSnapshot, doc } from 'firebase/firestore';
 import { db } from '../../../../lib/firebase';
-import { Play, Clock, Dumbbell, Zap, Bell, MessageCircle, User as UserIcon, ChevronDown, Footprints, Utensils, ClipboardList, Plus, Camera, Scale, Check, X } from 'lucide-react';
+import { Play, Clock, Dumbbell, Zap, Bell, MessageCircle, User as UserIcon, ChevronDown, Footprints, Utensils, ClipboardList, Plus, Camera, Scale, Check, X, CheckSquare, Target } from 'lucide-react';
 import CheckinModal from '../components/CheckinModal';
 import SessionResultsModal from '../../components/SessionResultsModal';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -212,20 +212,19 @@ const AthleteHome = () => {
                                         <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-colors ${isCompleted ? 'bg-slate-50 text-slate-400' :
                                             task.type === 'neat' ? 'bg-emerald-50 text-emerald-500' :
                                                 task.type === 'nutrition' ? 'bg-orange-50 text-orange-500' :
-                                                    'bg-indigo-50 text-indigo-500'
+                                                    task.type === 'free_training' ? 'bg-slate-100 text-slate-600' :
+                                                        'bg-blue-50 text-blue-500'
                                             }`}>
                                             {task.type === 'neat' && <Footprints size={20} />}
-                                            {task.type === 'nutrition' && <Utensils size={20} />}
-                                            {task.type === 'checkin' && <ClipboardList size={20} />}
-                                            {task.type === 'tracking' && <Scale size={20} />}
+                                            {task.type === 'nutrition' && <CheckSquare size={20} />}
+                                            {(task.type === 'tracking' || task.type === 'checkin') && <ClipboardList size={20} />}
+                                            {task.type === 'free_training' && <Dumbbell size={20} />}
                                         </div>
                                         <div>
                                             <h3 className={`font-black ${isCompleted ? 'text-slate-400' : 'text-slate-800'}`}>
                                                 {task.title || 'Tarea Programada'}
                                             </h3>
-                                            <p className={`text-[10px] font-black uppercase tracking-widest ${isCompleted ? 'text-emerald-500' : 'text-slate-400'}`}>
-                                                {isCompleted ? (task.summary || 'COMPLETADO') : 'TOCA PARA REGISTRAR'}
-                                            </p>
+                                            {isCompleted ? (task.summary || 'COMPLETADO') : (task.type === 'nutrition' ? 'MARCAR HÁBITOS' : 'TOCA PARA REGISTRAR')}
                                         </div>
                                     </div>
                                     <div className="text-slate-200">
@@ -279,7 +278,18 @@ const AthleteHome = () => {
                 {checkinTask && (
                     <CheckinModal
                         task={checkinTask}
-                        onClose={() => setCheckinTask(null)}
+                        onClose={async (wasSaved) => {
+                            if (!wasSaved && checkinTask.is_new) {
+                                try {
+                                    const today = format(new Date(), 'yyyy-MM-dd');
+                                    const { _selectedDate, ...cleanTask } = checkinTask;
+                                    await TrainingDB.users.removeTaskFromSchedule(currentUser.uid, today, cleanTask);
+                                } catch (e) {
+                                    console.error("Error removing abandoned task:", e);
+                                }
+                            }
+                            setCheckinTask(null);
+                        }}
                         userId={currentUser.uid}
                         customMetrics={userCustomMetrics}
                     />
@@ -297,13 +307,14 @@ const AddTaskModal = ({ onClose, onTaskCreated, userId }) => {
         let newTask = {
             id: Date.now().toString(),
             type: type,
-            status: 'pending'
+            status: 'pending',
+            is_user_task: true,
+            is_new: true
         };
 
         if (type === 'neat') { newTask.title = 'Movimiento'; }
-        else if (type === 'nutrition') { newTask.title = 'Nutrición'; }
-        else if (type === 'checkin') { newTask.title = 'Check-in'; }
-        else if (type === 'tracking') { newTask.title = 'Seguimiento'; }
+        else if (type === 'nutrition') { newTask.title = 'Mis Hábitos'; }
+        else if (type === 'checkin' || type === 'tracking') { newTask.title = 'Seguimiento'; }
         else if (type === 'free_training') { newTask.title = 'Entrenamiento Libre'; }
 
         try {
@@ -336,9 +347,8 @@ const AddTaskModal = ({ onClose, onTaskCreated, userId }) => {
                 <div className="grid gap-3">
                     {[
                         { id: 'neat', label: 'Movimiento', icon: <Footprints size={20} />, color: 'emerald' },
-                        { id: 'nutrition', label: 'Nutrición', icon: <Utensils size={20} />, color: 'orange' },
-                        { id: 'checkin', label: 'Check-in', icon: <ClipboardList size={20} />, color: 'blue' },
-                        { id: 'tracking', label: 'Seguimiento', icon: <Scale size={20} />, color: 'indigo' },
+                        { id: 'nutrition', label: 'Hábitos', icon: <CheckSquare size={20} />, color: 'orange' },
+                        { id: 'tracking', label: 'Seguimiento', icon: <ClipboardList size={20} />, color: 'blue' },
                         { id: 'free_training', label: 'Entreno Libre', icon: <Dumbbell size={20} />, color: 'slate' }
                     ].map(btn => (
                         <button

@@ -4,7 +4,7 @@ import { useAuth } from '../../../../context/AuthContext';
 import { db } from '../../../../lib/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { TrainingDB } from '../../services/db';
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Bell, Zap, Footprints, Utensils, ClipboardList, LayoutGrid, Dumbbell, Scale, Plus, Camera, Check, X, User as UserIcon } from 'lucide-react';
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Bell, Zap, Footprints, Utensils, ClipboardList, LayoutGrid, Dumbbell, Scale, Plus, Camera, Check, X, User as UserIcon, CheckSquare } from 'lucide-react';
 import CheckinModal from '../components/CheckinModal';
 import SessionResultsModal from '../../components/SessionResultsModal';
 import { format, startOfWeek, addDays, isSameDay, subWeeks, addWeeks, startOfMonth, endOfMonth, eachDayOfInterval, subMonths, addMonths } from 'date-fns';
@@ -235,13 +235,14 @@ const AthleteAgenda = () => {
                                         task.type === 'session' ? 'bg-orange-50 text-orange-500' :
                                             task.type === 'neat' ? 'bg-emerald-50 text-emerald-500' :
                                                 task.type === 'nutrition' ? 'bg-orange-50 text-orange-500' :
-                                                    'bg-blue-50 text-blue-500'
+                                                    task.type === 'free_training' ? 'bg-slate-100 text-slate-600' :
+                                                        'bg-blue-50 text-blue-500'
                                         }`}>
                                         {task.type === 'session' && <Dumbbell size={20} />}
                                         {task.type === 'neat' && <Footprints size={20} />}
-                                        {task.type === 'nutrition' && <Utensils size={20} />}
-                                        {task.type === 'checkin' && <ClipboardList size={20} />}
-                                        {task.type === 'tracking' && <Scale size={20} />}
+                                        {task.type === 'nutrition' && <CheckSquare size={20} />}
+                                        {(task.type === 'tracking' || task.type === 'checkin') && <ClipboardList size={20} />}
+                                        {task.type === 'free_training' && <Dumbbell size={20} />}
                                     </div>
                                     <div>
                                         <h3 className={`font-black ${isCompleted ? 'text-slate-400 text-sm' : 'text-slate-800'}`}>

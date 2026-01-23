@@ -162,7 +162,7 @@ const Profile = () => {
             <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
                 <div className="divide-y divide-slate-50">
                     <ProfileLink icon={User} label="Datos Personales" onClick={handleStartEdit} />
-                    <ProfileLink icon={Award} label="Historial de Logros" />
+                    <ProfileLink icon={Award} label="Historial de Logros" onClick={() => navigate('/training/history')} />
 
                     {/* Admin Panel Button - Only for admins (or dev override) */}
                     {(user.role === 'admin' || user.email === 'pabloadrian91@gmail.com') && (

@@ -16,6 +16,10 @@ const router = createBrowserRouter([
     element: <Login />,
   },
   {
+    path: "/history",
+    element: <Navigate to="/training/history" replace />,
+  },
+  {
     path: "/training/admin/*",
     element: (
       <PrivateRoute>
@@ -57,6 +61,10 @@ const router = createBrowserRouter([
         <Navigate to="/training/profile" replace />
       </PrivateRoute>
     ),
+  },
+  {
+    path: "*",
+    element: <Navigate to="/" replace />,
   },
 ]);
 

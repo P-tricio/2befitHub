@@ -49,6 +49,7 @@ const SESSIONS = 'training_sessions';
 const PROGRAMS = 'training_programs';
 const LOGS = 'training_logs';
 const FORMS = 'training_forms';
+const HABIT_PACKS = 'training_habit_packs';
 
 export const TrainingDB = {
     forms: {
@@ -75,6 +76,32 @@ export const TrainingDB = {
         },
         async delete(id) {
             await deleteDoc(doc(db, FORMS, id));
+        }
+    },
+    habitPacks: {
+        async create(data) {
+            return await addDoc(collection(db, HABIT_PACKS), {
+                ...data,
+                createdAt: serverTimestamp()
+            });
+        },
+        async getAll() {
+            const snapshot = await getDocs(collection(db, HABIT_PACKS));
+            return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        },
+        async getById(id) {
+            const snapshot = await getDoc(doc(db, HABIT_PACKS, id));
+            return snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null;
+        },
+        async update(id, data) {
+            const ref = doc(db, HABIT_PACKS, id);
+            await updateDoc(ref, {
+                ...data,
+                updatedAt: serverTimestamp()
+            });
+        },
+        async delete(id) {
+            await deleteDoc(doc(db, HABIT_PACKS, id));
         }
     },
     // --- EXERCISES (Atoms) ---

@@ -416,6 +416,15 @@ const SessionRunner = () => {
                     </div>
                 </div>
 
+                <div className="flex flex-col items-center">
+                    <div className="flex items-center gap-2">
+                        <Clock size={12} className="text-emerald-500" />
+                        <span className="text-xs font-black tabular-nums text-white">
+                            {Math.floor(globalTime / 60)}:{(globalTime % 60).toString().padStart(2, '0')}
+                        </span>
+                    </div>
+                </div>
+
                 <div className="w-10 h-10 flex items-center justify-center rounded-full bg-slate-800/50 text-xs font-bold text-slate-500">
                     {currentIndex}/{timeline.length - 1}
                 </div>
@@ -757,12 +766,14 @@ const SummaryBlock = ({ sessionState, timeline, setSessionState, onFinish }) => 
             <div className="space-y-6">
                 <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Esfuerzo Percibido (RPE)</label>
-                    <div className="grid grid-cols-5 gap-2">
-                        {[2, 4, 6, 8, 10].map(val => (
+                    <div className="flex justify-between gap-1 overflow-x-auto pb-2 no-scrollbar">
+                        {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(val => (
                             <button
                                 key={val}
                                 onClick={() => setSessionState(prev => ({ ...prev, feedback: { ...prev.feedback, rpe: val } }))}
-                                className={`py-4 rounded-xl font-black border border-slate-700 transition-all ${sessionState.feedback.rpe === val ? 'bg-emerald-600 text-white border-emerald-600 shadow-lg shadow-emerald-900/50 scale-105' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
+                                className={`min-w-[40px] h-12 rounded-xl font-black transition-all flex items-center justify-center border-2 ${sessionState.feedback.rpe === val
+                                    ? 'bg-emerald-500 text-white border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.4)] scale-110'
+                                    : 'bg-slate-800 text-slate-500 border-slate-700 hover:border-slate-500'}`}
                             >
                                 {val}
                             </button>
@@ -1578,15 +1589,14 @@ const BlockFeedbackModal = ({ onConfirm, blockType }) => {
                                 <span className="text-4xl font-black text-white">{rpe !== null ? rpe : '-'}</span>
                             </div>
 
-                            <div className="grid grid-cols-6 gap-1.5 md:grid-cols-11">
+                            <div className="flex justify-between gap-1 overflow-x-auto pb-4 no-scrollbar">
                                 {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(val => (
                                     <button
                                         key={val}
                                         onClick={() => setRpe(val)}
-                                        className={`h-10 rounded-lg font-bold border transition-all text-xs ${rpe === val
-                                            ? 'bg-emerald-500 text-white border-emerald-500 shadow-lg shadow-emerald-500/30'
-                                            : 'bg-slate-700/50 text-slate-400 border-slate-700 hover:bg-slate-700'
-                                            }`}
+                                        className={`min-w-[32px] sm:min-w-[36px] h-12 rounded-xl font-black transition-all flex items-center justify-center border-2 ${rpe === val
+                                            ? 'bg-emerald-500 text-white border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.4)] scale-110'
+                                            : 'bg-slate-700/50 text-slate-500 border-slate-700/50 hover:border-slate-500'}`}
                                     >
                                         {val}
                                     </button>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Camera, TrendingUp, TrendingDown, Activity, ChevronRight, Scale, Ruler, Footprints, Utensils, Target, Plus, X } from 'lucide-react';
+import { Camera, TrendingUp, TrendingDown, Activity, ChevronRight, Scale, RollerCoaster } from 'lucide-react';
 import { TrainingDB } from '../../services/db';
 import { useAuth } from '../../../../context/AuthContext';
 import PhotoComparisonModal from '../../components/PhotoComparisonModal';
@@ -11,8 +11,6 @@ const AthleteTracking = () => {
     const { currentUser } = useAuth();
     const [isComparingPhotos, setIsComparingPhotos] = useState(false);
     const [history, setHistory] = useState([]);
-    const [minimums, setMinimums] = useState([]);
-    const [newMinimum, setNewMinimum] = useState('');
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -22,11 +20,6 @@ const AthleteTracking = () => {
                 // Fetch full tracking history for charts/stats
                 const data = await TrainingDB.tracking.getAll(currentUser.uid);
                 setHistory(data || []);
-
-                // Fetch user profile for minimums
-                const userSnapshot = await TrainingDB.users.getAll(); // This is not ideal, but for MVP
-                const profile = userSnapshot.find(u => u.id === currentUser.uid);
-                if (profile?.minimums) setMinimums(profile.minimums);
             } catch (err) {
                 console.error("Error loading tracking history", err);
             } finally {
@@ -35,20 +28,6 @@ const AthleteTracking = () => {
         };
         loadHistory();
     }, [currentUser]);
-
-    const handleAddMinimum = async () => {
-        if (!newMinimum.trim()) return;
-        const updated = [...minimums, newMinimum.trim()];
-        setMinimums(updated);
-        setNewMinimum('');
-        await TrainingDB.users.updateProfile(currentUser.uid, { minimums: updated });
-    };
-
-    const handleRemoveMinimum = async (index) => {
-        const updated = minimums.filter((_, i) => i !== index);
-        setMinimums(updated);
-        await TrainingDB.users.updateProfile(currentUser.uid, { minimums: updated });
-    };
 
     // Stats calculation
     const currentWeight = history.length > 0 ? history[0].weight : null;
@@ -121,51 +100,6 @@ const AthleteTracking = () => {
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Entradas totales</p>
                 </div>
             </div>
-
-            {/* User Minimums Section */}
-            <section className="bg-emerald-50 rounded-[2.5rem] p-8 border border-emerald-100 space-y-6">
-                <div className="flex justify-between items-start">
-                    <div>
-                        <h3 className="text-xl font-black text-emerald-900 flex items-center gap-2">
-                            <Target size={24} className="text-emerald-500" />
-                            Mis Mínimos
-                        </h3>
-                        <p className="text-emerald-700/60 text-[10px] font-bold uppercase tracking-widest mt-1">HÁBITOS PERSONALES</p>
-                    </div>
-                </div>
-
-                <div className="space-y-2">
-                    {minimums.map((min, i) => (
-                        <div key={i} className="flex items-center justify-between bg-white/60 backdrop-blur-sm px-4 py-3 rounded-2xl border border-emerald-200/50">
-                            <span className="font-bold text-emerald-900 text-sm">{min}</span>
-                            <button onClick={() => handleRemoveMinimum(i)} className="text-emerald-300 hover:text-rose-500 transition-colors">
-                                <X size={16} />
-                            </button>
-                        </div>
-                    ))}
-                </div>
-
-                <div className="flex gap-2">
-                    <input
-                        type="text"
-                        placeholder="Ej: Dormir 8h"
-                        value={newMinimum}
-                        onChange={(e) => setNewMinimum(e.target.value)}
-                        onKeyPress={(e) => e.key === 'Enter' && handleAddMinimum()}
-                        className="flex-1 bg-white border border-emerald-200 rounded-2xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 ring-emerald-400/20"
-                    />
-                    <button
-                        onClick={handleAddMinimum}
-                        className="bg-emerald-500 text-white w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg hover:bg-emerald-600 transition-colors shrink-0"
-                    >
-                        <Plus size={24} />
-                    </button>
-                </div>
-
-                <p className="text-[10px] text-emerald-600/60 font-medium italic px-2">
-                    Estos hábitos aparecerán en tus controles diarios para que puedas marcarlos.
-                </p>
-            </section>
 
             {/* List of Previous Logs */}
             <section className="space-y-4">

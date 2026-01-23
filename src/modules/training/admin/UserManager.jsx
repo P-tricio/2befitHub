@@ -1,9 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Search, User, Calendar, MoreVertical, Shield, ShieldOff, CalendarDays } from 'lucide-react';
 import { TrainingDB } from '../services/db';
-import UserPlanning from './UserPlanning';
 import UserTracking from './UserTracking';
-import UserSessionHistory from './UserSessionHistory';
 
 const UserManager = () => {
     const [users, setUsers] = useState([]);
@@ -11,9 +9,8 @@ const UserManager = () => {
     const [searchTerm, setSearchTerm] = useState('');
 
     // State for actions
-    const [planningUser, setPlanningUser] = useState(null);
-    const [trackingUser, setTrackingUser] = useState(null);
-    const [historyUser, setHistoryUser] = useState(null);
+    const [selectedUser, setSelectedUser] = useState(null);
+    const [initialTab, setInitialTab] = useState('metrics');
     const [activeMenuId, setActiveMenuId] = useState(null);
 
     // Close menu when clicking outside
@@ -56,32 +53,16 @@ const UserManager = () => {
         (u.displayName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         (u.email || '').toLowerCase().includes(searchTerm.toLowerCase())
     );
-    if (planningUser) {
-        return (
-            <UserPlanning
-                user={planningUser}
-                onClose={() => {
-                    setPlanningUser(null);
-                    loadData();
-                }}
-            />
-        );
-    }
-
-    if (historyUser) {
-        return (
-            <UserSessionHistory
-                user={historyUser}
-                onClose={() => setHistoryUser(null)}
-            />
-        );
-    }
-
-    if (trackingUser) {
+    if (selectedUser) {
         return (
             <UserTracking
-                user={trackingUser}
-                onClose={() => setTrackingUser(null)}
+                user={selectedUser}
+                initialTab={initialTab}
+                onClose={() => {
+                    setSelectedUser(null);
+                    setInitialTab('metrics');
+                    loadData();
+                }}
             />
         );
     }
@@ -119,7 +100,7 @@ const UserManager = () => {
                     <tbody className="divide-y divide-slate-50">
                         {filteredUsers.map(user => (
                             <tr key={user.id} className="group hover:bg-slate-50/50 transition-colors">
-                                <td className="p-4 pl-6">
+                                <td className="p-4 pl-6 cursor-pointer" onClick={() => setSelectedUser(user)}>
                                     <div className="flex items-center gap-3">
                                         <div className="w-10 h-10 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-sm">
                                             {user.displayName?.[0] || 'U'}
@@ -132,7 +113,10 @@ const UserManager = () => {
                                 </td>
                                 <td className="p-4">
                                     <button
-                                        onClick={() => handleToggleStatus(user)}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleToggleStatus(user);
+                                        }}
                                         className={`
                                             px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border transition-all
                                             ${user.status === 'inactive'
@@ -147,7 +131,10 @@ const UserManager = () => {
                                 <td className="p-4 pr-6">
                                     <div className="flex justify-end items-center gap-2">
                                         <button
-                                            onClick={() => setPlanningUser(user)}
+                                            onClick={() => {
+                                                setSelectedUser(user);
+                                                setInitialTab('planning');
+                                            }}
                                             className="px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-bold hover:bg-slate-800 transition-colors flex items-center gap-2"
                                         >
                                             <CalendarDays size={14} />
@@ -169,13 +156,19 @@ const UserManager = () => {
                                             {activeMenuId === user.id && (
                                                 <div className="absolute right-0 top-full mt-1 w-40 bg-white rounded-xl shadow-xl border border-slate-100 py-1 z-20 animate-in fade-in zoom-in-95 duration-200">
                                                     <button
-                                                        onClick={() => setTrackingUser(user)}
+                                                        onClick={() => {
+                                                            setSelectedUser(user);
+                                                            setInitialTab('metrics');
+                                                        }}
                                                         className="w-full text-left px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors"
                                                     >
                                                         Ver Información / Seguimiento
                                                     </button>
                                                     <button
-                                                        onClick={() => setHistoryUser(user)}
+                                                        onClick={() => {
+                                                            setSelectedUser(user);
+                                                            setInitialTab('history');
+                                                        }}
                                                         className="w-full text-left px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors"
                                                     >
                                                         Historial
@@ -201,7 +194,11 @@ const UserManager = () => {
             {/* Mobile Card View (Visible only on small screens) */}
             <div className="md:hidden space-y-3">
                 {filteredUsers.map(user => (
-                    <div key={user.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                    <div
+                        key={user.id}
+                        onClick={() => setSelectedUser(user)}
+                        className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm cursor-pointer active:scale-[0.98] transition-all"
+                    >
                         <div className="flex justify-between items-start mb-3">
                             <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-sm">
@@ -213,7 +210,10 @@ const UserManager = () => {
                                 </div>
                             </div>
                             <button
-                                onClick={() => handleToggleStatus(user)}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleToggleStatus(user);
+                                }}
                                 className={`
                                     px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border transition-all
                                     ${user.status === 'inactive'
@@ -228,7 +228,10 @@ const UserManager = () => {
 
                         <div className="flex items-center gap-2 mt-4 pt-3 border-t border-slate-50">
                             <button
-                                onClick={() => setPlanningUser(user)}
+                                onClick={() => {
+                                    setSelectedUser(user);
+                                    setInitialTab('planning');
+                                }}
                                 className="flex-1 bg-slate-900 text-white py-2 rounded-lg text-xs font-bold hover:bg-slate-800 transition-colors flex items-center justify-center gap-2"
                             >
                                 <CalendarDays size={14} />
@@ -247,13 +250,19 @@ const UserManager = () => {
                                 {activeMenuId === user.id && (
                                     <div className="absolute right-0 bottom-full mb-2 w-40 bg-white rounded-xl shadow-xl border border-slate-100 py-1 z-20 text-left animate-in fade-in zoom-in-95 duration-200">
                                         <button
-                                            onClick={() => setTrackingUser(user)}
+                                            onClick={() => {
+                                                setSelectedUser(user);
+                                                setInitialTab('metrics');
+                                            }}
                                             className="w-full text-left px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors"
                                         >
                                             Ver Información / Seguimiento
                                         </button>
                                         <button
-                                            onClick={() => setHistoryUser(user)}
+                                            onClick={() => {
+                                                setSelectedUser(user);
+                                                setInitialTab('history');
+                                            }}
                                             className="w-full text-left px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors"
                                         >
                                             Historial
