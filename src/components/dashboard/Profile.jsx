@@ -36,42 +36,13 @@ const Profile = () => {
         setUploading(true);
 
         try {
-            // Convert to Base64 to avoid potential FormData/File object issues with some browser extensions
-            const toBase64 = (file) => new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.readAsDataURL(file);
-                reader.onload = () => resolve(reader.result);
-                reader.onerror = error => reject(error);
-            });
-
-            const base64File = await toBase64(file);
-            const base64Data = base64File.split(',')[1];
-
-            const formData = new FormData();
-            formData.append('image', base64Data);
-
-            const apiKey = import.meta.env.VITE_IMGBB_API_KEY;
-            const res = await fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, {
-                method: 'POST',
-                body: formData,
-            });
-
-            const data = await res.json();
-
-            if (data.success) {
-                setNewPhotoURL(data.data.url);
-            } else {
-                console.error('ImgBB Upload Error:', data);
-                // Show specific error from API if available
-                const errorMsg = data.error ? (data.error.message || data.error) : 'Error desconocido';
-                alert(`Error al subir imagen (ImgBB): ${errorMsg}`);
-            }
+            const url = await uploadToImgBB(file);
+            setNewPhotoURL(url);
         } catch (error) {
-            console.error('Upload Exception:', error);
-            alert('Error de conexión al subir imagen. Revisa la consola para más detalles.');
+            console.error('Upload Error:', error);
+            alert(`Error al subir imagen: ${error.message}`);
         } finally {
             setUploading(false);
-            // Reset input value to allow selecting same file again if needed
             e.target.value = '';
         }
     };
@@ -170,7 +141,7 @@ const Profile = () => {
                         <ProfileLink
                             icon={ShieldCheck}
                             label="Panel de Administración"
-                            onClick={() => navigate('/training/admin/global-creator')}
+                            onClick={() => navigate('/training/admin/users')}
                             className="bg-indigo-50/50"
                         />
                     )}

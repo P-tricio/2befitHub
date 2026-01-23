@@ -2,7 +2,14 @@
  * Centralized service for handling image uploads via ImgBB
  */
 
-const IMGBB_API_KEY = import.meta.env.VITE_IMGBB_API_KEY;
+const IMGBB_API_KEY = import.meta.env.VITE_IMGBB_API_KEY?.trim();
+
+// Diagnostic log (masking the key for security)
+if (IMGBB_API_KEY) {
+    console.log(`[imageService] API Key detected: ${IMGBB_API_KEY.slice(0, 4)}...${IMGBB_API_KEY.slice(-4)}`);
+} else {
+    console.warn("[imageService] API Key NOT detected. Check your .env file.");
+}
 
 /**
  * Uploads an image to ImgBB and returns the URL.
@@ -14,12 +21,11 @@ const IMGBB_API_KEY = import.meta.env.VITE_IMGBB_API_KEY;
 export const uploadToImgBB = async (image) => {
     // 1. Validate API Key
     if (!IMGBB_API_KEY) {
-        console.error("VITE_IMGBB_API_KEY is not defined in the environment.");
-        throw new Error("Configuración del servidor incompleta (API Key faltante). Por favor, contacta con soporte.");
+        throw new Error("Configuración del servidor incompleta (API Key faltante).");
     }
 
     if (!image) {
-        throw new Error("No se ha proporcionado ninguna imagen para subir.");
+        throw new Error("No se ha proporcionado ninguna imagen.");
     }
 
     try {
@@ -27,11 +33,9 @@ export const uploadToImgBB = async (image) => {
 
         // Handle different image formats
         if (typeof image === 'string') {
-            // If it's a base64 string with the prefix, extract only the data part
             const base64Data = image.includes(',') ? image.split(',')[1] : image;
             formData.append('image', base64Data);
         } else {
-            // It's a File object
             formData.append('image', image);
         }
 
@@ -46,15 +50,15 @@ export const uploadToImgBB = async (image) => {
             return data.data.url;
         } else {
             console.error("ImgBB Upload Error Response:", data);
-            const errorMsg = data.error?.message || "Error desconocido al procesar la imagen.";
-            // Map common errors for better UX
-            if (errorMsg.includes("Invalid API key")) {
-                throw new Error("Error de configuración: API Key de imagen no válida.");
+            const errorMsg = data.error?.message || "Error desconocido.";
+
+            if (errorMsg.toLowerCase().includes("invalid api key")) {
+                throw new Error("La API Key de ImgBB no es válida. Revisa la consola.");
             }
             throw new Error(`Error de ImgBB: ${errorMsg}`);
         }
     } catch (error) {
         console.error("Upload Exception:", error);
-        throw error.message ? error : new Error("Error de conexión al subir la imagen. Comprueba tu conexión a internet.");
+        throw error;
     }
 };

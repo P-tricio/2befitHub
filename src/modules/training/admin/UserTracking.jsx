@@ -128,9 +128,9 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
     const chartData = getSmoothedData(history, activeMetric);
 
     return (
-        <div className="fixed inset-0 z-[60] bg-white flex flex-col animate-in slide-in-from-right duration-300">
+        <div className="fixed inset-0 w-full h-full z-[100] bg-white flex flex-col animate-in slide-in-from-right duration-300">
             {/* Header Redesigned */}
-            <div className="sticky top-0 z-[70] bg-white border-b border-slate-100 px-4 py-2">
+            <div className="relative z-[110] bg-white border-b border-slate-100 px-4 py-2 shrink-0">
                 <div className="max-w-[1600px] mx-auto flex items-center justify-between gap-4">
                     {/* Left: Close & Title */}
                     <div className="flex items-center gap-4">
