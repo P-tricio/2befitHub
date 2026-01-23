@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, subMonths, addMonths, startOfWeek, addDays } from 'date-fns';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, subMonths, addMonths, startOfWeek, endOfWeek, addDays, isAfter, startOfDay, getDay } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check, X, Utensils, Footprints, Heart, Calendar as CalendarIcon, ChevronLeft, ChevronRight, Info, Target, Plus } from 'lucide-react';
@@ -23,6 +23,17 @@ const AthleteHabits = ({ userId, isAdminView = false }) => {
     const [newHabit, setNewHabit] = useState('');
     const [showAddHabit, setShowAddHabit] = useState(false);
     const [activeFilters, setActiveFilters] = useState(['nutrition', 'movement', 'health', 'uncategorized']);
+    const isWeekly = userProfile?.habitFrequency === 'weekly';
+
+    // Normalize selectedDate for Weekly Mode (Always use Sunday)
+    const effectiveSelectedDate = isWeekly ? endOfWeek(selectedDate, { weekStartsOn: 1 }) : selectedDate;
+    const selectedEntry = monthlyData[format(effectiveSelectedDate, 'yyyy-MM-dd')] || { habitsResults: {} };
+
+    // Restriction Logic
+    const today = startOfDay(new Date());
+    const isFuture = isAfter(startOfDay(effectiveSelectedDate), today);
+    const isSunday = getDay(selectedDate) === 0;
+    const canEdit = isAdminView || (!isFuture && (isWeekly ? isSunday : true));
 
     useEffect(() => {
         if (!currentUserId) return;
@@ -52,13 +63,19 @@ const AthleteHabits = ({ userId, isAdminView = false }) => {
         }
     };
 
-    const handleSetStatus = async (habitName, date, targetStatus) => {
-        const dateKey = format(date, 'yyyy-MM-dd');
+    const handleSetStatus = async (habit, date, targetStatus) => {
+        const habitName = typeof habit === 'string' ? habit : habit.name;
+        const dateKey = format(isWeekly ? endOfWeek(date, { weekStartsOn: 1 }) : date, 'yyyy-MM-dd');
         const entry = monthlyData[dateKey] || { date: dateKey, habitsResults: {} };
         const currentStatus = entry.habitsResults?.[habitName];
 
-        // Toggle off if clicking the same status
-        const nextStatus = currentStatus === targetStatus ? null : targetStatus;
+        let nextStatus;
+        if (isWeekly) {
+            nextStatus = targetStatus; // targetStatus is the number (0-7)
+        } else {
+            // Toggle off if clicking the same status
+            nextStatus = currentStatus === targetStatus ? null : targetStatus;
+        }
 
         const updatedResults = { ...(entry.habitsResults || {}), [habitName]: nextStatus };
 
@@ -86,11 +103,12 @@ const AthleteHabits = ({ userId, isAdminView = false }) => {
         const currentMinimums = userProfile?.minimums || {};
         const uncategorized = currentMinimums.uncategorized || [];
 
-        if (uncategorized.includes(newHabit.trim())) return;
+        if (uncategorized.find(h => (typeof h === 'string' ? h : h.name) === newHabit.trim())) return;
 
+        const hbObj = { name: newHabit.trim(), target: 7 };
         const updatedMinimums = {
             ...currentMinimums,
-            uncategorized: [...uncategorized, newHabit.trim()]
+            uncategorized: [...uncategorized, hbObj]
         };
 
         setUserProfile(prev => ({ ...prev, minimums: updatedMinimums }));
@@ -106,16 +124,36 @@ const AthleteHabits = ({ userId, isAdminView = false }) => {
     };
 
     const getDayStatus = (date) => {
-        const dateKey = format(date, 'yyyy-MM-dd');
+        const dateKey = format(isWeekly ? endOfWeek(date, { weekStartsOn: 1 }) : date, 'yyyy-MM-dd');
         const entry = monthlyData[dateKey];
         if (!entry || !entry.habitsResults) return 'pending';
 
         const results = entry.habitsResults;
-        const habits = getFilteredMinimums();
+        const rawHabits = getFilteredMinimums();
 
-        if (habits.length === 0) return 'pending';
+        if (rawHabits.length === 0) return 'pending';
 
-        const activeResults = habits.filter(h => results[h] !== undefined && results[h] !== null);
+        if (isWeekly) {
+            // Success if all targets are met
+            const allTargetsMet = rawHabits.every(h => {
+                const hName = typeof h === 'string' ? h : h.name;
+                const hTarget = typeof h === 'string' ? 7 : (h.target || 7);
+                const val = results[hName];
+                return val !== undefined && val !== null && parseInt(val) >= hTarget;
+            });
+            if (allTargetsMet) return 'success';
+
+            // Partial if any progress made
+            const someProgress = rawHabits.some(h => {
+                const hName = typeof h === 'string' ? h : h.name;
+                const val = results[hName];
+                return val !== undefined && val !== null && parseInt(val) > 0;
+            });
+            return someProgress ? 'partial' : 'pending';
+        }
+
+        const habits = rawHabits.map(h => typeof h === 'string' ? h : h.name);
+        const activeResults = habits.filter(hName => results[hName] !== undefined && results[hName] !== null);
         if (activeResults.length === 0) return 'pending';
 
         const failed = habits.some(h => results[h] === false);
@@ -136,7 +174,7 @@ const AthleteHabits = ({ userId, isAdminView = false }) => {
             ...(m.movement || []),
             ...(m.health || []),
             ...(m.uncategorized || [])
-        ];
+        ].map(h => typeof h === 'string' ? { name: h, target: 7 } : h);
     };
 
     const getFilteredMinimums = () => {
@@ -198,11 +236,11 @@ const AthleteHabits = ({ userId, isAdminView = false }) => {
                                 key={date.toString()}
                                 onClick={() => setSelectedDate(date)}
                                 className={`relative h-10 w-full flex items-center justify-center rounded-2xl text-sm font-bold transition-all
-                                    ${isSelected ? 'scale-110 z-10 shadow-md ring-2 ring-slate-900' : 'hover:bg-slate-50'}
-                                    ${status === 'success' ? 'bg-emerald-500 text-white' :
-                                        status === 'fail' ? 'bg-rose-500 text-white' :
-                                            status === 'partial' ? 'bg-amber-400 text-white' :
-                                                'bg-slate-50 text-slate-400'}
+                                    ${isSelected ? 'scale-110 z-10 shadow-md ring-2 ring-slate-900 text-slate-900 bg-white' : 'hover:bg-slate-50 text-slate-400'}
+                                    ${status === 'success' ? '!bg-emerald-500 !text-white' :
+                                        status === 'fail' ? '!bg-rose-500 !text-white' :
+                                            status === 'partial' ? '!bg-amber-400 !text-white' :
+                                                'bg-slate-50'}
                                     ${isToday && !isSelected ? 'ring-1 ring-slate-200' : ''}
                                 `}
                             >
@@ -215,7 +253,7 @@ const AthleteHabits = ({ userId, isAdminView = false }) => {
         );
     };
 
-    const selectedEntry = monthlyData[format(selectedDate, 'yyyy-MM-dd')] || { habitsResults: {} };
+    // Calendar and Entry logic consolidated at top
 
     return (
         <div className="p-6 max-w-lg mx-auto space-y-8 pb-32">
@@ -263,15 +301,24 @@ const AthleteHabits = ({ userId, isAdminView = false }) => {
 
             <section className="space-y-6">
                 <div className="flex justify-between items-end px-2">
-                    <h2 className="text-xl font-black text-slate-900 capitalize">
-                        {isSameDay(selectedDate, new Date()) ? 'Hoy' : format(selectedDate, 'EEEE, d MMMM', { locale: es })}
-                    </h2>
-                    <button
-                        onClick={() => setShowAddHabit(true)}
-                        className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-full uppercase tracking-wider hover:bg-emerald-100 transition-all flex items-center gap-1"
-                    >
-                        <Plus size={14} /> Añadir Mínimo
-                    </button>
+                    <div className="space-y-1">
+                        <h2 className="text-xl font-black text-slate-900 capitalize leading-none">
+                            {isSameDay(selectedDate, new Date()) ? 'Hoy' : format(selectedDate, 'EEEE, d MMMM', { locale: es })}
+                        </h2>
+                        {!canEdit && (
+                            <p className="text-[10px] font-bold text-rose-500 uppercase tracking-wider">
+                                {isFuture ? '📅 Registro bloqueado (Futuro)' : isWeekly && !isSunday ? '☝️ Selecciona un domingo para registrar' : 'Registro bloqueado'}
+                            </p>
+                        )}
+                    </div>
+                    {canEdit && (
+                        <button
+                            onClick={() => setShowAddHabit(true)}
+                            className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-full uppercase tracking-wider hover:bg-emerald-100 transition-all flex items-center gap-1"
+                        >
+                            <Plus size={14} /> Añadir Mínimo
+                        </button>
+                    )}
                 </div>
 
                 <div className="space-y-8">
@@ -291,29 +338,65 @@ const AthleteHabits = ({ userId, isAdminView = false }) => {
                                     </div>
                                 ) : (
                                     getMinimumsByCategory(cat.id).map(habit => {
-                                        const status = selectedEntry.habitsResults?.[habit];
+                                        const habitName = typeof habit === 'string' ? habit : habit.name;
+                                        const habitTarget = typeof habit === 'string' ? 7 : (habit.target || 7);
+                                        const status = selectedEntry.habitsResults?.[habitName];
+
+                                        if (isWeekly) {
+                                            const daysCount = parseInt(status) || 0;
+                                            const isGoalMet = daysCount >= habitTarget;
+                                            return (
+                                                <div key={habitName} className="p-5 rounded-[2rem] border border-slate-100 bg-white shadow-sm space-y-4">
+                                                    <div className="flex justify-between items-center mb-1">
+                                                        <div className="flex flex-col">
+                                                            <span className="font-black text-sm text-slate-900">{habitName}</span>
+                                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Meta: {habitTarget} {habitTarget === 1 ? 'día' : 'días'}</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            {isGoalMet && <div className="p-1 bg-emerald-500 text-white rounded-full"><Check size={10} strokeWidth={4} /></div>}
+                                                            <span className={`text-xl font-black ${isGoalMet ? 'text-emerald-500' : 'text-indigo-600'}`}>{daysCount}<span className="text-[10px] text-slate-300 ml-1">días</span></span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex justify-between gap-1">
+                                                        {[0, 1, 2, 3, 4, 5, 6, 7].map(num => (
+                                                            <button
+                                                                key={num}
+                                                                disabled={!canEdit}
+                                                                onClick={() => handleSetStatus(habit, selectedDate, num)}
+                                                                className={`flex-1 h-10 rounded-xl font-bold text-xs transition-all ${daysCount === num ? 'bg-indigo-500 text-white shadow-lg scale-110' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'} ${!canEdit ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                            >
+                                                                {num}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            );
+                                        }
+
                                         return (
                                             <div
-                                                key={habit}
+                                                key={habitName}
                                                 className={`flex items-center justify-between p-4 rounded-3xl border transition-all
                                                     ${status === true ? 'bg-emerald-50 border-emerald-200 text-emerald-900 shadow-sm' :
                                                         status === false ? 'bg-rose-50 border-rose-200 text-rose-900 shadow-sm' :
                                                             'bg-white border-slate-100 text-slate-600'}
                                                 `}
                                             >
-                                                <span className="font-black text-sm flex-1">{habit}</span>
+                                                <span className="font-black text-sm flex-1">{habitName}</span>
                                                 <div className="flex items-center gap-1.5">
                                                     <button
+                                                        disabled={!canEdit}
                                                         onClick={() => handleSetStatus(habit, selectedDate, false)}
-                                                        className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all active:scale-95
+                                                        className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all active:scale-95 ${!canEdit ? 'opacity-30 cursor-not-allowed' : ''}
                                                             ${status === false ? 'bg-rose-500 text-white shadow-lg shadow-rose-200' : 'bg-slate-50 text-slate-300 hover:bg-rose-50 hover:text-rose-400'}
                                                         `}
                                                     >
                                                         <X size={18} strokeWidth={4} />
                                                     </button>
                                                     <button
+                                                        disabled={!canEdit}
                                                         onClick={() => handleSetStatus(habit, selectedDate, true)}
-                                                        className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all active:scale-95
+                                                        className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all active:scale-95 ${!canEdit ? 'opacity-30 cursor-not-allowed' : ''}
                                                             ${status === true ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200' : 'bg-slate-50 text-slate-300 hover:bg-emerald-50 hover:text-emerald-400'}
                                                         `}
                                                     >
@@ -339,10 +422,44 @@ const AthleteHabits = ({ userId, isAdminView = false }) => {
                             </div>
                             <div className="grid grid-cols-1 gap-2">
                                 {getMinimumsByCategory('uncategorized').map(habit => {
-                                    const status = selectedEntry.habitsResults?.[habit];
+                                    const habitName = typeof habit === 'string' ? habit : habit.name;
+                                    const habitTarget = typeof habit === 'string' ? 7 : (habit.target || 7);
+                                    const status = selectedEntry.habitsResults?.[habitName];
+
+                                    if (isWeekly) {
+                                        const daysCount = parseInt(status) || 0;
+                                        const isGoalMet = daysCount >= habitTarget;
+                                        return (
+                                            <div key={habitName} className="p-5 rounded-[2rem] border border-slate-100 bg-white shadow-sm space-y-4">
+                                                <div className="flex justify-between items-center mb-1">
+                                                    <div className="flex flex-col">
+                                                        <span className="font-black text-sm text-slate-900">{habitName}</span>
+                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Meta: {habitTarget} {habitTarget === 1 ? 'día' : 'días'}</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        {isGoalMet && <div className="p-1 bg-emerald-500 text-white rounded-full"><Check size={10} strokeWidth={4} /></div>}
+                                                        <span className={`text-xl font-black ${isGoalMet ? 'text-emerald-500' : 'text-indigo-600'}`}>{daysCount}<span className="text-[10px] text-slate-300 ml-1">días</span></span>
+                                                    </div>
+                                                </div>
+                                                <div className="flex justify-between gap-1">
+                                                    {[0, 1, 2, 3, 4, 5, 6, 7].map(num => (
+                                                        <button
+                                                            key={num}
+                                                            disabled={!canEdit}
+                                                            onClick={() => handleSetStatus(habit, selectedDate, num)}
+                                                            className={`flex-1 h-10 rounded-xl font-bold text-xs transition-all ${daysCount === num ? 'bg-indigo-500 text-white shadow-lg scale-110' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'} ${!canEdit ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                        >
+                                                            {num}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+
                                     return (
                                         <div
-                                            key={habit}
+                                            key={habitName}
                                             className={`flex items-center justify-between p-4 rounded-3xl border transition-all
                                                 ${status === true ? 'bg-emerald-50 border-emerald-200 text-emerald-900' :
                                                     status === false ? 'bg-rose-50 border-rose-200 text-rose-900' :
@@ -350,21 +467,23 @@ const AthleteHabits = ({ userId, isAdminView = false }) => {
                                             `}
                                         >
                                             <div className="flex-1 min-w-0">
-                                                <span className="font-black text-sm block truncate">{habit}</span>
+                                                <span className="font-black text-sm block truncate">{habitName}</span>
                                                 <span className="text-[8px] font-bold text-slate-300 uppercase tracking-tighter">Pendiente de organizar</span>
                                             </div>
                                             <div className="flex items-center gap-1.5">
                                                 <button
+                                                    disabled={!canEdit}
                                                     onClick={() => handleSetStatus(habit, selectedDate, false)}
-                                                    className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all active:scale-95
+                                                    className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all active:scale-95 ${!canEdit ? 'opacity-30 cursor-not-allowed' : ''}
                                                         ${status === false ? 'bg-rose-500 text-white shadow-lg' : 'bg-slate-50 text-slate-300 hover:text-rose-400'}
                                                     `}
                                                 >
                                                     <X size={18} strokeWidth={4} />
                                                 </button>
                                                 <button
+                                                    disabled={!canEdit}
                                                     onClick={() => handleSetStatus(habit, selectedDate, true)}
-                                                    className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all active:scale-95
+                                                    className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all active:scale-95 ${!canEdit ? 'opacity-30 cursor-not-allowed' : ''}
                                                         ${status === true ? 'bg-emerald-500 text-white shadow-lg' : 'bg-slate-50 text-slate-300 hover:text-emerald-400'}
                                                     `}
                                                 >

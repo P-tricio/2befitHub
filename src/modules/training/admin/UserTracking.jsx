@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { TrainingDB } from '../services/db';
-import { X, TrendingUp, TrendingDown, Activity, Calendar, Settings, Plus, Trash2, Footprints, Heart, BarChart, Utensils, Info, Edit2, Trophy, CalendarDays, CheckSquare } from 'lucide-react';
+import { X, TrendingUp, TrendingDown, Activity, Calendar, Settings, Plus, Trash2, Footprints, Heart, BarChart, Utensils, Info, Edit2, Trophy, CalendarDays, CheckSquare, Camera } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart as RechartsBarChart, Bar } from 'recharts';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -10,25 +10,37 @@ import UserPlanning from './UserPlanning';
 import UserSessionHistory from './UserSessionHistory';
 
 const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
+    const scrollContainerRef = useRef(null);
     const [history, setHistory] = useState([]);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState(initialTab); // 'metrics' | 'habits' | 'planning' | 'history'
     const [showConfigInline, setShowConfigInline] = useState(false);
     const [selectedPhoto, setSelectedPhoto] = useState(null);
-    const [customMetrics, setCustomMetrics] = useState(user.customMeasurements || []);
+    const [customMetrics, setCustomMetrics] = useState(user.customMeasurements?.length > 0 ? user.customMeasurements : ['waist', 'hip']);
+    const [activeMetric, setActiveMetric] = useState('weight');
+    const [useSmoothing, setUseSmoothing] = useState(false);
+    const [compareDate1, setCompareDate1] = useState(null);
+    const [compareDate2, setCompareDate2] = useState(null);
+    const [compareView, setCompareView] = useState('front');
 
     const normalizeMinimums = (m) => {
-        if (!m) return { nutrition: [], movement: [], health: [], uncategorized: [] };
-        if (Array.isArray(m)) return { nutrition: m, movement: [], health: [], uncategorized: [] };
-        return {
-            nutrition: m.nutrition || [],
-            movement: m.movement || [],
-            health: m.health || [],
-            uncategorized: m.uncategorized || []
-        };
+        const defaultStructure = { nutrition: [], movement: [], health: [], uncategorized: [] };
+        if (!m) return defaultStructure;
+
+        const raw = Array.isArray(m) ? { nutrition: m, movement: [], health: [], uncategorized: [] } : m;
+
+        // Ensure every habit is an object { name, target }
+        const result = { ...defaultStructure };
+        Object.keys(result).forEach(key => {
+            result[key] = (raw[key] || []).map(h =>
+                typeof h === 'string' ? { name: h, target: 7 } : h
+            );
+        });
+        return result;
     };
 
     const [minimums, setMinimums] = useState(normalizeMinimums(user.minimums));
+    const [habitFrequency, setHabitFrequency] = useState(user.habitFrequency || 'daily');
 
     useEffect(() => {
         loadData();
@@ -37,9 +49,8 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
     const loadData = async () => {
         try {
             const data = await TrainingDB.tracking.getHistory(user.id);
-            // Reverse for chart (oldest to newest) if getHistory returns newest first
-            // My implementation of getHistory returns newest first, so we reverse it for charts
-            setHistory(data.reverse());
+            // TrainingDB.tracking.getHistory already returns chronological [Oldest -> Newest]
+            setHistory(data);
         } catch (error) {
             console.error(error);
         } finally {
@@ -58,14 +69,63 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
         }
     };
 
+    const handleDeleteEntry = async (date) => {
+        if (!confirm(`¿Estás seguro de que deseas eliminar el registro del ${format(new Date(date + 'T12:00:00'), 'dd/MM/yyyy')}? Esta acción no se puede deshacer.`)) return;
+
+        try {
+            await TrainingDB.tracking.deleteEntry(user.id, date);
+            setHistory(prev => prev.filter(e => e.date !== date));
+        } catch (error) {
+            console.error(error);
+            alert("Error al eliminar el registro");
+        }
+    };
+
     // Metrics
     const currentWeight = history.length > 0 ? history[history.length - 1].weight : null;
     const startWeight = history.length > 0 ? history[0].weight : null;
     const weightChange = currentWeight && startWeight ? (currentWeight - startWeight).toFixed(1) : 0;
 
-    const avgSteps = history.length > 0
-        ? Math.round(history.reduce((acc, curr) => acc + (curr.steps || 0), 0) / history.length)
-        : 0;
+    const lastEntry = history.length > 0 ? history[history.length - 1] : null;
+    const photoEntries = history.filter(e => e.photos && Object.values(e.photos).some(u => u));
+
+    useEffect(() => {
+        if (photoEntries.length >= 2) {
+            setCompareDate1(photoEntries[photoEntries.length - 1].date);
+            setCompareDate2(photoEntries[photoEntries.length - 2].date);
+        } else if (photoEntries.length === 1) {
+            setCompareDate1(photoEntries[0].date);
+        }
+    }, [history]);
+
+    const getSmoothedData = (data, metric) => {
+        if (!useSmoothing) return data;
+        const windowSize = 5;
+        const key = metric === 'weight' ? 'weight' : metric === 'steps' ? 'steps' : `measurements.${metric}`;
+
+        return data.map((entry, idx, arr) => {
+            const window = arr.slice(Math.max(0, idx - windowSize + 1), idx + 1);
+            const values = window.map(e => {
+                if (metric === 'weight') return e.weight;
+                if (metric === 'steps') return e.steps;
+                return e.measurements?.[metric];
+            }).filter(v => v !== null && v !== undefined);
+
+            if (values.length === 0) return entry;
+            const avg = values.reduce((a, b) => a + b, 0) / values.length;
+
+            // Return a clone with the smoothed value
+            const smoothedEntry = { ...entry };
+            if (metric === 'weight') smoothedEntry.weight = parseFloat(avg.toFixed(1));
+            else if (metric === 'steps') smoothedEntry.steps = Math.round(avg);
+            else {
+                smoothedEntry.measurements = { ...smoothedEntry.measurements, [metric]: parseFloat(avg.toFixed(1)) };
+            }
+            return smoothedEntry;
+        });
+    };
+
+    const chartData = getSmoothedData(history, activeMetric);
 
     return (
         <div className="fixed inset-0 z-[60] bg-white flex flex-col animate-in slide-in-from-right duration-300">
@@ -110,218 +170,320 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
                 </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-2 md:p-4 bg-slate-50/50 pb-20">
+            <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-2 md:p-4 bg-slate-50/50 pb-20">
                 <div className="max-w-[1600px] mx-auto space-y-6">
 
                     {activeTab === 'metrics' ? (
                         <>
-                            {/* KPI Cards */}
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-                                    <div className="flex items-center justify-between mb-2">
-                                        <span className="text-xs font-bold text-slate-400 uppercase">Peso Actual</span>
-                                        <Activity size={18} className="text-indigo-500" />
+                            {/* KPIs Summary Bar */}
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                <div className="bg-white px-6 py-4 rounded-3xl border border-slate-100 shadow-sm flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 bg-indigo-50 text-indigo-500 rounded-xl"><Activity size={18} /></div>
+                                        <div>
+                                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Peso Actual</p>
+                                            <p className="text-xl font-black text-slate-900">{currentWeight || '-'} <span className="text-xs text-slate-400 font-medium">kg</span></p>
+                                        </div>
                                     </div>
-                                    <div className="flex items-end gap-3">
-                                        <span className="text-3xl font-black text-slate-900">{currentWeight || '-'} <span className="text-sm text-slate-400 font-medium">kg</span></span>
-                                        {weightChange !== 0 && (
-                                            <span className={`text-sm font-bold mb-1 flex items-center ${weightChange < 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                                                {weightChange < 0 ? <TrendingDown size={14} /> : <TrendingUp size={14} />}
-                                                {Math.abs(weightChange)} kg
-                                            </span>
-                                        )}
+                                    {weightChange !== 0 && (
+                                        <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black ${weightChange < 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                                            {weightChange < 0 ? <TrendingDown size={14} /> : <TrendingUp size={14} />}
+                                            {Math.abs(weightChange)} kg
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="bg-white px-6 py-4 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-3">
+                                    <div className="p-2 bg-emerald-50 text-emerald-500 rounded-xl"><Footprints size={18} /></div>
+                                    <div>
+                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Último NEAT (Pasos)</p>
+                                        <p className="text-xl font-black text-slate-900">{lastEntry?.steps?.toLocaleString() || '-'} <span className="text-xs text-slate-400 font-medium lowercase">pasos</span></p>
                                     </div>
                                 </div>
 
-                                <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-                                    <div className="flex items-center justify-between mb-2">
-                                        <span className="text-xs font-bold text-slate-400 uppercase">Media Pasos</span>
-                                        <Activity size={18} className="text-emerald-500" />
+                                <div className="bg-white px-6 py-4 rounded-3xl border border-slate-100 shadow-sm flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 bg-blue-50 text-blue-500 rounded-xl"><Settings size={18} /></div>
+                                        <div>
+                                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Métricas Activas</p>
+                                            <p className="text-xl font-black text-slate-900">{customMetrics.length} <span className="text-xs text-slate-400 font-medium lowercase">perímetros</span></p>
+                                        </div>
                                     </div>
-                                    <div className="text-3xl font-black text-slate-900">{avgSteps.toLocaleString()} <span className="text-sm text-slate-400 font-medium">pasos/día</span></div>
-                                </div>
-
-                                <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-                                    <div className="flex items-center justify-between mb-2">
-                                        <span className="text-xs font-bold text-slate-400 uppercase">Check-ins</span>
-                                        <Calendar size={18} className="text-orange-500" />
-                                    </div>
-                                    <div className="text-3xl font-black text-slate-900">{history.length} <span className="text-sm text-slate-400 font-medium">totales</span></div>
+                                    <button onClick={() => setShowConfigInline(!showConfigInline)} className="p-2 bg-slate-50 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all">
+                                        <Edit2 size={16} />
+                                    </button>
                                 </div>
                             </div>
 
-                            {/* Charts Row */}
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                {/* Weight Chart */}
-                                <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-                                    <h3 className="text-lg font-bold text-slate-900 mb-6">Evolución Peso</h3>
-                                    <div className="h-64 w-full">
+                            {/* Main Analysis Block (Chart + Legend + Table) */}
+                            <div className="space-y-6">
+                                {/* Chart Section */}
+                                <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm flex flex-col">
+                                    <div className="flex flex-col gap-8 mb-8">
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <h3 className="text-2xl font-black text-slate-900 tracking-tight">Análisis de Evolución</h3>
+                                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Selecciona una medida para visualizar su historial</p>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <button
+                                                    onClick={() => setUseSmoothing(!useSmoothing)}
+                                                    className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-[10px] font-black transition-all border ${useSmoothing ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-400 border-slate-100 hover:bg-slate-50'}`}
+                                                    title="Limpiar ruido (Media móvil)"
+                                                >
+                                                    <TrendingUp size={14} />
+                                                    <span className="hidden sm:inline">{useSmoothing ? 'QUITAR FILTRO' : 'LIMPIAR RUIDO'}</span>
+                                                </button>
+                                                <button
+                                                    onClick={() => setShowConfigInline(!showConfigInline)}
+                                                    className={`flex items-center gap-2 px-5 py-2 rounded-2xl text-[10px] font-black transition-all border ${showConfigInline ? 'bg-slate-900 text-white border-slate-900 shadow-lg' : 'bg-white text-slate-400 border-slate-100 hover:bg-slate-50'}`}
+                                                >
+                                                    <Settings size={14} />
+                                                    <span className="hidden sm:inline">{showConfigInline ? 'CERRAR PANEL' : 'GESTIONAR VARIABLES'}</span>
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {/* Simplified Legend Selector (Interactive) */}
+                                        <div className="flex flex-wrap items-center gap-2 p-2 bg-slate-50/50 rounded-[2rem] border border-slate-100/50">
+                                            {[
+                                                { id: 'weight', label: 'Peso Corporal', color: '#6366f1' },
+                                                { id: 'steps', label: 'NEAT (Pasos)', color: '#10b981' },
+                                                ...customMetrics.map(m => ({ id: m, label: m === 'waist' ? 'Cintura' : m === 'hip' ? 'Cadera' : m, color: '#f43f5e' }))
+                                            ].map(metric => (
+                                                <button
+                                                    key={metric.id}
+                                                    onClick={() => setActiveMetric(metric.id)}
+                                                    className={`px-4 py-2.5 rounded-2xl flex items-center gap-3 transition-all ${activeMetric === metric.id ? 'bg-white shadow-md ring-1 ring-slate-200' : 'hover:bg-white/50 grayscale opacity-60'}`}
+                                                >
+                                                    <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: metric.color }} />
+                                                    <span className={`text-[11px] font-black uppercase tracking-tight ${activeMetric === metric.id ? 'text-slate-900' : 'text-slate-400'}`}>
+                                                        {metric.label}
+                                                    </span>
+                                                </button>
+                                            ))}
+                                        </div>
+
+                                        <AnimatePresence>
+                                            {showConfigInline && (
+                                                <motion.div
+                                                    initial={{ height: 0, opacity: 0 }}
+                                                    animate={{ height: 'auto', opacity: 1 }}
+                                                    exit={{ height: 0, opacity: 0 }}
+                                                    className="overflow-hidden border-b border-slate-100 bg-slate-50/30 rounded-3xl"
+                                                >
+                                                    <div className="p-8 max-w-md mx-auto">
+                                                        <MetricsConfigInline
+                                                            initialMetrics={customMetrics}
+                                                            onSave={handleSaveMetrics}
+                                                        />
+                                                    </div>
+                                                </motion.div>
+                                            )}
+                                        </AnimatePresence>
+                                    </div>
+
+                                    <div className="h-[400px] w-full">
                                         <ResponsiveContainer width="100%" height="100%">
-                                            <LineChart data={history}>
+                                            <LineChart data={chartData}>
                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                                 <XAxis
                                                     dataKey="date"
                                                     tickFormatter={(date) => format(new Date(date), 'dd MMM', { locale: es })}
                                                     stroke="#94a3b8"
-                                                    fontSize={12}
+                                                    fontSize={10}
                                                     tickLine={false}
                                                     axisLine={false}
+                                                    fontWeight="bold"
                                                 />
                                                 <YAxis
-                                                    domain={['dataMin - 2', 'dataMax + 2']}
+                                                    domain={['auto', 'auto']}
                                                     stroke="#94a3b8"
-                                                    fontSize={12}
+                                                    fontSize={10}
                                                     tickLine={false}
                                                     axisLine={false}
+                                                    fontWeight="bold"
                                                 />
                                                 <Tooltip
-                                                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                                    contentStyle={{ borderRadius: '24px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)', padding: '16px' }}
+                                                    labelStyle={{ fontWeight: '900', color: '#0f172a', marginBottom: '8px', fontSize: '12px' }}
+                                                    itemStyle={{ fontSize: '12px', fontWeight: '700' }}
                                                     labelFormatter={(date) => format(new Date(date), 'dd MMMM yyyy', { locale: es })}
                                                 />
                                                 <Line
                                                     type="monotone"
-                                                    dataKey="weight"
-                                                    stroke="#6366f1"
-                                                    strokeWidth={3}
-                                                    dot={{ r: 4, fill: '#6366f1', strokeWidth: 2, stroke: '#fff' }}
-                                                    activeDot={{ r: 6 }}
+                                                    dataKey={activeMetric === 'weight' ? 'weight' : activeMetric === 'steps' ? 'steps' : `measurements.${activeMetric}`}
+                                                    stroke={activeMetric === 'weight' ? '#6366f1' : activeMetric === 'steps' ? '#10b981' : '#f43f5e'}
+                                                    strokeWidth={4}
+                                                    dot={{ r: 6, fill: activeMetric === 'weight' ? '#6366f1' : activeMetric === 'steps' ? '#10b981' : '#f43f5e', strokeWidth: 3, stroke: '#fff' }}
+                                                    activeDot={{ r: 8, strokeWidth: 0 }}
+                                                    animationDuration={1000}
                                                 />
                                             </LineChart>
                                         </ResponsiveContainer>
                                     </div>
                                 </div>
 
-                                {/* Steps Chart */}
-                                <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-                                    <h3 className="text-lg font-bold text-slate-900 mb-6">Actividad Diaria (Pasos)</h3>
-                                    <div className="h-64 w-full">
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <RechartsBarChart data={history}>
-                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                                                <XAxis
-                                                    dataKey="date"
-                                                    tickFormatter={(date) => format(new Date(date), 'dd MMM', { locale: es })}
-                                                    stroke="#94a3b8"
-                                                    fontSize={12}
-                                                    tickLine={false}
-                                                    axisLine={false}
-                                                />
-                                                <YAxis
-                                                    stroke="#94a3b8"
-                                                    fontSize={12}
-                                                    tickLine={false}
-                                                    axisLine={false}
-                                                />
-                                                <Tooltip
-                                                    cursor={{ fill: '#f1f5f9' }}
-                                                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                                                    labelFormatter={(date) => format(new Date(date), 'dd MMMM yyyy', { locale: es })}
-                                                />
-                                                <Bar
-                                                    dataKey="steps"
-                                                    fill="#10b981"
-                                                    radius={[4, 4, 0, 0]}
-                                                />
-                                            </RechartsBarChart>
-                                        </ResponsiveContainer>
+                                <div className="bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden">
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left text-sm whitespace-nowrap">
+                                            <thead className="bg-slate-50/50 text-slate-500 font-black uppercase text-[10px] tracking-widest">
+                                                <tr>
+                                                    <th className="p-6">Fecha</th>
+                                                    <th className={`p-6 cursor-pointer transition-colors ${activeMetric === 'weight' ? 'text-indigo-600 bg-indigo-50/30' : ''}`} onClick={() => setActiveMetric('weight')}>Peso (kg)</th>
+                                                    <th className={`p-6 cursor-pointer transition-colors ${activeMetric === 'steps' ? 'text-emerald-600 bg-emerald-50/30' : ''}`} onClick={() => setActiveMetric('steps')}>NEAT (Pasos)</th>
+                                                    {customMetrics.map(m => (
+                                                        <th
+                                                            key={m}
+                                                            onClick={() => setActiveMetric(m)}
+                                                            className={`p-6 cursor-pointer transition-colors ${activeMetric === m ? 'text-rose-500 bg-rose-50/30' : ''}`}
+                                                        >
+                                                            {m === 'waist' ? 'Cintura' : m === 'hip' ? 'Cadera' : m} (cm)
+                                                        </th>
+                                                    ))}
+                                                    <th className="p-6 text-right">Acciones</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-50">
+                                                {[...history].reverse().map((entry) => (
+                                                    <tr key={entry.date} className="group hover:bg-slate-50/50 transition-all">
+                                                        <td className="p-6 text-slate-500 font-bold text-xs uppercase">
+                                                            {format(new Date(entry.date), 'dd MMMM yyyy', { locale: es })}
+                                                        </td>
+                                                        <td className={`p-6 font-black text-sm ${activeMetric === 'weight' ? 'text-indigo-600 bg-indigo-50/10' : 'text-slate-900'}`}>
+                                                            {entry.weight || '-'}
+                                                        </td>
+                                                        <td className={`p-6 font-black text-sm ${activeMetric === 'steps' ? 'text-emerald-600 bg-emerald-50/10' : 'text-slate-900'}`}>
+                                                            {entry.steps?.toLocaleString() || '-'}
+                                                        </td>
+                                                        {customMetrics.map(m => (
+                                                            <td key={m} className={`p-6 font-black text-sm ${activeMetric === m ? 'text-rose-500 bg-rose-50/10' : 'text-slate-900'}`}>
+                                                                {entry.measurements?.[m] || '-'}
+                                                            </td>
+                                                        ))}
+                                                        <td className="p-6">
+                                                            <div className="flex items-center justify-end gap-2">
+                                                                <button
+                                                                    onClick={() => handleDeleteEntry(entry.date)}
+                                                                    className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
+                                                                >
+                                                                    <Trash2 size={16} />
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                                {history.length === 0 && (
+                                                    <tr>
+                                                        <td colSpan={customMetrics.length + 4} className="p-20 text-center">
+                                                            <div className="space-y-4">
+                                                                <Activity size={48} className="mx-auto text-slate-100" />
+                                                                <p className="text-slate-400 font-black text-xs uppercase tracking-widest">No hay registros aún</p>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                )}
+                                            </tbody>
+                                        </table>
                                     </div>
                                 </div>
                             </div>
 
-                            {/* Recent History Table */}
-                            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-                                <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-                                    <h3 className="text-lg font-bold text-slate-900">Historial de Registros</h3>
-                                    <button
-                                        onClick={() => setShowConfigInline(!showConfigInline)}
-                                        className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-black transition-all border ${showConfigInline ? 'bg-slate-900 text-white border-slate-900 shadow-lg' : 'bg-white text-slate-400 border-slate-100 hover:bg-slate-50'}`}
-                                    >
-                                        <Settings size={14} />
-                                        {showConfigInline ? 'CERRAR AJUSTES' : 'CONFIGURAR VARIABLES'}
-                                    </button>
-                                </div>
-
-                                <AnimatePresence>
-                                    {showConfigInline && (
-                                        <motion.div
-                                            initial={{ height: 0, opacity: 0 }}
-                                            animate={{ height: 'auto', opacity: 1 }}
-                                            exit={{ height: 0, opacity: 0 }}
-                                            className="overflow-hidden border-b border-slate-100 bg-slate-50/30"
-                                        >
-                                            <div className="p-8 max-w-md mx-auto">
-                                                <MetricsConfigInline
-                                                    initialMetrics={customMetrics}
-                                                    onSave={handleSaveMetrics}
-                                                />
-                                            </div>
-                                        </motion.div>
-                                    )}
-                                </AnimatePresence>
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-left text-sm">
-                                        <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-xs">
-                                            <tr>
-                                                <th className="p-4 rounded-tl-2xl">Fecha</th>
-                                                <th className="p-4">Peso</th>
-                                                {customMetrics.map(m => (
-                                                    <th key={m} className="p-4 text-indigo-400 bg-slate-50/50">{m}</th>
-                                                ))}
-                                                <th className="p-4">Pasos</th>
-                                                <th className="p-4">Notas</th>
-                                                <th className="p-4 rounded-tr-2xl">Fotos</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-50">
-                                            {[...history].reverse().map((entry) => (
-                                                <tr key={entry.id} className="hover:bg-slate-50 transition-colors">
-                                                    <td className="p-4 font-bold text-slate-900">
-                                                        {format(new Date(entry.date), 'dd MMM yyyy', { locale: es })}
-                                                    </td>
-                                                    <td className="p-4 font-medium text-indigo-600">
-                                                        {entry.weight ? `${entry.weight} kg` : '-'}
-                                                    </td>
-                                                    {customMetrics.map(m => (
-                                                        <td key={m} className="p-4 text-slate-600 font-medium text-xs">
-                                                            {entry.measurements && entry.measurements[m]
-                                                                ? entry.measurements[m]
-                                                                : '-'}
-                                                        </td>
-                                                    ))}
-                                                    <td className="p-4 font-medium text-emerald-600">
-                                                        {entry.steps ? entry.steps.toLocaleString() : '-'}
-                                                    </td>
-                                                    <td className="p-4 text-slate-500 max-w-xs truncate">
-                                                        {entry.notes || '-'}
-                                                    </td>
-                                                    <td className="p-4">
-                                                        {entry.photos ? (
-                                                            <div className="flex -space-x-2">
-                                                                {Object.values(entry.photos).filter(Boolean).map((url, i) => (
-                                                                    <div
-                                                                        key={i}
-                                                                        onClick={() => setSelectedPhoto(url)}
-                                                                        className="w-8 h-8 rounded-full border-2 border-white bg-slate-200 overflow-hidden cursor-pointer hover:ring-2 hover:ring-indigo-500 transition-all"
-                                                                    >
-                                                                        <img src={url} alt="Progress" className="w-full h-full object-cover" />
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        ) : <span className="text-slate-300">-</span>}
-                                                    </td>
-                                                </tr>
+                            {/* Visual Evolution Section (Photo Comparison) */}
+                            <div className="bg-slate-900 rounded-[3rem] p-10 text-white shadow-2xl relative overflow-hidden">
+                                <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 blur-[120px] rounded-full -mr-48 -mt-48" />
+                                <div className="relative z-10 space-y-8">
+                                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                                        <div>
+                                            <h3 className="text-2xl font-black tracking-tight">Evolución Visual</h3>
+                                            <p className="text-[10px] text-emerald-400 font-bold uppercase tracking-widest mt-1">Comparativa físico</p>
+                                        </div>
+                                        <div className="flex bg-white/10 p-1 rounded-2xl gap-1 w-full md:w-auto overflow-x-auto">
+                                            {['front', 'side', 'back'].map(v => (
+                                                <button
+                                                    key={v}
+                                                    onClick={() => setCompareView(v)}
+                                                    className={`px-4 py-2 rounded-xl text-[10px] font-black transition-all uppercase ${compareView === v ? 'bg-white text-slate-900 shadow-lg' : 'text-slate-400 hover:text-white'}`}
+                                                >
+                                                    {v === 'front' ? 'Frente' : v === 'side' ? 'Perfil' : 'Espalda'}
+                                                </button>
                                             ))}
-                                            {history.length === 0 && (
-                                                <tr>
-                                                    <td colSpan="5" className="p-8 text-center text-slate-400 italic">
-                                                        No hay registros disponibles.
-                                                    </td>
-                                                </tr>
-                                            )}
-                                        </tbody>
-                                    </table>
+                                        </div>
+                                    </div>
+
+                                    {photoEntries.length >= 1 ? (
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                            {/* Comparison Main Area */}
+                                            <div className="flex gap-4 min-h-[400px]">
+                                                {[compareDate1, compareDate2].map((date, idx) => {
+                                                    const entry = history.find(e => e.date === date);
+                                                    const photo = entry?.photos?.[compareView];
+                                                    return (
+                                                        <div key={idx} className="flex-1 flex flex-col gap-4">
+                                                            <div className="flex flex-col items-center">
+                                                                <select
+                                                                    value={date || ''}
+                                                                    onChange={e => idx === 0 ? setCompareDate1(e.target.value) : setCompareDate2(e.target.value)}
+                                                                    className="bg-white/10 text-white rounded-xl px-4 py-2 text-[10px] font-black uppercase tracking-widest border border-white/20 outline-none hover:bg-white/20 transition-all cursor-pointer"
+                                                                >
+                                                                    {photoEntries.map(e => (
+                                                                        <option key={e.date} value={e.date} className="bg-slate-800">{format(new Date(e.date + 'T12:00:00'), 'dd MMM yyyy', { locale: es })}</option>
+                                                                    ))}
+                                                                </select>
+                                                            </div>
+                                                            <div
+                                                                onClick={() => photo && setSelectedPhoto(photo)}
+                                                                className="flex-1 rounded-[2.5rem] overflow-hidden bg-white/5 border border-white/10 relative group cursor-pointer shadow-inner"
+                                                            >
+                                                                {photo ? (
+                                                                    <img src={photo} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" alt={`Progreso ${idx}`} />
+                                                                ) : (
+                                                                    <div className="w-full h-full flex flex-col items-center justify-center text-white/20 gap-3">
+                                                                        <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center"><Camera size={32} /></div>
+                                                                        <span className="text-[10px] font-black uppercase tracking-widest">Sin foto</span>
+                                                                    </div>
+                                                                )}
+                                                                <div className="absolute inset-0 bg-gradient-to-t from-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+
+                                            {/* Photo History Timeline */}
+                                            <div className="space-y-4">
+                                                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Historial de Galería</h4>
+                                                <div className="grid grid-cols-3 gap-3">
+                                                    {[...photoEntries].reverse().slice(0, 9).map((entry, idx) => (
+                                                        <button
+                                                            key={entry.date}
+                                                            onClick={() => {
+                                                                setCompareDate1(entry.date);
+                                                                // Optionally set date2 to the previous one
+                                                            }}
+                                                            className="aspect-square rounded-2xl overflow-hidden border-2 border-transparent hover:border-emerald-500 transition-all relative group"
+                                                        >
+                                                            <img src={entry.photos.front || entry.photos.side || entry.photos.back} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all" alt="Thumb" />
+                                                            <div className="absolute bottom-0 left-0 right-0 bg-black/60 p-1">
+                                                                <span className="text-[8px] font-black">{format(new Date(entry.date + 'T12:00:00'), 'dd MMM', { locale: es })}</span>
+                                                            </div>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                                {photoEntries.length > 9 && (
+                                                    <p className="text-[8px] text-slate-500 font-bold uppercase tracking-widest text-center">Y {photoEntries.length - 9} registros más...</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="py-20 text-center space-y-4 bg-white/5 rounded-[3rem] border border-dashed border-white/10">
+                                            <Camera size={48} className="mx-auto text-white/20" />
+                                            <p className="text-slate-400 font-black text-xs uppercase tracking-widest">Aún no hay fotos de progreso</p>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
+
                         </>
                     ) : activeTab === 'habits' ? (
                         <div className="space-y-12">
@@ -330,6 +492,46 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
                                     <h3 className="text-2xl font-black text-slate-900">Gestión de Hábitos</h3>
                                     <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest mt-1">Organizar y Editar Mínimos</p>
                                 </div>
+
+                                {/* Habit Frequency Selector */}
+                                <div className="max-w-md mx-auto mb-10 bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <div className="flex items-center gap-2">
+                                            <div className="p-2 bg-indigo-50 text-indigo-500 rounded-xl">
+                                                <CalendarDays size={18} />
+                                            </div>
+                                            <div>
+                                                <h4 className="text-sm font-black text-slate-900">Frecuencia de Registro</h4>
+                                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">¿Cómo debe reportar el atleta?</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex bg-slate-50 p-1 rounded-2xl gap-1">
+                                        {[
+                                            { id: 'daily', label: 'Diario', desc: 'Reporte cada mañana (Reflexión)' },
+                                            { id: 'weekly', label: 'Semanal', desc: 'Resumen cada domingo (0-7 días)' }
+                                        ].map(freq => (
+                                            <button
+                                                key={freq.id}
+                                                onClick={async () => {
+                                                    setHabitFrequency(freq.id);
+                                                    try {
+                                                        await TrainingDB.users.updateProfile(user.id, { habitFrequency: freq.id });
+                                                    } catch (e) {
+                                                        console.error(e);
+                                                        alert("Error al actualizar frecuencia");
+                                                    }
+                                                }}
+                                                className={`flex-1 p-3 rounded-xl transition-all ${habitFrequency === freq.id ? 'bg-white text-slate-900 shadow-md ring-1 ring-slate-900/5' : 'text-slate-400 hover:text-slate-600'}`}
+                                            >
+                                                <div className="text-xs font-black uppercase tracking-widest">{freq.label}</div>
+                                                <div className="text-[8px] font-bold opacity-60 mt-0.5">{freq.desc}</div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
                                 <HabitsManagement
                                     user={user}
                                     minimums={minimums}
@@ -388,9 +590,9 @@ const HabitsManagement = ({ user, minimums, setMinimums, history }) => {
     const handleMoveHabit = async (habit, fromCategory, toCategory) => {
         const updated = { ...minimums };
         // Remove from source
-        updated[fromCategory] = updated[fromCategory].filter(h => h !== habit);
+        updated[fromCategory] = updated[fromCategory].filter(h => h.name !== habit.name);
         // Add to target
-        if (!updated[toCategory].includes(habit)) {
+        if (!updated[toCategory].find(h => h.name === habit.name)) {
             updated[toCategory] = [...updated[toCategory], habit];
         }
 
@@ -405,9 +607,9 @@ const HabitsManagement = ({ user, minimums, setMinimums, history }) => {
     };
 
     const handleDeleteHabit = async (habit, category) => {
-        if (!confirm(`¿Eliminar el hábito "${habit}"?`)) return;
+        if (!confirm(`¿Eliminar el hábito "${habit.name}"?`)) return;
         const updated = { ...minimums };
-        updated[category] = updated[category].filter(h => h !== habit);
+        updated[category] = updated[category].filter(h => h.name !== habit.name);
         setMinimums(updated);
         try {
             await TrainingDB.users.updateProfile(user.id, { minimums: updated });
@@ -421,8 +623,8 @@ const HabitsManagement = ({ user, minimums, setMinimums, history }) => {
         }
 
         const updated = { ...minimums };
-        if (!updated[category].includes(newValue.trim())) {
-            updated[category] = [...updated[category], newValue.trim()];
+        if (!updated[category].find(h => h.name === newValue.trim())) {
+            updated[category] = [...updated[category], { name: newValue.trim(), target: 7 }];
         }
 
         setMinimums(updated);
@@ -435,20 +637,34 @@ const HabitsManagement = ({ user, minimums, setMinimums, history }) => {
     };
 
     const handleSaveEdit = async () => {
-        if (!editValue.trim() || editValue === editingHabit.original) {
+        if (!editValue.trim()) {
             setEditingHabit(null);
             return;
         }
 
         const updated = { ...minimums };
         const category = editingHabit.category;
+
         updated[category] = updated[category].map(h =>
-            h === editingHabit.original ? editValue.trim() : h
+            h.name === editingHabit.original.name
+                ? { ...h, name: editValue.trim() }
+                : h
         );
 
         setMinimums(updated);
         setEditingHabit(null);
 
+        try {
+            await TrainingDB.users.updateProfile(user.id, { minimums: updated });
+        } catch (e) { console.error(e); }
+    };
+
+    const handleUpdateTarget = async (habit, category, newTarget) => {
+        const updated = { ...minimums };
+        updated[category] = updated[category].map(h =>
+            h.name === habit.name ? { ...h, target: newTarget } : h
+        );
+        setMinimums(updated);
         try {
             await TrainingDB.users.updateProfile(user.id, { minimums: updated });
         } catch (e) { console.error(e); }
@@ -471,8 +687,8 @@ const HabitsManagement = ({ user, minimums, setMinimums, history }) => {
                     </div>
                     <div className="flex flex-wrap gap-2">
                         {minimums.uncategorized.map(habit => (
-                            <div key={habit} className="bg-white border border-amber-200 px-4 py-3 rounded-2xl shadow-sm flex items-center gap-4">
-                                <span className="font-bold text-slate-700 text-sm">{habit}</span>
+                            <div key={habit.name} className="bg-white border border-amber-200 px-4 py-3 rounded-2xl shadow-sm flex items-center gap-4">
+                                <span className="font-bold text-slate-700 text-sm">{habit.name}</span>
                                 <div className="flex gap-1 border-l border-slate-100 pl-4">
                                     {categories.map(cat => {
                                         const colorClasses = {
@@ -516,9 +732,9 @@ const HabitsManagement = ({ user, minimums, setMinimums, history }) => {
                                 <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest text-center py-10">Sin hábitos</p>
                             ) : (
                                 minimums[cat.id].map(habit => (
-                                    <div key={habit} className="group flex items-center justify-between p-3 bg-slate-50/50 rounded-xl hover:bg-slate-50 transition-colors border border-transparent hover:border-slate-100">
-                                        {editingHabit?.original === habit && editingHabit?.category === cat.id ? (
-                                            <div className="flex-1 flex gap-2">
+                                    <div key={habit.name} className="group flex flex-col p-4 bg-slate-50/50 rounded-2xl hover:bg-slate-50 transition-colors border border-transparent hover:border-slate-100 gap-3">
+                                        {editingHabit?.original.name === habit.name && editingHabit?.category === cat.id ? (
+                                            <div className="flex gap-2">
                                                 <input
                                                     autoFocus
                                                     value={editValue}
@@ -529,13 +745,27 @@ const HabitsManagement = ({ user, minimums, setMinimums, history }) => {
                                                 />
                                             </div>
                                         ) : (
-                                            <>
-                                                <span className="text-xs font-bold text-slate-700">{habit}</span>
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex flex-col">
+                                                    <span className="text-xs font-bold text-slate-700">{habit.name}</span>
+                                                    <div className="flex items-center gap-2 mt-1">
+                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Meta:</span>
+                                                        <select
+                                                            value={habit.target || 7}
+                                                            onChange={(e) => handleUpdateTarget(habit, cat.id, parseInt(e.target.value))}
+                                                            className="bg-transparent text-[10px] font-black text-indigo-600 outline-none cursor-pointer hover:bg-slate-200 rounded px-1"
+                                                        >
+                                                            {[1, 2, 3, 4, 5, 6, 7].map(n => (
+                                                                <option key={n} value={n}>{n} {n === 1 ? 'día' : 'días'}/sem</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                </div>
                                                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                     <button
                                                         onClick={() => {
                                                             setEditingHabit({ original: habit, category: cat.id });
-                                                            setEditValue(habit);
+                                                            setEditValue(habit.name);
                                                         }}
                                                         className="p-1.5 text-slate-300 hover:text-slate-600"
                                                         title="Editar"
@@ -556,7 +786,7 @@ const HabitsManagement = ({ user, minimums, setMinimums, history }) => {
                                                         <Trash2 size={14} />
                                                     </button>
                                                 </div>
-                                            </>
+                                            </div>
                                         )}
                                     </div>
                                 ))
@@ -609,9 +839,10 @@ const HabitsManagement = ({ user, minimums, setMinimums, history }) => {
                         last30Entries.forEach(entry => {
                             if (!entry.habitsResults) return;
                             hábitos.forEach(h => {
-                                if (entry.habitsResults[h] !== undefined && entry.habitsResults[h] !== null) {
+                                const habitName = typeof h === 'string' ? h : h.name;
+                                if (entry.habitsResults[habitName] !== undefined && entry.habitsResults[habitName] !== null) {
                                     totalChecked++;
-                                    if (entry.habitsResults[h] === true) totalDone++;
+                                    if (entry.habitsResults[habitName] === true || (typeof entry.habitsResults[habitName] === 'number' && entry.habitsResults[habitName] >= (h.target || 1))) totalDone++;
                                 }
                             });
                         });
@@ -680,7 +911,7 @@ const MetricsConfigInline = ({ initialMetrics, onSave }) => {
                 <div className="flex flex-wrap gap-2 pt-2">
                     {metrics.map(m => (
                         <div key={m} className="bg-slate-50 border border-slate-100 px-3 py-2 rounded-xl flex items-center gap-2 text-xs font-bold text-slate-700 animate-in zoom-in-50 duration-200">
-                            {m}
+                            {m === 'waist' ? 'Cintura' : m === 'hip' ? 'Cadera' : m}
                             <button onClick={() => handleRemove(m)} className="text-slate-300 hover:text-red-500 transition-colors">
                                 <X size={14} />
                             </button>

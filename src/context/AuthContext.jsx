@@ -12,6 +12,8 @@ import {
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
+import LoadingScreen from '../components/common/LoadingScreen';
+
 const AuthContext = createContext();
 
 export const useAuth = () => useContext(AuthContext);
@@ -100,7 +102,7 @@ export const AuthProvider = ({ children }) => {
 
     return (
         <AuthContext.Provider value={value}>
-            {!loading && children}
+            {loading ? <LoadingScreen /> : children}
         </AuthContext.Provider>
     );
 };

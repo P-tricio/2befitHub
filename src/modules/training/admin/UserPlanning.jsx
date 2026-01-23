@@ -1312,7 +1312,27 @@ const GenericTaskSection = ({ id, label, icon, expanded, toggle, onAssign, avail
                                         </button>
                                     ))}
                                 </div>
-                                <p className="text-[10px] text-slate-400 italic">
+
+                                {/* Retroactive Mode Toggle */}
+                                <div className="mt-4 p-3 bg-white border border-slate-100 rounded-xl">
+                                    <div className="flex items-center justify-between mb-1">
+                                        <label className="text-xs font-bold text-slate-700 flex items-center gap-2">
+                                            <History size={14} className="text-orange-500" />
+                                            Modo Reflexión
+                                        </label>
+                                        <button
+                                            onClick={() => handleConfigChange('retroactive', !config.retroactive)}
+                                            className={`w-10 h-6 rounded-full transition-colors relative ${config.retroactive ? 'bg-orange-500' : 'bg-slate-200'}`}
+                                        >
+                                            <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${config.retroactive ? 'left-5' : 'left-1'}`} />
+                                        </button>
+                                    </div>
+                                    <p className="text-[10px] text-slate-400 leading-tight">
+                                        Si está activo, la tarea se marca hoy pero los datos se guardan para **ayer** (ideal para reportar el sueño).
+                                    </p>
+                                </div>
+
+                                <p className="text-[10px] text-slate-400 italic mt-4">
                                     El atleta marcará los hábitos de los grupos seleccionados.
                                 </p>
                             </div>

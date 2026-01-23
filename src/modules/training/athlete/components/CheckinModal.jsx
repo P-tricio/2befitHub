@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { format } from 'date-fns';
-import { Camera, Trash2, X, Check, Footprints, Clock, Flame, Zap, Scale, Ruler, Utensils, FileText, Dumbbell } from 'lucide-react';
+import { format, subDays } from 'date-fns';
+import { es } from 'date-fns/locale';
+import { Camera, Trash2, X, Check, Footprints, Clock, Flame, Zap, Scale, Ruler, Utensils, FileText, Dumbbell, History } from 'lucide-react';
 import { TrainingDB } from '../../services/db';
 import { uploadToImgBB } from '../../services/imageService';
 
@@ -35,18 +36,25 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
     const [userMinimums, setUserMinimums] = useState({ nutrition: [], movement: [], health: [], uncategorized: [] });
 
     const normalizeMinimums = (m) => {
-        if (!m) return { nutrition: [], movement: [], health: [], uncategorized: [] };
-        if (Array.isArray(m)) return { nutrition: m, movement: [], health: [], uncategorized: [] };
-        return {
-            nutrition: m.nutrition || [],
-            movement: m.movement || [],
-            health: m.health || [],
-            uncategorized: m.uncategorized || []
-        };
+        const defaultStructure = { nutrition: [], movement: [], health: [], uncategorized: [] };
+        if (!m) return defaultStructure;
+
+        const raw = Array.isArray(m) ? { nutrition: m, movement: [], health: [], uncategorized: [] } : m;
+
+        // Ensure every habit is an object { name, target }
+        const result = { ...defaultStructure };
+        Object.keys(result).forEach(key => {
+            result[key] = (raw[key] || []).map(h =>
+                typeof h === 'string' ? { name: h, target: 7 } : h
+            );
+        });
+        return result;
     };
 
-    // Determines the effective date for this checkin
-    const dateKey = format(targetDate || new Date(), 'yyyy-MM-dd');
+    // Determines the effective date for this checkin (Retroactive support)
+    const isRetroactive = task.config?.retroactive === true;
+    const effectiveDate = isRetroactive ? subDays(targetDate || new Date(), 1) : (targetDate || new Date());
+    const dateKey = format(effectiveDate, 'yyyy-MM-dd');
 
     // Initial Load for Tracking Data
     useEffect(() => {
@@ -142,7 +150,6 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                     taskSummary = `${duration} min`;
                 }
                 taskResults = { duration, activityType };
-            } else if (task.type === 'nutrition') {
                 updateData.habitsResults = habitsResults;
 
                 const selectedCategories = task.config?.categories || (task.config?.category ? [task.config.category] : []);
@@ -165,9 +172,25 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                 }
                 habitsToShow = Array.from(new Set(habitsToShow));
 
-                const doneCount = habitsToShow.filter(h => habitsResults[h] === true).length;
-                const totalCount = habitsToShow.length;
-                taskSummary = `${doneCount}/${totalCount} hábitos`;
+                if (task.config?.isWeeklyReporting) {
+                    let totalTargets = 0;
+                    let totalDone = 0;
+                    habitsToShow.forEach(h => {
+                        const hName = typeof h === 'string' ? h : h.name;
+                        const hTarget = typeof h === 'string' ? 7 : (h.target || 7);
+                        totalTargets += hTarget;
+                        totalDone += Math.min(parseInt(habitsResults[hName]) || 0, hTarget);
+                    });
+                    const percent = totalTargets > 0 ? Math.round((totalDone / totalTargets) * 100) : 0;
+                    taskSummary = `Semana: ${percent}% de metas`;
+                } else {
+                    const doneCount = habitsToShow.filter(h => {
+                        const hName = typeof h === 'string' ? h : h.name;
+                        return habitsResults[hName] === true;
+                    }).length;
+                    const totalCount = habitsToShow.length;
+                    taskSummary = `${doneCount}/${totalCount} hábitos`;
+                }
                 taskResults = { habitsResults };
             } else if (task.type === 'checkin' || task.type === 'tracking') {
                 // Weight
@@ -310,8 +333,10 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                             {isCheckin && 'Seguimiento'}
                             {isNutrition && (task.config?.categories ? `Hábitos: ${task.config.categories.join(' + ')}` : 'Seguimiento de Hábitos')}
                         </h3>
-                        <p className="text-xs text-slate-500 font-medium capitalize">
-                            {format(new Date(dateKey + 'T12:00:00'), 'EEEE dd MMMM', { locale: undefined })}
+                        <p className="text-xs text-slate-500 font-medium capitalize flex items-center gap-1">
+                            {isRetroactive && <History size={12} className="text-orange-500" />}
+                            {isRetroactive ? 'Reflexión: ' : ''}
+                            {format(effectiveDate, 'EEEE dd MMMM', { locale: es })}
                         </p>
                     </div>
                     <div className="flex gap-2">
@@ -359,16 +384,50 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                                         ];
                                     }
                                     return Array.from(new Set(habitsToShow)).map(habit => {
-                                        const status = habitsResults[habit];
+                                        const habitName = typeof habit === 'string' ? habit : habit.name;
+                                        const habitTarget = typeof habit === 'string' ? 7 : (habit.target || 7);
+                                        const status = habitsResults[habitName];
+                                        const isWeekly = task.config?.isWeeklyReporting;
+
+                                        if (isWeekly) {
+                                            const daysCount = parseInt(status) || 0;
+                                            const isGoalMet = daysCount >= habitTarget;
+                                            return (
+                                                <div key={habitName} className="p-5 rounded-[2rem] border border-slate-100 bg-white shadow-sm space-y-4">
+                                                    <div className="flex justify-between items-center mb-1">
+                                                        <div className="flex flex-col">
+                                                            <span className="font-black text-sm text-slate-900">{habitName}</span>
+                                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Meta: {habitTarget} {habitTarget === 1 ? 'día' : 'días'}</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            {isGoalMet && <div className="p-1 bg-emerald-500 text-white rounded-full"><Check size={10} strokeWidth={4} /></div>}
+                                                            <span className={`text-xl font-black ${isGoalMet ? 'text-emerald-500' : 'text-indigo-600'}`}>{daysCount}<span className="text-[10px] text-slate-300 ml-1">días</span></span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex justify-between gap-1">
+                                                        {[0, 1, 2, 3, 4, 5, 6, 7].map(num => (
+                                                            <button
+                                                                key={num}
+                                                                onClick={() => setHabitsResults(prev => ({ ...prev, [habitName]: num }))}
+                                                                className={`flex-1 h-10 rounded-xl font-bold text-xs transition-all ${daysCount === num ? 'bg-indigo-500 text-white shadow-lg scale-110' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}
+                                                            >
+                                                                {num}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            );
+                                        }
+
                                         return (
                                             <button
-                                                key={habit}
+                                                key={habitName}
                                                 onClick={() => {
                                                     setHabitsResults(prev => {
-                                                        const current = prev[habit];
-                                                        if (current === true) return { ...prev, [habit]: false };
-                                                        if (current === false) return { ...prev, [habit]: null };
-                                                        return { ...prev, [habit]: true };
+                                                        const current = prev[habitName];
+                                                        if (current === true) return { ...prev, [habitName]: false };
+                                                        if (current === false) return { ...prev, [habitName]: null };
+                                                        return { ...prev, [habitName]: true };
                                                     });
                                                 }}
                                                 className={`flex items-center justify-between p-4 rounded-3xl border transition-all 
@@ -377,10 +436,10 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                                                     ${status === null || status === undefined ? 'bg-white border-slate-100 text-slate-500' : ''}
                                                 `}
                                             >
-                                                <span className="font-black text-sm">{habit}</span>
+                                                <span className="font-black text-sm">{habitName}</span>
                                                 <div className={`w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all 
                                                     ${status === true ? 'bg-emerald-500 border-emerald-500 text-white scale-110' : ''}
-                                                    ${status === false ? 'bg-red-500 border-red-500 text-white scale-110' : ''}
+                                                    ${status === false ? 'bg-red-500 border-red-200 text-white scale-110' : ''}
                                                     ${status === null || status === undefined ? 'border-slate-200' : ''}
                                                 `}>
                                                     {status === true && <Check size={16} strokeWidth={4} />}

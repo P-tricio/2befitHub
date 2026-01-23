@@ -1,8 +1,8 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Check, Footprints, Utensils, ClipboardList, Scale, Ruler, Camera, CheckSquare, Clock } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, subDays } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { X, Check, Footprints, Utensils, ClipboardList, Scale, Ruler, Camera, CheckSquare, Clock, History, Dumbbell } from 'lucide-react';
 
 const TaskResultsModal = ({ task, onClose }) => {
     if (!task) return null;
@@ -58,7 +58,14 @@ const TaskResultsModal = ({ task, onClose }) => {
                             {getIcon()}
                         </div>
                         <div>
-                            <p className="text-white/60 text-[10px] font-black uppercase tracking-[0.2em]">{task.type}</p>
+                            <div className="flex items-center gap-2">
+                                <p className="text-white/60 text-[10px] font-black uppercase tracking-[0.2em]">{task.type}</p>
+                                {config.retroactive && (
+                                    <span className="bg-white/20 px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest flex items-center gap-1">
+                                        <History size={10} /> Reflexión
+                                    </span>
+                                )}
+                            </div>
                             <h2 className="text-xl font-black leading-tight">{task.title || 'Resultados de Tarea'}</h2>
                         </div>
                     </div>
@@ -67,11 +74,18 @@ const TaskResultsModal = ({ task, onClose }) => {
                 {/* Content */}
                 <div className="flex-1 overflow-y-auto p-6 space-y-6">
                     {/* Date/Status Info */}
-                    <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-400">
-                        <span>{task.completedAt ? format(new Date(task.completedAt), "d 'de' MMMM, HH:mm", { locale: es }) : 'No completado'}</span>
-                        <span className={task.status === 'completed' ? 'text-emerald-500' : 'text-amber-500'}>
-                            {task.status === 'completed' ? 'Completado' : 'Pendiente'}
-                        </span>
+                    <div className="space-y-1">
+                        <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-400">
+                            <span>{task.completedAt ? format(new Date(task.completedAt), "d 'de' MMMM, HH:mm", { locale: es }) : 'No completado'}</span>
+                            <span className={task.status === 'completed' ? 'text-emerald-500' : 'text-amber-500'}>
+                                {task.status === 'completed' ? 'Completado' : 'Pendiente'}
+                            </span>
+                        </div>
+                        {config.retroactive && task.completedAt && (
+                            <p className="text-[9px] font-bold text-slate-400 italic">
+                                * Datos referidos al día anterior ({format(subDays(new Date(task.completedAt), 1), "d 'de' MMMM", { locale: es })})
+                            </p>
+                        )}
                     </div>
 
                     {type === 'neat' && (
@@ -118,15 +132,35 @@ const TaskResultsModal = ({ task, onClose }) => {
                         <div className="space-y-3">
                             <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest px-1">Cumplimiento</h3>
                             <div className="grid gap-2">
-                                {Object.entries(results.habitsResults).map(([habit, done]) => (
-                                    <div key={habit} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
-                                        <span className="text-sm font-bold text-slate-700">{habit}</span>
-                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center ${done === true ? 'bg-emerald-500 text-white' : done === false ? 'bg-rose-500 text-white' : 'bg-slate-200'}`}>
-                                            {done === true && <Check size={14} strokeWidth={4} />}
-                                            {done === false && <X size={14} strokeWidth={4} />}
+                                {Object.entries(results.habitsResults).map(([habit, val]) => {
+                                    const isNumeric = typeof val === 'number';
+
+                                    // Try to find target in task config
+                                    let target = 7;
+                                    if (config.habits) {
+                                        const hConf = config.habits.find(h => (typeof h === 'string' ? h : h.name) === habit);
+                                        if (hConf && typeof hConf === 'object') target = hConf.target || 7;
+                                    }
+
+                                    const isTargetMet = isNumeric ? val >= target : val === true;
+
+                                    return (
+                                        <div key={habit} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                                            <span className="text-sm font-bold text-slate-700">{habit}</span>
+                                            {isNumeric ? (
+                                                <div className={`flex items-center gap-1 px-2 py-1 rounded-lg border shadow-sm ${isTargetMet ? 'bg-emerald-500 border-emerald-400 text-white' : 'bg-white border-slate-100'}`}>
+                                                    <span className={`text-sm font-black ${isTargetMet ? 'text-white' : 'text-indigo-600'}`}>{val}</span>
+                                                    <span className={`text-[10px] font-bold ${isTargetMet ? 'text-white/70' : 'text-slate-400'}`}>/ {target}</span>
+                                                </div>
+                                            ) : (
+                                                <div className={`w-6 h-6 rounded-full flex items-center justify-center ${val === true ? 'bg-emerald-500 text-white' : val === false ? 'bg-rose-500 text-white' : 'bg-slate-200'}`}>
+                                                    {val === true && <Check size={14} strokeWidth={4} />}
+                                                    {val === false && <X size={14} strokeWidth={4} />}
+                                                </div>
+                                            )}
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
                     )}

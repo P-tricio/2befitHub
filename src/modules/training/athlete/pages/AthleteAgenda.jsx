@@ -7,7 +7,7 @@ import { TrainingDB } from '../../services/db';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Bell, Zap, Footprints, Utensils, ClipboardList, LayoutGrid, Dumbbell, Scale, Plus, Camera, Check, X, User as UserIcon, CheckSquare } from 'lucide-react';
 import CheckinModal from '../components/CheckinModal';
 import SessionResultsModal from '../../components/SessionResultsModal';
-import { format, startOfWeek, endOfWeek, addDays, isSameDay, isSameMonth, subWeeks, addWeeks, startOfMonth, endOfMonth, eachDayOfInterval, subMonths, addMonths } from 'date-fns';
+import { format, startOfWeek, endOfWeek, addDays, isSameDay, isSameMonth, subWeeks, addWeeks, startOfMonth, endOfMonth, eachDayOfInterval, subMonths, addMonths, getDay } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -22,6 +22,8 @@ const AthleteAgenda = () => {
     const [checkinTask, setCheckinTask] = useState(null);
     const [sessionResultsTask, setSessionResultsTask] = useState(null);
     const [userCustomMetrics, setUserCustomMetrics] = useState([]);
+    const [userMinimums, setUserMinimums] = useState(null);
+    const [habitFrequency, setHabitFrequency] = useState('daily');
 
     useEffect(() => {
         if (!currentUser) return;
@@ -30,6 +32,8 @@ const AthleteAgenda = () => {
                 const data = doc.data();
                 setSchedule(data.schedule || {});
                 setUserCustomMetrics(data.customMeasurements || []);
+                setUserMinimums(data.minimums || null);
+                setHabitFrequency(data.habitFrequency || 'daily');
             }
         });
         return () => unsub();
@@ -59,11 +63,41 @@ const AthleteAgenda = () => {
 
     const getTasksForDate = (date) => {
         const key = format(date, 'yyyy-MM-dd');
-        return schedule[key] || [];
+        const tasks = [...(schedule[key] || [])];
+
+        // Inject Virtual Habit Task if none exists and user has minimums
+        const hasHabitTask = tasks.some(t => t.type === 'nutrition');
+        const hasMinimums = userMinimums && (
+            (userMinimums.nutrition?.length > 0) ||
+            (userMinimums.movement?.length > 0) ||
+            (userMinimums.health?.length > 0) ||
+            (userMinimums.uncategorized?.length > 0)
+        );
+
+        if (!hasHabitTask && hasMinimums) {
+            const isWeekly = habitFrequency === 'weekly';
+            const isSunday = getDay(date) === 0;
+
+            if (!isWeekly || isSunday) {
+                tasks.push({
+                    id: 'virtual-habits-' + key,
+                    type: 'nutrition',
+                    title: isWeekly ? 'Resumen Semanal: Hábitos' : 'Mínimos Diarios',
+                    is_virtual: true,
+                    config: {
+                        categories: ['nutrition', 'movement', 'health'],
+                        retroactive: !isWeekly,
+                        isWeeklyReporting: isWeekly
+                    }
+                });
+            }
+        }
+
+        return tasks;
     };
 
     const isFutureRestricted = (date) => {
-        const limitDate = addDays(new Date(), 14); // Extended to 14 days for better UX
+        const limitDate = addDays(new Date(), 7); // Restricted to 7 days per user request
         const d = new Date(date).setHours(0, 0, 0, 0);
         const l = limitDate.setHours(0, 0, 0, 0);
         return d > l;

@@ -446,6 +446,10 @@ export const TrainingDB = {
             );
             const snapshot = await getDocs(q);
             return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        },
+        async deleteEntry(userId, date) {
+            const ref = doc(db, 'users', userId, 'tracking', date);
+            await deleteDoc(ref);
         }
     }
 };
