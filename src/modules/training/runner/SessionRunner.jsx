@@ -1104,11 +1104,26 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
     const getTimerDisplay = () => {
         if (!isActive && !timeLeft && protocol !== 'R') return '0:00';
 
+        if (protocol === 'LIBRE') {
+            return (
+                <div className="flex flex-col items-center">
+                    <span className="text-4xl font-black text-white tracking-widest leading-none mb-1">
+                        LIBRE
+                    </span>
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 opacity-80">
+                        SENSACIONES Y CARGA
+                    </span>
+                    <span className="text-xs font-bold text-blue-500 uppercase tracking-widest mt-1 bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/20">
+                        Enfoque en Calidad
+                    </span>
+                </div>
+            );
+        }
+
         if (protocol === 'E') {
             const totalRounds = module.emomParams?.durationMinutes || 4;
 
             // Generate Target Reps Text
-            // 1. Try to use exercise specific targets
             const targetList = exercises.map(ex => {
                 if (ex.targetReps) return `${ex.targetReps}`;
                 if (ex.manifestation) return ex.manifestation;
@@ -1118,8 +1133,6 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
             let mainDisplayText = "Completar Tarea";
 
             if (targetList.length > 0) {
-                // If 1 exercise: "10"
-                // If 2: "10 + 5"
                 mainDisplayText = targetList.join(' + ');
             } else if (module.targeting?.[0]?.instruction) {
                 mainDisplayText = module.targeting[0].instruction;
@@ -1305,8 +1318,8 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                 {/* Protocol Specific Instruction Display */}
                 {/* Main Timer Display (Protocol Specific) */}
                 {/* Main Timer Display (Protocol Specific) */}
-                {(protocol === 'T' || protocol === 'E' || protocol === 'R') && (
-                    <div className={`mb-2 bg-slate-800/30 rounded-3xl border border-slate-700/50 backdrop-blur relative overflow-hidden ${protocol === 'E' ? 'px-4 py-3 mt-2' : 'p-6 mt-6'}`}>
+                {(protocol === 'T' || protocol === 'E' || protocol === 'R' || protocol === 'LIBRE') && (
+                    <div className={`mb-2 bg-slate-800/30 rounded-3xl border border-slate-700/50 backdrop-blur relative overflow-hidden ${protocol === 'E' || protocol === 'LIBRE' ? 'px-4 py-3 mt-2' : 'p-6 mt-6'}`}>
                         {getTimerDisplay()}
 
                         <div className="flex gap-3 mt-3">
@@ -1329,23 +1342,25 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                             >
                                 {isActive ? 'Pausar' : (timeLeft === 0 && protocol === 'E' ? 'Siguiente Ronda' : 'Iniciar')}
                             </button>
-                            <button
-                                onClick={() => {
-                                    if (protocol === 'E') {
-                                        setTimeLeft(60);
-                                        setCurrentMinute(1);
-                                    } else if (protocol === 'R') {
-                                        setElapsed(0);
-                                    } else {
-                                        const cap = module.targeting?.[0]?.timeCap || 240;
-                                        setTimeLeft(cap);
-                                    }
-                                    setIsActive(false);
-                                }}
-                                className="px-4 rounded-xl bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 border border-slate-700 font-bold transition-all"
-                            >
-                                ↺
-                            </button>
+                            {protocol !== 'LIBRE' && (
+                                <button
+                                    onClick={() => {
+                                        if (protocol === 'E') {
+                                            setTimeLeft(60);
+                                            setCurrentMinute(1);
+                                        } else if (protocol === 'R') {
+                                            setElapsed(0);
+                                        } else {
+                                            const cap = module.targeting?.[0]?.timeCap || 240;
+                                            setTimeLeft(cap);
+                                        }
+                                        setIsActive(false);
+                                    }}
+                                    className="px-4 rounded-xl bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 border border-slate-700 font-bold transition-all"
+                                >
+                                    ↺
+                                </button>
+                            )}
                         </div>
                     </div>
                 )}
@@ -1401,7 +1416,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                 </svg>
                 <button onClick={() => setIsActive(!isActive)} className="z-20 text-center group">
                     <div className={`text-[clamp(2.5rem,12vw,4rem)] font-black tabular-nums tracking-tighter transition-colors ${isActive ? 'text-white' : 'text-slate-500'} group-hover:text-emerald-400`}>
-                        {protocol === 'R' || protocol === 'mix' ? formatTime(elapsed) : formatTime(timeLeft || 0)}
+                        {protocol === 'R' || protocol === 'LIBRE' || protocol === 'mix' ? formatTime(elapsed) : formatTime(timeLeft || 0)}
                     </div>
                     <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mt-1 flex items-center justify-center gap-1">
                         {isActive ? <span className="text-emerald-500 animate-pulse">● EN CURSO</span> : <span className="flex items-center gap-1"><Play size={10} /> INICIAR</span>}
@@ -1478,6 +1493,11 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                     <span className={`text-xs font-bold text-center mb-2 truncate w-full px-1 ${isTargetReached ? 'text-emerald-400' : 'text-slate-400'}`}>
                                         {ex.nameEs || ex.name}
                                     </span>
+                                    {protocol === 'LIBRE' && (ex.targetReps || ex.manifestation) && (
+                                        <div className="mb-2 bg-blue-500/10 px-2 py-0.5 rounded text-[10px] font-black text-blue-400 border border-blue-500/10">
+                                            OBJ: {ex.targetReps ? `${ex.targetReps} reps` : ex.manifestation}
+                                        </div>
+                                    )}
                                     <div className={`flex items-center ${isDual ? 'gap-1' : 'gap-3'}`}>
                                         {/* Subtract Button - Low Visual Weight */}
                                         <button

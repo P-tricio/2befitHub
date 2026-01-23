@@ -289,7 +289,7 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
             onClose(true);
         } catch (error) {
             console.error(error);
-            alert('Error al guardar datos');
+            alert(`Error al guardar datos: ${error.message}`);
         } finally {
             setSaving(false);
         }

@@ -217,51 +217,50 @@ const BlockCard = ({ block, idx, onUpdate, onRemove, onDuplicate, onAddExercise,
     };
 
     return (
-        <div data-block-id={idx} className={`bg-white md:bg-slate-50/50 rounded-2xl border border-slate-200 overflow-hidden mb-4 relative transition-all ${isMobileLandscape ? 'mb-2 rounded-xl' : ''}`}>
+        <div data-block-id={idx} className={`bg-white md:bg-slate-50/50 md:rounded-2xl border-y md:border border-slate-200 overflow-hidden mb-2 md:mb-4 relative transition-all ${isMobileLandscape ? 'mb-2 rounded-xl' : ''}`}>
             {/* Header */}
-            <div className={`bg-white border-b border-slate-100 flex justify-between items-center sticky top-0 z-10 transition-all ${isMobileLandscape ? 'p-2' : 'p-4'}`}>
-                <div className="flex items-center gap-3 flex-1 min-w-0 mr-2">
-                    <span className={`rounded bg-slate-900 text-white font-bold flex items-center justify-center shrink-0 transition-all ${isMobileLandscape ? 'w-5 h-5 text-[10px]' : 'w-6 h-6 text-xs'}`}>
+            <div className={`bg-white border-b border-slate-100 flex justify-between items-center sticky top-0 z-10 transition-all ${isMobileLandscape ? 'p-1' : 'p-2 md:p-4'}`}>
+                <div className="flex items-center gap-2 flex-1 min-w-0 mr-1">
+                    <span className="w-5 h-5 rounded bg-slate-900 text-white font-bold flex items-center justify-center shrink-0 text-[10px]">
                         {idx + 1}
                     </span>
                     <input
                         type="text"
                         value={block.name}
                         onChange={(e) => onUpdate({ ...block, name: e.target.value })}
-                        className={`font-black text-slate-900 bg-transparent outline-none focus:bg-slate-50 px-2 rounded -ml-2 w-full truncate transition-all ${isMobileLandscape ? 'text-xs' : ''}`}
+                        className="font-black text-slate-900 bg-transparent outline-none focus:bg-slate-50 px-2 rounded -ml-2 flex-1 min-w-0 truncate transition-all text-sm"
                         placeholder="Nombre del Bloque"
                     />
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                    <button
-                        onClick={onImportModule}
-                        className={`text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors ${isMobileLandscape ? 'p-1' : 'p-1.5'}`}
-                        title="Importar Módulo"
-                    >
-                        <Download size={isMobileLandscape ? 14 : 16} />
-                    </button>
-                    <button
-                        onClick={onSaveModule}
-                        className={`text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors ${isMobileLandscape ? 'p-1' : 'p-1.5'}`}
-                        title="Guardar como Módulo"
-                    >
-                        <UploadCloud size={isMobileLandscape ? 14 : 16} />
-                    </button>
-                    <button
-                        onClick={onDuplicate}
-                        className={`text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors ${isMobileLandscape ? 'p-1' : 'p-1.5'}`}
-                        title="Duplicar Bloque"
-                    >
-                        <Copy size={isMobileLandscape ? 14 : 16} />
-                    </button>
-                    <button
-                        onClick={onRemove}
-                        className={`text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors ${isMobileLandscape ? 'p-1' : 'p-1.5'}`}
-                        title="Eliminar Bloque"
-                    >
-                        <Trash2 size={isMobileLandscape ? 14 : 16} />
-                    </button>
-                    <button onClick={() => setIsExpanded(!isExpanded)} className="p-1 text-slate-400">
+                    {/* Protocol Selector */}
+                    <div className="flex bg-slate-100 p-0.5 rounded-lg mr-1 border border-slate-200">
+                        {['L', 'T', 'R', 'E'].map(p => {
+                            const protoKey = p === 'L' ? 'LIBRE' : `PDP-${p}`;
+                            const isSelected = block.protocol === protoKey;
+                            return (
+                                <button
+                                    key={p}
+                                    onClick={() => onUpdate({ ...block, protocol: protoKey })}
+                                    className={`px-2 py-1 text-[9px] font-black rounded-md transition-all ${isSelected ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                    title={protoKey}
+                                >
+                                    {p}
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    <ActionMenu
+                        actions={[
+                            { label: 'Importar Módulo', icon: <Download size={16} />, onClick: onImportModule },
+                            { label: 'Guardar como Módulo', icon: <UploadCloud size={16} />, onClick: onSaveModule },
+                            { label: 'Duplicar Bloque', icon: <Copy size={16} />, onClick: onDuplicate },
+                            { label: 'Eliminar Bloque', icon: <Trash2 size={16} />, onClick: onRemove, variant: 'danger' }
+                        ]}
+                    />
+
+                    <button onClick={() => setIsExpanded(!isExpanded)} className="p-1 text-slate-400 hover:text-slate-600">
                         {isExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
                     </button>
                 </div>
@@ -1702,7 +1701,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
     };
 
     return (
-        <div className="w-full h-full md:max-w-[95vw] md:h-[92vh] md:mx-auto bg-white shadow-2xl md:rounded-3xl border border-slate-200 flex flex-col overflow-hidden relative font-sans transition-all">
+        <div className="w-full h-full md:max-w-[95vw] md:h-[92vh] md:mx-auto bg-white shadow-none md:shadow-2xl md:rounded-3xl border-x-0 md:border border-slate-200 flex flex-col overflow-hidden relative font-sans transition-all">
             {/* Main Navigation Tabs - Hide in Embedded Mode or Mobile Landscape */}
             {!embeddedMode && !isMobileLandscape && (
                 <div className="bg-slate-900 text-white p-3 pt-4 shrink-0 shadow-lg z-10">
@@ -1754,12 +1753,12 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
 
             {/* Session Title - Only show in editor mode and not in extreme landscape mobile unless we compact it */}
             {mainView === 'editor' && (
-                <div className={`bg-white border-b border-slate-100 px-4 flex items-center gap-3 sticky top-0 md:relative z-20 shadow-sm md:shadow-none transition-all ${isMobileLandscape ? 'py-1' : 'py-3 md:px-6'}`}>
+                <div className={`bg-white border-b border-slate-100 px-2 md:px-6 flex items-center gap-2 sticky top-0 md:relative z-20 shadow-sm md:shadow-none transition-all ${isMobileLandscape ? 'py-0.5' : 'py-2 md:py-3'}`}>
                     {/* Title */}
                     <input
                         value={sessionTitle}
                         onChange={e => setSessionTitle(e.target.value)}
-                        className={`bg-transparent font-black outline-none placeholder:text-slate-300 flex-1 min-w-0 text-slate-900 border-none focus:ring-0 p-0 transition-all ${isMobileLandscape ? 'text-sm' : 'text-lg md:text-xl'}`}
+                        className={`bg-transparent font-black outline-none placeholder:text-slate-300 flex-1 min-w-0 text-slate-900 border-none focus:ring-0 p-1 transition-all ${isMobileLandscape ? 'text-xs' : 'text-base md:text-xl'}`}
                         placeholder="Nombre de la Sesión"
                     />
 
@@ -2868,21 +2867,13 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                                             </div>
                                             <p className="text-[10px] text-slate-400">{(session.blocks || []).length} bloques</p>
                                         </div>
-                                        <div className="flex gap-1">
-                                            <button
-                                                onClick={() => handleLoadSession(session)}
-                                                className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                                                title="Cargar"
-                                            >
-                                                <Download size={16} />
-                                            </button>
-                                            <button
-                                                onClick={() => handleDeleteSession(session.id)}
-                                                className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                                title="Eliminar"
-                                            >
-                                                <Trash2 size={16} />
-                                            </button>
+                                        <div className="flex gap-1 shrink-0">
+                                            <ActionMenu
+                                                actions={[
+                                                    { label: 'Cargar Sesión', icon: <Download size={16} />, onClick: () => handleLoadSession(session) },
+                                                    { label: 'Eliminar', icon: <Trash2 size={16} />, onClick: () => handleDeleteSession(session.id), variant: 'danger' }
+                                                ]}
+                                            />
                                         </div>
                                     </div>
                                     {session.description && (

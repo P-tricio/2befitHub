@@ -2,14 +2,24 @@
  * Centralized service for handling image uploads via ImgBB
  */
 
-const IMGBB_API_KEY = import.meta.env.VITE_IMGBB_API_KEY?.trim();
+// Direct access to Vite env variables
+const getApiKey = () => {
+    const key = import.meta.env.VITE_IMGBB_API_KEY;
+    return key ? String(key).trim() : null;
+};
 
 // Diagnostic log (masking the key for security)
-if (IMGBB_API_KEY) {
-    console.log(`[imageService] API Key detected: ${IMGBB_API_KEY.slice(0, 4)}...${IMGBB_API_KEY.slice(-4)}`);
-} else {
-    console.warn("[imageService] API Key NOT detected. Check your .env file.");
-}
+const logStatus = () => {
+    const key = getApiKey();
+    if (key) {
+        console.log(`[imageService] API Key detected: ${key.slice(0, 4)}...${key.slice(-4)}`);
+    } else {
+        console.warn("[imageService] API Key NOT detected in import.meta.env. Available VITE keys:",
+            Object.keys(import.meta.env).filter(k => k.startsWith('VITE_')));
+    }
+};
+
+logStatus();
 
 /**
  * Uploads an image to ImgBB and returns the URL.
@@ -19,8 +29,10 @@ if (IMGBB_API_KEY) {
  * @returns {Promise<string>} - The uploaded image URL.
  */
 export const uploadToImgBB = async (image) => {
+    const apiKey = getApiKey();
+
     // 1. Validate API Key
-    if (!IMGBB_API_KEY) {
+    if (!apiKey) {
         throw new Error("Configuración del servidor incompleta (API Key faltante).");
     }
 
@@ -39,7 +51,7 @@ export const uploadToImgBB = async (image) => {
             formData.append('image', image);
         }
 
-        const response = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
+        const response = await fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, {
             method: 'POST',
             body: formData,
         });
@@ -49,16 +61,16 @@ export const uploadToImgBB = async (image) => {
         if (data.success) {
             return data.data.url;
         } else {
-            console.error("ImgBB Upload Error Response:", data);
+            console.error("ImgBB Error Response:", data);
             const errorMsg = data.error?.message || "Error desconocido.";
 
             if (errorMsg.toLowerCase().includes("invalid api key")) {
-                throw new Error("La API Key de ImgBB no es válida. Revisa la consola.");
+                throw new Error("La API Key de ImgBB parece ser inválida. Revisa tu archivo .env");
             }
             throw new Error(`Error de ImgBB: ${errorMsg}`);
         }
     } catch (error) {
-        console.error("Upload Exception:", error);
+        console.error("Upload Exception Details:", error);
         throw error;
     }
 };

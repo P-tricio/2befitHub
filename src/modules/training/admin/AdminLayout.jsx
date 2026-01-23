@@ -63,7 +63,7 @@ const AdminLayout = () => {
             </div>
 
             {/* Main Content */}
-            <main className={`flex-1 overflow-y-auto pb-20 lg:pb-6 ${isMobileLandscape ? 'p-1' : 'p-3 lg:p-6'}`}>
+            <main className={`flex-1 overflow-y-auto pb-20 lg:pb-6 ${isMobileLandscape ? 'p-0' : 'p-0 lg:p-6'}`}>
                 <Outlet />
             </main>
 

@@ -57,7 +57,7 @@ const Profile = () => {
             setIsEditing(false);
         } catch (error) {
             console.error(error);
-            alert('Error al actualizar perfil');
+            alert(`Error al actualizar perfil: ${error.message}`);
         }
     };
 
