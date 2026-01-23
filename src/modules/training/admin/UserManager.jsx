@@ -68,8 +68,8 @@ const UserManager = () => {
     }
 
     return (
-        <div className="max-w-5xl mx-auto relative p-6">
-            <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+        <div className="max-w-7xl mx-auto relative p-4">
+            <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                 <div>
                     <h1 className="text-3xl font-black text-slate-900">Usuarios</h1>
                     <p className="text-slate-500 text-sm">Gestiona el acceso y la planificación de los atletas.</p>

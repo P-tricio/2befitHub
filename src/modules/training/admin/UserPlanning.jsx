@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, ChevronLeft, ChevronRight, Plus, X, Search, Check, Dumbbell, Footprints, ClipboardList, Utensils, Layers, MoreVertical, Trash2, Copy, Edit2, ArrowRight, Copy as DuplicateIcon, Scale, Ruler, Camera, Settings2, FileText, Zap, CheckSquare, Package, ListFilter } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TrainingDB } from '../services/db';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, getDay, addDays, startOfDay } from 'date-fns';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, getDay, addDays, startOfDay, startOfWeek, endOfWeek } from 'date-fns';
 import { es } from 'date-fns/locale';
 import SessionResultsModal from '../components/SessionResultsModal';
 import TaskResultsModal from '../components/TaskResultsModal';
@@ -77,8 +77,8 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
 
     // --- Helpers ---
     const getDaysInMonth = () => {
-        const start = startOfMonth(currentDate);
-        const end = endOfMonth(currentDate);
+        const start = startOfWeek(startOfMonth(currentDate), { weekStartsOn: 1 });
+        const end = endOfWeek(endOfMonth(currentDate), { weekStartsOn: 1 });
         return eachDayOfInterval({ start, end });
     };
 
@@ -432,7 +432,7 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
             )}
 
             {/* Calendar Controls */}
-            <div className="flex items-center justify-between p-6 max-w-5xl mx-auto w-full">
+            <div className="flex items-center justify-between py-2 px-2 max-w-full mx-auto w-full">
                 <h3 className="text-2xl font-black capitalize text-slate-900">
                     {format(currentDate, 'MMMM yyyy', { locale: es })}
                 </h3>
@@ -503,14 +503,12 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
                             {/* Days */}
                             <div className="grid grid-cols-7 gap-1 auto-rows-[120px]">
                                 {/* Empty slots for start of month alignment (Mon start) */}
-                                {Array.from({ length: (getDay(startOfMonth(currentDate)) + 6) % 7 }).map((_, i) => (
-                                    <div key={`empty-${i}`} />
-                                ))}
 
                                 {getDaysInMonth().map(day => {
                                     const dateKey = format(day, 'yyyy-MM-dd');
                                     const isToday = isSameDay(day, new Date());
                                     const isPast = day < startOfDay(new Date()) && !isToday;
+                                    const isOutsideMonth = !isSameMonth(day, currentDate);
                                     const tasks = schedule[dateKey] || [];
 
                                     return (
@@ -520,7 +518,8 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
                                             className={`
                                                 rounded-lg border transition-all flex flex-col gap-1 relative group hover:z-10
                                                 ${isToday ? 'border-emerald-500 ring-1 ring-emerald-500' : 'border-slate-100 bg-white hover:border-slate-300'}
-                                                ${isPast ? 'opacity-60 grayscale-[0.5]' : ''}
+                                                ${isPast || isOutsideMonth ? 'opacity-60 grayscale-[0.5]' : ''}
+                                                ${isOutsideMonth ? 'bg-slate-50/50' : ''}
                                             `}
                                         >
                                             {/* Number Area - Click to Add */}

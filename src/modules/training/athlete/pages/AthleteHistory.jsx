@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../../../context/AuthContext';
 import { TrainingDB } from '../../services/db';
-import { X, Calendar, Trophy, ChevronRight, Search, Clock, Zap, ArrowLeft } from 'lucide-react';
+import { X, Calendar, Trophy, ChevronRight, Search, Clock, Zap, ArrowLeft, Footprints, Dumbbell, CheckSquare, Activity } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -16,6 +16,7 @@ const AthleteHistory = () => {
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedResults, setSelectedResults] = useState(null);
+    const [activeType, setActiveType] = useState('all'); // 'all' | 'session' | 'neat' | 'free_training' | 'nutrition'
 
     useEffect(() => {
         if (currentUser) loadData();
@@ -52,10 +53,12 @@ const AthleteHistory = () => {
         }
     };
 
-    const filteredHistory = history.filter(item =>
-        (item.session?.name || item.title || item.type).toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.scheduledDate.includes(searchTerm)
-    );
+    const filteredHistory = history.filter(item => {
+        const matchesSearch = (item.session?.name || item.title || item.type).toLowerCase().includes(searchTerm.toLowerCase()) ||
+            item.scheduledDate.includes(searchTerm);
+        const matchesType = activeType === 'all' || item.type === activeType;
+        return matchesSearch && matchesType;
+    });
 
     return (
         <div className="min-h-screen bg-slate-50 pb-20">
@@ -75,8 +78,32 @@ const AthleteHistory = () => {
                         placeholder="Buscar por sesión o fecha..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm outline-none focus:border-slate-900 transition-colors"
+                        className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm outline-none focus:border-slate-900 transition-colors shadow-sm focus:shadow-md"
                     />
+                </div>
+
+                {/* Filter Chips */}
+                <div className="flex gap-2 overflow-x-auto no-scrollbar py-2 -mx-2 px-2 mt-2">
+                    {[
+                        { id: 'all', label: 'Todos', icon: <Trophy size={14} /> },
+                        { id: 'session', label: 'Programados', icon: <Clock size={14} /> },
+                        { id: 'neat', label: 'Movimiento', icon: <Footprints size={14} /> },
+                        { id: 'free_training', label: 'Libre', icon: <Dumbbell size={14} /> },
+                        { id: 'nutrition', label: 'Hábitos', icon: <CheckSquare size={14} /> }
+                    ].map(type => (
+                        <button
+                            key={type.id}
+                            onClick={() => setActiveType(type.id)}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shrink-0 whitespace-nowrap
+                                ${activeType === type.id
+                                    ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/20'
+                                    : 'bg-white text-slate-400 border border-slate-100 hover:border-slate-300 shadow-sm'
+                                }`}
+                        >
+                            {type.icon}
+                            {type.label}
+                        </button>
+                    ))}
                 </div>
             </header>
 

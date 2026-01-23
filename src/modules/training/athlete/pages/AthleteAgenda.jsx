@@ -7,7 +7,7 @@ import { TrainingDB } from '../../services/db';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Bell, Zap, Footprints, Utensils, ClipboardList, LayoutGrid, Dumbbell, Scale, Plus, Camera, Check, X, User as UserIcon, CheckSquare } from 'lucide-react';
 import CheckinModal from '../components/CheckinModal';
 import SessionResultsModal from '../../components/SessionResultsModal';
-import { format, startOfWeek, addDays, isSameDay, subWeeks, addWeeks, startOfMonth, endOfMonth, eachDayOfInterval, subMonths, addMonths } from 'date-fns';
+import { format, startOfWeek, endOfWeek, addDays, isSameDay, isSameMonth, subWeeks, addWeeks, startOfMonth, endOfMonth, eachDayOfInterval, subMonths, addMonths } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -75,13 +75,9 @@ const AthleteAgenda = () => {
     };
 
     const getMonthDays = () => {
-        const start = startOfMonth(currentDate);
-        const end = endOfMonth(currentDate);
-        const days = eachDayOfInterval({ start, end });
-        const startDay = start.getDay();
-        const padCount = startDay === 0 ? 6 : startDay - 1;
-        const padding = Array(padCount).fill(null);
-        return [...padding, ...days];
+        const start = startOfWeek(startOfMonth(currentDate), { weekStartsOn: 1 });
+        const end = endOfWeek(endOfMonth(currentDate), { weekStartsOn: 1 });
+        return eachDayOfInterval({ start, end });
     };
 
     const weekDays = getWeekDays();
@@ -91,8 +87,8 @@ const AthleteAgenda = () => {
     const showTasks = !isFutureRestricted(selectedDate);
 
     return (
-        <div className="p-6 max-w-lg mx-auto space-y-6 pb-32">
-            <header className="flex justify-between items-center mb-6">
+        <div className="p-4 max-w-xl mx-auto space-y-4 pb-32">
+            <header className="flex justify-between items-center mb-4">
                 <div className="flex items-center gap-3">
                     <Link to="/training/profile" className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center border border-slate-200 text-slate-400 hover:text-slate-600 transition-all shrink-0 overflow-hidden">
                         {currentUser?.photoURL ? (
@@ -166,9 +162,9 @@ const AthleteAgenda = () => {
                     </div>
                     <div className="grid grid-cols-7 gap-y-1">
                         {monthDays.map((date, idx) => {
-                            if (!date) return <div key={idx} />;
                             const isSelected = isSameDay(date, selectedDate);
                             const isToday = isSameDay(date, new Date());
+                            const isOutsideMonth = !isSameMonth(date, currentDate);
                             const hasTasks = getTasksForDate(date).length > 0;
                             const restricted = isFutureRestricted(date);
 
@@ -179,6 +175,7 @@ const AthleteAgenda = () => {
                                     className={`relative h-10 w-full flex items-center justify-center rounded-2xl text-sm font-bold transition-all
                                         ${isSelected ? 'bg-slate-900 text-white shadow-lg z-10' : 'text-slate-600 hover:bg-slate-50'}
                                         ${isToday && !isSelected ? 'text-emerald-500 bg-emerald-50' : ''}
+                                        ${isOutsideMonth ? 'opacity-30 grayscale' : ''}
                                     `}
                                 >
                                     {format(date, 'd')}

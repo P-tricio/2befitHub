@@ -70,8 +70,8 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
     return (
         <div className="fixed inset-0 z-[60] bg-white flex flex-col animate-in slide-in-from-right duration-300">
             {/* Header Redesigned */}
-            <div className="sticky top-0 z-[70] bg-white border-b border-slate-100 px-6 py-4">
-                <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
+            <div className="sticky top-0 z-[70] bg-white border-b border-slate-100 px-4 py-2">
+                <div className="max-w-[1600px] mx-auto flex items-center justify-between gap-4">
                     {/* Left: Close & Title */}
                     <div className="flex items-center gap-4">
                         <button
@@ -110,8 +110,8 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
                 </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-slate-50/50 pb-20">
-                <div className="max-w-6xl mx-auto space-y-8">
+            <div className="flex-1 overflow-y-auto p-2 md:p-4 bg-slate-50/50 pb-20">
+                <div className="max-w-[1600px] mx-auto space-y-6">
 
                     {activeTab === 'metrics' ? (
                         <>
