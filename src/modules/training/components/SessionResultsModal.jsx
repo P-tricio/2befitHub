@@ -74,7 +74,7 @@ const SessionResultsModal = ({ task, session, onClose, userId }) => {
                                 <Clock size={14} />
                                 <span className="text-[10px] font-bold uppercase">Tiempo</span>
                             </div>
-                            <p className="text-lg font-black">{results.durationMinutes || '--'} min</p>
+                            <p className="text-lg font-black">{results.durationMinutes || results.duration || '--'} min</p>
                         </div>
                         <div className="bg-white/5 rounded-2xl p-3 border border-white/10">
                             <div className="flex items-center gap-2 text-slate-400 mb-1">
@@ -103,8 +103,8 @@ const SessionResultsModal = ({ task, session, onClose, userId }) => {
                                 {results.analysis.map((insight, idx) => (
                                     <div key={idx} className="bg-white p-4 rounded-2xl border border-slate-100 flex items-center gap-4 shadow-sm">
                                         <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${insight.type === 'up' ? 'bg-emerald-50 text-emerald-500' :
-                                                insight.type === 'down' ? 'bg-amber-50 text-amber-500' :
-                                                    'bg-blue-50 text-blue-500'
+                                            insight.type === 'down' ? 'bg-amber-50 text-amber-500' :
+                                                'bg-blue-50 text-blue-500'
                                             }`}>
                                             {insight.type === 'up' && <TrendingUp size={20} />}
                                             {insight.type === 'down' && <TrendingDown size={20} />}
@@ -137,10 +137,10 @@ const SessionResultsModal = ({ task, session, onClose, userId }) => {
                                         >
                                             <div className="flex items-center gap-3">
                                                 <span className={`text-[10px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider ${log.blockType === 'BOOST' ? 'bg-orange-100 text-orange-600' :
-                                                        log.blockType === 'BASE' ? 'bg-emerald-100 text-emerald-600' :
-                                                            log.blockType === 'BUILD' ? 'bg-blue-100 text-blue-600' :
-                                                                log.blockType === 'BURN' ? 'bg-rose-100 text-rose-600' :
-                                                                    'bg-slate-100 text-slate-600'
+                                                    log.blockType === 'BASE' ? 'bg-emerald-100 text-emerald-600' :
+                                                        log.blockType === 'BUILD' ? 'bg-blue-100 text-blue-600' :
+                                                            log.blockType === 'BURN' ? 'bg-rose-100 text-rose-600' :
+                                                                'bg-slate-100 text-slate-600'
                                                     }`}>
                                                     {log.blockType}
                                                 </span>
@@ -167,8 +167,6 @@ const SessionResultsModal = ({ task, session, onClose, userId }) => {
                                                     <div className="p-4 space-y-3 bg-slate-50/30">
                                                         {/* Individual Exercises inside Log */}
                                                         {Object.entries(log.results?.reps || {}).map(([exIdx, reps], idx) => {
-                                                            // We might not have exercise names in LOGS directly, but we can match with session blocks
-                                                            // For now, let's just show indices or find in session if provided
                                                             const blockMetadata = session.blocks?.find(b => b.name === log.blockType || b.id === log.moduleId);
                                                             const exercise = blockMetadata?.exercises?.[exIdx];
                                                             const weight = log.results.actualWeights?.[exIdx] || log.results.weights?.[exIdx] || 0;
@@ -176,13 +174,15 @@ const SessionResultsModal = ({ task, session, onClose, userId }) => {
                                                             return (
                                                                 <div key={idx} className="flex items-center justify-between gap-4 p-3 bg-white rounded-xl border border-slate-100">
                                                                     <div className="flex-1 min-w-0">
-                                                                        <p className="font-bold text-slate-700 text-sm truncate">{exercise?.nameEs || exercise?.name || `Ejercicio ${parseInt(exIdx) + 1}`}</p>
+                                                                        <p className="font-bold text-slate-700 text-sm truncate">
+                                                                            {exercise?.name_es || exercise?.nameEs || exercise?.name || `Ejercicio ${parseInt(exIdx) + 1}`}
+                                                                        </p>
                                                                         <p className="text-[10px] text-slate-400 font-bold uppercase">{exercise?.manifestation || ''}</p>
                                                                     </div>
                                                                     <div className="flex items-center gap-3 shrink-0">
                                                                         <div className="text-right">
                                                                             <p className="text-sm font-black text-slate-900">{reps} reps</p>
-                                                                            <p className="text-[10px] text-slate-400 font-bold uppercase">Realizadas</p>
+                                                                            <p className="text-[10px] text-slate-400 font-bold uppercase">{log.protocol === 'E' ? 'Ronda' : 'Total'}</p>
                                                                         </div>
                                                                         {parseFloat(weight) > 0 && (
                                                                             <div className="w-12 h-10 bg-slate-900 rounded-lg flex flex-col items-center justify-center text-white">
@@ -195,8 +195,28 @@ const SessionResultsModal = ({ task, session, onClose, userId }) => {
                                                             );
                                                         })}
 
+                                                        {/* EMOM Rounds breakdown */}
+                                                        {log.blockType === 'EMOM' && log.results?.emomResults && (
+                                                            <div className="space-y-2 mt-3">
+                                                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Rondas EMOM</p>
+                                                                <div className="flex flex-wrap gap-1.5">
+                                                                    {Object.entries(log.results.emomResults).map(([round, status]) => (
+                                                                        <div
+                                                                            key={round}
+                                                                            className={`w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-black ${status === 'success' ? 'bg-emerald-500 text-white shadow-sm' :
+                                                                                    status === 'fail' ? 'bg-rose-500 text-white shadow-sm' :
+                                                                                        'bg-slate-200 text-slate-400'
+                                                                                }`}
+                                                                        >
+                                                                            {parseInt(round) + 1}
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        )}
+
                                                         {log.feedback?.notes && (
-                                                            <div className="flex gap-3 p-3 bg-amber-50 rounded-xl border border-amber-100">
+                                                            <div className="flex gap-3 p-3 bg-amber-50 rounded-xl border border-amber-100 mt-3">
                                                                 <MessageSquare size={14} className="text-amber-500 shrink-0 mt-0.5" />
                                                                 <p className="text-xs text-amber-700 italic leading-relaxed">{log.feedback.notes}</p>
                                                             </div>

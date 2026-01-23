@@ -890,7 +890,7 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
                 {sessionResultsTask && (
                     <SessionResultsModal
                         task={sessionResultsTask}
-                        session={getSessionDetails(sessionResultsTask.sessionId)}
+                        session={sessions.find(s => s.id === sessionResultsTask.sessionId)}
                         userId={user.id}
                         onClose={() => setSessionResultsTask(null)}
                     />

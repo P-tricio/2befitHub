@@ -7,6 +7,7 @@ import { ChevronLeft, Play, AlertCircle, CheckCircle, Clock, Plus, TrendingUp, T
 import { useSessionData } from './hooks/useSessionData.js';
 import { useKeepAwake } from '../../../hooks/useKeepAwake';
 import { useAudioFeedback } from '../../../hooks/useAudioFeedback';
+import ExerciseMedia from '../components/ExerciseMedia';
 
 const SessionRunner = () => {
     // Keep screen awake during session
@@ -507,26 +508,6 @@ const SessionRunner = () => {
 
 // --- Sub-components & Logic ---
 
-const AutoGifImage = ({ ex, className = "w-full h-full object-cover" }) => {
-    const [currentImage, setCurrentImage] = useState(ex.mediaUrl || ex.imageStart || null);
-
-    useEffect(() => {
-        // If we have a real mediaUrl (GIF/Video) or missing start/end pair, don't animate custom loop
-        if (ex.mediaUrl && !ex.imageStart) return;
-
-        if (ex.imageStart && ex.imageEnd) {
-            const interval = setInterval(() => {
-                setCurrentImage(prev => prev === ex.imageStart ? ex.imageEnd : ex.imageStart);
-            }, 700);
-            return () => clearInterval(interval);
-        }
-    }, [ex.mediaUrl, ex.imageStart, ex.imageEnd]);
-
-    if (!currentImage) return <div className="w-full h-full flex items-center justify-center text-slate-500 text-[10px] font-bold uppercase">No Media</div>;
-
-    return <img src={currentImage} className={className} alt="" />;
-};
-
 const ExerciseDetailModal = ({ selectedExercise, onClose }) => (
     <div className="fixed inset-0 z-[6000] flex items-center justify-center p-4">
         <motion.div
@@ -539,7 +520,7 @@ const ExerciseDetailModal = ({ selectedExercise, onClose }) => (
             className="bg-slate-800 w-full max-w-sm rounded-3xl overflow-hidden relative z-10 shadow-2xl border border-slate-700 max-h-[90vh] flex flex-col"
         >
             <div className="aspect-video bg-black relative shrink-0">
-                <AutoGifImage ex={selectedExercise} />
+                <ExerciseMedia exercise={selectedExercise} autoPlay={true} />
                 <button
                     onClick={onClose}
                     className="absolute top-4 right-4 bg-black/50 p-2 rounded-full text-white hover:bg-black/70"
@@ -651,7 +632,7 @@ const CollapsiblePlanningBlock = ({ module, onSelectExercise }) => {
                                 >
                                     {/* Image */}
                                     <div className="w-20 h-20 bg-slate-900 rounded-xl overflow-hidden shrink-0 border border-slate-700/50">
-                                        <AutoGifImage ex={ex} />
+                                        <ExerciseMedia exercise={ex} thumbnailMode={true} />
                                     </div>
 
                                     <div className="flex-1 min-w-0 py-1 flex flex-col justify-between">
@@ -1207,13 +1188,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                 onClick={() => onSelectExercise && onSelectExercise(ex)}
                                 className="relative aspect-video bg-slate-800 rounded-xl overflow-hidden border border-slate-700 cursor-pointer hover:border-emerald-500 transition-all active:scale-95"
                             >
-                                {ex?.mediaUrl ? (
-                                    <img src={ex.mediaUrl} className="w-full h-full object-cover" alt={ex.name} />
-                                ) : (
-                                    <div className="w-full h-full flex items-center justify-center text-slate-500 font-bold text-xs bg-slate-800">
-                                        NO MEDIA
-                                    </div>
-                                )}
+                                <ExerciseMedia exercise={ex} thumbnailMode={true} />
                                 <div className="absolute bottom-0 left-0 w-full bg-black/60 backdrop-blur-sm p-2 flex items-center justify-between">
                                     <span className="text-white text-xs font-bold block truncate max-w-[60%]">{ex.nameEs || ex.name}</span>
                                     <div className="flex items-center gap-2">

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Edit2, Trash2, ChevronDown, ChevronUp, Copy, Image as ImageIcon, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ExerciseAPI } from '../../services/exerciseApi';
+import ExerciseMedia from '../../components/ExerciseMedia';
 
 /**
  * Pattern color utility - returns Tailwind classes for each movement pattern
@@ -89,47 +90,11 @@ const ExerciseCard = ({
     onClick
 }) => {
     const [isExpanded, setIsExpanded] = useState(false);
-    const [isPlayingVideo, setIsPlayingVideo] = useState(false);
-    const [currentImage, setCurrentImage] = useState(
-        ex.mediaUrl || ex.imageStart || ExerciseAPI.getYoutubeThumbnail(ex.youtubeUrl) || null
-    );
-
-    // Update image when exercise changes
-    useEffect(() => {
-        const ytThumb = ExerciseAPI.getYoutubeThumbnail(ex.youtubeUrl);
-        const newImage = ex.mediaUrl || ex.imageStart || ytThumb || null;
-
-        // Only log exercises with YouTube URL
-        // Debug removed
-
-        setCurrentImage(newImage);
-    }, [ex.id, ex.mediaUrl, ex.imageStart, ex.youtubeUrl]);
-
-    // Auto-GIF Logic (alternates between start/end images)
-    useEffect(() => {
-        const ytThumb = ExerciseAPI.getYoutubeThumbnail(ex.youtubeUrl);
-
-        // Don't animate if we have a static image (mediaUrl or YouTube thumbnail)
-        if (ex.mediaUrl || ytThumb) return;
-
-        // Only animate if we have both start and end images
-        if (ex.imageStart && ex.imageEnd) {
-            const interval = setInterval(() => {
-                setCurrentImage(prev => prev === ex.imageStart ? ex.imageEnd : ex.imageStart);
-            }, 700);
-            return () => clearInterval(interval);
-        }
-    }, [ex.mediaUrl, ex.imageStart, ex.imageEnd, ex.youtubeUrl]);
-
     const handleCardClick = () => {
         if (onClick) {
             onClick(ex);
         } else {
             setIsExpanded(!isExpanded);
-            // Reset video when collapsing
-            if (isExpanded) {
-                setIsPlayingVideo(false);
-            }
         }
     };
 
@@ -158,18 +123,7 @@ const ExerciseCard = ({
                     {/* Thumbnail Image (shown when collapsed) */}
                     {!isExpanded && (
                         <div className="w-12 h-12 bg-slate-100 rounded-lg overflow-hidden shrink-0 border border-slate-200">
-                            {currentImage ? (
-                                <img
-                                    src={currentImage}
-                                    alt={ex.name_es || ex.name}
-                                    className="w-full h-full object-cover"
-                                    onError={(e) => e.target.style.display = 'none'}
-                                />
-                            ) : (
-                                <div className="w-full h-full flex items-center justify-center text-slate-300">
-                                    <span className="text-xs">📷</span>
-                                </div>
-                            )}
+                            <ExerciseMedia exercise={ex} thumbnailMode={true} />
                         </div>
                     )}
 
@@ -232,56 +186,7 @@ const ExerciseCard = ({
 
                         {/* GIF/Video Preview */}
                         <div className="aspect-square bg-slate-50 rounded-2xl mb-4 flex items-center justify-center overflow-hidden relative border border-slate-100">
-                            {isPlayingVideo && ex.youtubeUrl ? (
-                                // YouTube iframe player
-                                <div className="relative w-full h-full">
-                                    <iframe
-                                        src={`https://www.youtube.com/embed/${getYoutubeVideoId(ex.youtubeUrl)}?autoplay=1`}
-                                        title={ex.name_es || ex.name}
-                                        frameBorder="0"
-                                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                                        allowFullScreen
-                                        className="w-full h-full"
-                                    />
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            setIsPlayingVideo(false);
-                                        }}
-                                        className="absolute top-2 right-2 w-8 h-8 rounded-full bg-slate-900/80 hover:bg-slate-900 text-white flex items-center justify-center shadow-lg z-10"
-                                    >
-                                        <X size={16} />
-                                    </button>
-                                </div>
-                            ) : currentImage ? (
-                                <>
-                                    <img
-                                        src={currentImage}
-                                        alt={ex.name}
-                                        className="w-full h-full object-contain p-2 mix-blend-multiply opacity-90 group-hover:opacity-100 transition-opacity"
-                                    />
-                                    {ex.youtubeUrl && (
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setIsPlayingVideo(true);
-                                            }}
-                                            className="absolute inset-0 bg-slate-900/0 hover:bg-slate-900/20 transition-colors flex items-center justify-center group/video"
-                                        >
-                                            <div className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center opacity-0 group-hover/video:opacity-100 transition-opacity shadow-xl">
-                                                <svg className="w-8 h-8 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
-                                                    <path d="M8 5v14l11-7z" />
-                                                </svg>
-                                            </div>
-                                        </button>
-                                    )}
-                                </>
-                            ) : (
-                                <span className="text-xs text-slate-300 font-mono flex flex-col items-center gap-2">
-                                    <ImageIcon size={24} />
-                                    NO GIF
-                                </span>
-                            )}
+                            <ExerciseMedia exercise={ex} />
                         </div>
 
                         {(ex.description || (ex.instructions_es && ex.instructions_es.length > 0) || (ex.instructions && ex.instructions.length > 0)) && (

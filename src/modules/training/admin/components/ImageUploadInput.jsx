@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { UploadCloud, Loader2 } from 'lucide-react';
-
-const IMGBB_API_KEY = import.meta.env.VITE_IMGBB_API_KEY;
+import { uploadToImgBB } from '../../services/imageService';
 
 /**
  * ImageUploadInput - Reusable input component for image URLs with ImgBB upload capability
@@ -22,19 +21,10 @@ const ImageUploadInput = ({ label, value, onChange, placeholder }) => {
         formData.append('image', file);
 
         try {
-            const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
-                method: 'POST',
-                body: formData
-            });
-            const data = await res.json();
-            if (data.success) {
-                onChange(data.data.url);
-            } else {
-                alert('Error al subir imagen');
-            }
+            const url = await uploadToImgBB(file);
+            onChange(url);
         } catch (error) {
-            console.error(error);
-            alert('Error de conexión');
+            alert(error.message || 'Error al subir imagen');
         } finally {
             setUploading(false);
         }

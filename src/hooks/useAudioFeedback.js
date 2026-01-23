@@ -21,7 +21,7 @@ export const useAudioFeedback = () => {
     }, []);
 
     // Helper to generic oscillator beep
-    const playTone = useCallback((freq, type = 'sine', duration = 0.1, volume = 0.1) => {
+    const playTone = useCallback((freq, type = 'sine', duration = 0.1, volume = 0.2) => {
         if (!audioCtx.current) return;
 
         // Resume context if suspended (browser autoplay policy)
@@ -35,6 +35,7 @@ export const useAudioFeedback = () => {
         osc.type = type;
         osc.frequency.setValueAtTime(freq, audioCtx.current.currentTime);
 
+        // Increased volume baseline and ramp
         gain.gain.setValueAtTime(volume, audioCtx.current.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.current.currentTime + duration);
 
@@ -45,14 +46,14 @@ export const useAudioFeedback = () => {
         osc.stop(audioCtx.current.currentTime + duration);
     }, []);
 
-    // Patterns
-    const playTick = useCallback(() => playTone(880, 'sine', 0.05, 0.1), [playTone]);
+    // Patterns mit increased volume (approx double)
+    const playTick = useCallback(() => playTone(880, 'sine', 0.05, 0.2), [playTone]);
 
     // Countdown: 3.. 2.. (Short) - Pulse
-    const playCountdownShort = useCallback(() => playTone(660, 'sine', 0.15, 0.2), [playTone]);
+    const playCountdownShort = useCallback(() => playTone(660, 'sine', 0.15, 0.4), [playTone]);
 
     // Countdown: 1 (Long/Finish) - Sharp
-    const playCountdownFinal = useCallback(() => playTone(440, 'square', 0.5, 0.15), [playTone]);
+    const playCountdownFinal = useCallback(() => playTone(440, 'square', 0.5, 0.3), [playTone]);
 
     const speak = useCallback((text) => {
         if (!window.speechSynthesis) return;
@@ -66,24 +67,24 @@ export const useAudioFeedback = () => {
 
     // Warning: Halfway point - Speech + Beep
     const playHalfway = useCallback(() => {
-        playTone(523, 'sine', 0.1, 0.15);
+        playTone(523, 'sine', 0.1, 0.3);
         speak("Falta la mitad");
     }, [playTone, speak]);
 
     // Warning: 1 Minute - Speech + Beep
     const playMinuteWarning = useCallback(() => {
-        playTone(330, 'triangle', 0.3, 0.2);
+        playTone(330, 'triangle', 0.3, 0.4);
         speak("Un minuto");
     }, [playTone, speak]);
 
     const playSuccess = useCallback(() => {
         if (!audioCtx.current) return;
         [523.25, 659.25, 783.99, 1046.50].forEach((freq, i) => {
-            setTimeout(() => playTone(freq, 'sine', 0.15, 0.15), i * 100);
+            setTimeout(() => playTone(freq, 'sine', 0.15, 0.3), i * 100);
         });
     }, [playTone]);
 
-    const playFailure = useCallback(() => playTone(150, 'sawtooth', 0.4, 0.25), [playTone]);
+    const playFailure = useCallback(() => playTone(150, 'sawtooth', 0.4, 0.45), [playTone]);
 
     // Exposed method to force resume context on user interaction
     const initAudio = useCallback(() => {

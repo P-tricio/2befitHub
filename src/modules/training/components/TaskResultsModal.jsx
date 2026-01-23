@@ -170,6 +170,20 @@ const TaskResultsModal = ({ task, onClose }) => {
                                     </div>
                                 </div>
                             )}
+
+                            {results.formAnswers && Object.keys(results.formAnswers).length > 0 && (
+                                <div className="space-y-2">
+                                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest px-1">Cuestionario</h3>
+                                    <div className="space-y-2">
+                                        {Object.entries(results.formAnswers).map(([key, val]) => (
+                                            <div key={key} className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight block mb-1">{key}</span>
+                                                <span className="text-sm font-bold text-slate-700">{val?.toString() || '-'}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
 

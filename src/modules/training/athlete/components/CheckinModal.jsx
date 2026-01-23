@@ -3,8 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { format } from 'date-fns';
 import { Camera, Trash2, X, Check, Footprints, Clock, Flame, Zap, Scale, Ruler, Utensils, FileText, Dumbbell } from 'lucide-react';
 import { TrainingDB } from '../../services/db';
-
-const IMGBB_API_KEY = import.meta.env.VITE_IMGBB_API_KEY;
+import { uploadToImgBB } from '../../services/imageService';
 
 const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] }) => {
     // Shared State
@@ -169,6 +168,7 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                 const doneCount = habitsToShow.filter(h => habitsResults[h] === true).length;
                 const totalCount = habitsToShow.length;
                 taskSummary = `${doneCount}/${totalCount} hábitos`;
+                taskResults = { habitsResults };
             } else if (task.type === 'checkin' || task.type === 'tracking') {
                 // Weight
                 if (task.config?.weight !== false && weight) {
@@ -202,19 +202,12 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                 if (task.config?.photos !== false) {
                     const uploadPromises = Object.entries(photos).map(async ([type, file]) => {
                         if (file) {
-                            const formData = new FormData();
-                            formData.append('image', file);
                             try {
-                                const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
-                                    method: 'POST',
-                                    body: formData
-                                });
-                                const data = await res.json();
-                                if (data.success) {
-                                    return { type, url: data.data.url };
-                                }
+                                const url = await uploadToImgBB(file);
+                                return { type, url };
                             } catch (err) {
                                 console.error(`Error uploading ${type} photo:`, err);
+                                throw new Error(`Error al subir foto ${type}: ${err.message}`);
                             }
                         }
                         return null;
@@ -241,6 +234,20 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                 updateData.rpe = rpe;
                 taskSummary = `${duration} min • RPE ${rpe} • ${activityType === 'gym' ? 'Fuerza' : activityType === 'cardio' ? 'Cardio' : 'Otro'}`;
                 taskResults = { duration, rpe, activityType };
+            }
+
+            if (task.type === 'checkin' || task.type === 'tracking') {
+                taskResults = {
+                    weight: updateData.weight || null,
+                    measurements: updateData.measurements || null,
+                    photos: updateData.photos || null,
+                    formAnswers: updateData.formAnswers || null,
+                    notes: notes || null
+                };
+            }
+
+            if (task.type === 'neat' || task.type === 'nutrition' || task.type === 'free_training') {
+                taskResults.notes = notes || null;
             }
 
             if (notes) updateData[`notes_${task.type}`] = notes;

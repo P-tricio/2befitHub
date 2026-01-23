@@ -9,27 +9,16 @@ import { TrainingDB } from '../services/db';
 import { ExerciseAPI } from '../services/exerciseApi';
 import ActionMenu from '../../../components/admin/ActionMenu';
 import { ImageUploadInput, ExerciseCard, ExerciseFormDrawer, ExerciseBrowser, getPatternColor } from './components';
+import { uploadToImgBB } from '../services/imageService';
+import ExerciseMedia from '../components/ExerciseMedia';
 import { PATTERNS, EQUIPMENT, LEVELS, QUALITIES } from './constants';
 import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges';
-
-const IMGBB_API_KEY = import.meta.env.VITE_IMGBB_API_KEY;
 
 // --- Sub-components ---
 
 // ExerciseItem Component
 const ExerciseItem = ({ ex, idx, isGrouped, isFirstInGroup, isLastInGroup, onConfigure, onRemove, onDuplicate, onSwap, onToggleGroup, isLinkMode, nextIsGrouped, onUpdateDuration, isMobileLandscape }) => {
-    const [currentImage, setCurrentImage] = useState(ex.mediaUrl || ex.imageStart || ExerciseAPI.getYoutubeThumbnail(ex.youtubeUrl) || null);
-
-    // Auto-GIF Logic (Flicker)
-    useEffect(() => {
-        if (ex.mediaUrl) return; // If media exists, use it
-        if (ex.imageStart && ex.imageEnd) {
-            const interval = setInterval(() => {
-                setCurrentImage(prev => prev === ex.imageStart ? ex.imageEnd : ex.imageStart);
-            }, 700);
-            return () => clearInterval(interval);
-        }
-    }, [ex.mediaUrl, ex.imageStart, ex.imageEnd]);
+    // New Grouping Visuals
 
     // Render Rest Item differently
     if (ex.type === 'REST') {
@@ -159,11 +148,7 @@ const ExerciseItem = ({ ex, idx, isGrouped, isFirstInGroup, isLastInGroup, onCon
                 onClick={() => onConfigure(ex)}
             >
                 <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center shrink-0 overflow-hidden relative">
-                    {currentImage || ex.mediaUrl ? (
-                        <img src={currentImage || ex.mediaUrl} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                        <Dumbbell size={16} className="text-slate-400" />
-                    )}
+                    <ExerciseMedia exercise={ex} thumbnailMode={true} />
                 </div>
 
                 <div className="flex-1 min-w-0">
@@ -398,8 +383,6 @@ const ExerciseConfigDrawer = ({ isOpen, onClose, exercise, onSave }) => {
         sets: []
     });
     const [notes, setNotes] = useState(exercise?.notes || '');
-    const [currentImage, setCurrentImage] = useState(exercise?.mediaUrl || exercise?.imageStart || null);
-    const [isPlayingVideo, setIsPlayingVideo] = useState(false);
 
     // Reset state when exercise changes
     useEffect(() => {
@@ -410,18 +393,6 @@ const ExerciseConfigDrawer = ({ isOpen, onClose, exercise, onSave }) => {
                 sets: []
             });
             setNotes(exercise.notes || '');
-            setCurrentImage(exercise.mediaUrl || exercise.imageStart || ExerciseAPI.getYoutubeThumbnail(exercise.youtubeUrl) || null);
-        }
-    }, [exercise]);
-
-    // Auto-GIF Logic
-    useEffect(() => {
-        if (exercise?.mediaUrl) return;
-        if (exercise?.imageStart && exercise?.imageEnd) {
-            const interval = setInterval(() => {
-                setCurrentImage(prev => prev === exercise.imageStart ? exercise.imageEnd : exercise.imageStart);
-            }, 700);
-            return () => clearInterval(interval);
         }
     }, [exercise]);
 
@@ -482,51 +453,7 @@ const ExerciseConfigDrawer = ({ isOpen, onClose, exercise, onSave }) => {
                         {/* Visual Preview - Enlarged and with YouTube support */}
                         <div className="flex justify-center mb-6">
                             <div className="w-full aspect-video bg-slate-50 rounded-2xl flex items-center justify-center overflow-hidden border border-slate-100 shadow-inner relative">
-                                {isPlayingVideo && exercise?.youtubeUrl ? (
-                                    // YouTube iframe player
-                                    <div className="relative w-full h-full">
-                                        <iframe
-                                            src={`https://www.youtube.com/embed/${getYoutubeVideoId(exercise.youtubeUrl)}?autoplay=1`}
-                                            title={exercise.name_es || exercise.name}
-                                            frameBorder="0"
-                                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                                            allowFullScreen
-                                            className="w-full h-full"
-                                        />
-                                        <button
-                                            onClick={() => setIsPlayingVideo(false)}
-                                            className="absolute top-2 right-2 w-8 h-8 rounded-full bg-slate-900/80 hover:bg-slate-900 text-white flex items-center justify-center shadow-lg z-10"
-                                        >
-                                            <X size={16} />
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <>
-                                        {currentImage || exercise?.mediaUrl || ExerciseAPI.getYoutubeThumbnail(exercise?.youtubeUrl) ? (
-                                            <>
-                                                <img
-                                                    src={currentImage || exercise?.mediaUrl || ExerciseAPI.getYoutubeThumbnail(exercise?.youtubeUrl)}
-                                                    alt=""
-                                                    className="w-full h-full object-contain p-2 mix-blend-multiply"
-                                                />
-                                                {exercise?.youtubeUrl && (
-                                                    <button
-                                                        onClick={() => setIsPlayingVideo(true)}
-                                                        className="absolute inset-0 bg-slate-900/0 hover:bg-slate-900/20 transition-colors flex items-center justify-center group"
-                                                    >
-                                                        <div className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-xl">
-                                                            <svg className="w-8 h-8 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
-                                                                <path d="M8 5v14l11-7z" />
-                                                            </svg>
-                                                        </div>
-                                                    </button>
-                                                )}
-                                            </>
-                                        ) : (
-                                            <Dumbbell size={40} className="text-slate-200" />
-                                        )}
-                                    </>
-                                )}
+                                <ExerciseMedia exercise={exercise} />
                             </div>
                         </div>
 
@@ -1117,19 +1044,10 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                 }
 
                 // 2. Upload to ImgBB for permanent storage
-                const formData = new FormData();
-                formData.append('image', gifBlob, `${onlineEx.id}.gif`);
-
-                const imgbbRes = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
-                    method: 'POST',
-                    body: formData
-                });
-                const imgbbData = await imgbbRes.json();
-
-                if (imgbbData.success) {
-                    finalGifUrl = imgbbData.data.url;
-                } else {
-                    console.warn('ImgBB Upload failed, using original preview URL');
+                try {
+                    finalGifUrl = await uploadToImgBB(gifBlob);
+                } catch (imgbbErr) {
+                    console.warn('ImgBB Upload failed, using original preview URL:', imgbbErr);
                     finalGifUrl = onlineEx.mediaUrl || '';
                 }
             } catch (gifErr) {

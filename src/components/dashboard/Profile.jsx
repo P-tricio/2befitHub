@@ -2,6 +2,7 @@ import React from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { User, Mail, Shield, LogOut, Settings, Award, ChevronRight, Edit2, ArrowRight, ShieldCheck } from 'lucide-react';
+import { uploadToImgBB } from '../../modules/training/services/imageService';
 
 const Profile = () => {
     const { currentUser, logout, updateUserProfile } = useAuth();
