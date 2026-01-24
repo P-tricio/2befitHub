@@ -139,15 +139,6 @@ const AthleteHome = () => {
                     <div className="flex justify-between items-center">
                         <img src="/brand-compact.png" alt="2BeFit" className="h-8 w-auto" />
                         <div className="flex gap-4">
-                            <button
-                                onClick={() => setIsChatOpen(true)}
-                                className="text-slate-400 hover:text-slate-600 transition-colors relative"
-                            >
-                                <MessageCircle size={24} />
-                                {unreadCount > 0 && (
-                                    <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-slate-50" />
-                                )}
-                            </button>
                             <button className="text-slate-400 hover:text-slate-600 transition-colors">
                                 <Bell size={24} />
                             </button>
@@ -345,10 +336,10 @@ const AthleteHome = () => {
 
                 {/* Floating Action Buttons Container */}
                 <div className="fixed bottom-0 left-0 right-0 max-w-lg mx-auto pointer-events-none z-[100] h-full">
-                    {/* Chat Floating Button */}
+                    {/* Chat Floating Button (Bottom Right - Replaces Add Button) */}
                     <button
                         onClick={() => setIsChatOpen(true)}
-                        className="absolute bottom-24 right-5 w-14 h-14 bg-slate-900 text-white rounded-full shadow-2xl flex items-center justify-center pointer-events-auto hover:scale-105 active:scale-95 transition-all mb-16"
+                        className="absolute bottom-[10rem] right-5 w-14 h-14 bg-slate-900 text-white rounded-full shadow-2xl flex items-center justify-center pointer-events-auto hover:scale-105 active:scale-95 transition-all"
                     >
                         <MessageCircle size={24} />
                         {unreadCount > 0 && (
@@ -358,10 +349,10 @@ const AthleteHome = () => {
                         )}
                     </button>
 
-                    {/* Add Task Floating Button */}
+                    {/* Add Task Floating Button (Moved to Bottom Left) */}
                     <button
                         onClick={() => setAddTaskModal(true)}
-                        className="absolute bottom-24 right-5 w-14 h-14 bg-emerald-500 text-slate-900 rounded-full shadow-2xl flex items-center justify-center pointer-events-auto active:scale-95 transition-all hover:bg-emerald-400 group"
+                        className="absolute bottom-[6rem] right-5 w-14 h-14 bg-emerald-500 text-slate-900 rounded-full shadow-2xl flex items-center justify-center pointer-events-auto active:scale-95 transition-all hover:bg-emerald-400 group"
                     >
                         <Plus size={28} strokeWidth={3} className="group-hover:rotate-90 transition-transform" />
                     </button>
