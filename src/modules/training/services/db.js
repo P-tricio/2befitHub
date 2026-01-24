@@ -15,7 +15,8 @@ import {
     setDoc,
     arrayUnion,
     arrayRemove,
-    onSnapshot
+    onSnapshot,
+    increment
 } from 'firebase/firestore';
 
 /**
@@ -457,12 +458,28 @@ export const TrainingDB = {
     messages: {
         async send(athleteId, senderId, text) {
             const chatRef = collection(db, 'chats', athleteId, 'messages');
-            return await addDoc(chatRef, {
+            const messageData = {
                 senderId,
                 text,
                 timestamp: serverTimestamp(),
                 read: false
+            };
+
+            // Add message to subcollection
+            await addDoc(chatRef, messageData);
+
+            // Update User Document with Chat Metadata (for efficient listing)
+            const userRef = doc(db, 'users', athleteId);
+            const isFromAdmin = senderId !== athleteId; // If sender is not the athlete, it's the admin/coach
+
+            await updateDoc(userRef, {
+                lastMessage: text,
+                lastMessageAt: serverTimestamp(),
+                unreadAthlete: isFromAdmin ? increment(1) : increment(0),
+                unreadAdmin: !isFromAdmin ? increment(1) : increment(0)
             });
+
+            return messageData;
         },
         listen(athleteId, callback) {
             const chatRef = collection(db, 'chats', athleteId, 'messages');
@@ -476,6 +493,14 @@ export const TrainingDB = {
                 }));
                 callback(msgs);
             });
+        },
+        async markAsRead(athleteId, messageId) {
+            const ref = doc(db, 'chats', athleteId, 'messages', messageId);
+            await updateDoc(ref, { read: true });
+        },
+        async markConversationRead(athleteId) {
+            const userRef = doc(db, 'users', athleteId);
+            await updateDoc(userRef, { unreadAdmin: 0 });
         }
     }
 };

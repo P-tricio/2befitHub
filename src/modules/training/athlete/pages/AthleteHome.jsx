@@ -24,6 +24,7 @@ const AthleteHome = () => {
     const [userMinimums, setUserMinimums] = useState(null);
     const [habitFrequency, setHabitFrequency] = useState('daily');
     const [isChatOpen, setIsChatOpen] = useState(false);
+    const [unreadCount, setUnreadCount] = useState(0);
     const userName = currentUser?.displayName?.split(' ')[0] || 'Atleta';
 
     // Fetch User Schedule (Real-time)
@@ -43,6 +44,16 @@ const AthleteHome = () => {
         });
 
         return () => unsub();
+    }, [currentUser]);
+
+    // Listen for Unread Messages
+    useEffect(() => {
+        if (!currentUser) return;
+        const unsubscribe = TrainingDB.messages.listen(currentUser.uid, (msgs) => {
+            const count = msgs.filter(m => !m.read && m.senderId !== currentUser.uid).length;
+            setUnreadCount(count);
+        });
+        return () => unsubscribe();
     }, [currentUser]);
 
     // Fetch Sessions Metadata
@@ -133,6 +144,9 @@ const AthleteHome = () => {
                                 className="text-slate-400 hover:text-slate-600 transition-colors relative"
                             >
                                 <MessageCircle size={24} />
+                                {unreadCount > 0 && (
+                                    <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-slate-50" />
+                                )}
                             </button>
                             <button className="text-slate-400 hover:text-slate-600 transition-colors">
                                 <Bell size={24} />
@@ -142,15 +156,15 @@ const AthleteHome = () => {
 
                     {/* Bottom Row: Greeting */}
                     <div className="flex items-center gap-4">
-                        <Link to="/training/profile" className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center border border-slate-200 text-slate-400 hover:text-slate-600 hover:border-slate-300 transition-all shrink-0 overflow-hidden">
+                        <Link to="/training/profile" className="w-20 h-20 rounded-full bg-slate-100 flex items-center justify-center border border-slate-200 text-slate-400 hover:text-slate-600 hover:border-slate-300 transition-all shrink-0 overflow-hidden shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
                             {currentUser?.photoURL ? (
                                 <img src={currentUser.photoURL} alt="Profile" className="w-full h-full object-cover" />
                             ) : (
-                                <UserIcon size={24} />
+                                <UserIcon size={40} />
                             )}
                         </Link>
                         <div>
-                            <p className="text-sm text-slate-500 font-bold uppercase tracking-wider">Bienvenido</p>
+                            <p className="text-sm text-slate-500 font-bold uppercase tracking-wider">Hola de nuevo</p>
                             <p className="text-3xl text-slate-900 font-black leading-none tracking-tight">{userName}</p>
                         </div>
                     </div>
@@ -329,15 +343,29 @@ const AthleteHome = () => {
                     </div >
                 </section >
 
-                {/* Floating Action Button */}
-                < div className="fixed bottom-0 left-0 right-0 max-w-lg mx-auto pointer-events-none z-[100] h-full" >
+                {/* Floating Action Buttons Container */}
+                <div className="fixed bottom-0 left-0 right-0 max-w-lg mx-auto pointer-events-none z-[100] h-full">
+                    {/* Chat Floating Button */}
+                    <button
+                        onClick={() => setIsChatOpen(true)}
+                        className="absolute bottom-24 right-5 w-14 h-14 bg-slate-900 text-white rounded-full shadow-2xl flex items-center justify-center pointer-events-auto hover:scale-105 active:scale-95 transition-all mb-16"
+                    >
+                        <MessageCircle size={24} />
+                        {unreadCount > 0 && (
+                            <div className="absolute top-0 right-0 w-5 h-5 bg-rose-500 text-white text-[10px] font-black flex items-center justify-center rounded-full border-2 border-slate-900 translate-x-1 -translate-y-1">
+                                {unreadCount}
+                            </div>
+                        )}
+                    </button>
+
+                    {/* Add Task Floating Button */}
                     <button
                         onClick={() => setAddTaskModal(true)}
                         className="absolute bottom-24 right-5 w-14 h-14 bg-emerald-500 text-slate-900 rounded-full shadow-2xl flex items-center justify-center pointer-events-auto active:scale-95 transition-all hover:bg-emerald-400 group"
                     >
                         <Plus size={28} strokeWidth={3} className="group-hover:rotate-90 transition-transform" />
                     </button>
-                </div >
+                </div>
 
                 {/* Add Task Modal */}
                 < AnimatePresence >
@@ -394,7 +422,7 @@ const AthleteHome = () => {
                 isOpen={isChatOpen}
                 onClose={() => setIsChatOpen(false)}
                 athleteId={currentUser.uid}
-                athleteName="Soporte 2BeFit"
+                athleteName="Tu Coach"
             />
         </>
     );

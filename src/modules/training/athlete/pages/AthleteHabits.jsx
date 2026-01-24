@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, subMonths, addMonths, startOfWeek, endOfWeek, addDays, isAfter, startOfDay, getDay, isSameMonth } from 'date-fns';
+import { Link } from 'react-router-dom';
 import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, X, Utensils, Footprints, Heart, Calendar as CalendarIcon, ChevronLeft, ChevronRight, Info, Target, Plus } from 'lucide-react';
+import { Check, X, Utensils, Footprints, Heart, Calendar as CalendarIcon, ChevronLeft, ChevronRight, Info, Target, Plus, User as UserIcon } from 'lucide-react';
 import { TrainingDB } from '../../services/db';
 import { useAuth } from '../../../../context/AuthContext';
 
@@ -252,13 +253,25 @@ const AthleteHabits = ({ userId, isAdminView = false }) => {
     // Calendar and Entry logic consolidated at top
 
     return (
-        <div className="p-6 max-w-lg mx-auto space-y-8 pb-32">
-            <header className="space-y-4">
-                <div className="flex justify-between items-center text-left">
-                    <div>
-                        <h1 className="text-3xl font-black text-slate-900 tracking-tight">Hábitos</h1>
-                        <p className="text-slate-500 font-bold uppercase text-[10px] tracking-widest mt-1">Cumplimiento y Mínimos</p>
+        <div className="p-6 max-w-xl mx-auto space-y-8 pb-32">
+            <header className="space-y-6">
+                <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-4">
+                        <Link to="/training/profile" className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center border border-slate-200 text-slate-400 hover:text-slate-600 hover:border-slate-300 transition-all shrink-0 overflow-hidden shadow-sm">
+                            {authUser?.photoURL ? (
+                                <img src={authUser.photoURL} alt="Profile" className="w-full h-full object-cover" />
+                            ) : (
+                                <UserIcon size={24} />
+                            )}
+                        </Link>
+                        <div>
+                            <h1 className="text-3xl font-black text-slate-900 tracking-tight leading-none">Hábitos</h1>
+                            <p className="text-slate-500 font-bold uppercase text-[10px] tracking-widest mt-1">Mínimos establecidos y cumplimiento</p>
+                        </div>
                     </div>
+                </div>
+
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-2xl border border-slate-100 shadow-sm">
                         <button onClick={() => setViewDate(subMonths(viewDate, 1))} className="p-1 hover:bg-slate-50 rounded-lg text-slate-400">
                             <ChevronLeft size={20} />
@@ -270,28 +283,28 @@ const AthleteHabits = ({ userId, isAdminView = false }) => {
                             <ChevronRight size={20} />
                         </button>
                     </div>
-                </div>
 
-                <div className="flex flex-wrap gap-1.5">
-                    {CATEGORIES.map(cat => (
+                    <div className="flex flex-wrap gap-1.5">
+                        {CATEGORIES.map(cat => (
+                            <button
+                                key={cat.id}
+                                onClick={() => toggleFilter(cat.id)}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all text-[11px] font-black ${activeFilters.includes(cat.id) ? `bg-${cat.color}-500 text-white border-${cat.color}-500 shadow-md shadow-${cat.color}-500/10` : 'bg-white text-slate-400 border-slate-100'}`}
+                            >
+                                {activeFilters.includes(cat.id) ? <Check size={12} strokeWidth={4} /> : cat.icon}
+                                <span className="hidden sm:inline">{cat.label}</span>
+                                <span className="sm:hidden">{cat.shortLabel}</span>
+                            </button>
+                        ))}
                         <button
-                            key={cat.id}
-                            onClick={() => toggleFilter(cat.id)}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all text-[11px] font-black ${activeFilters.includes(cat.id) ? `bg-${cat.color}-500 text-white border-${cat.color}-500 shadow-md shadow-${cat.color}-500/10` : 'bg-white text-slate-400 border-slate-100'}`}
+                            onClick={() => toggleFilter('uncategorized')}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all text-[11px] font-black ${activeFilters.includes('uncategorized') ? 'bg-slate-800 text-white border-slate-800 shadow-md' : 'bg-white text-slate-400 border-slate-100'}`}
                         >
-                            {activeFilters.includes(cat.id) ? <Check size={12} strokeWidth={4} /> : cat.icon}
-                            <span className="hidden sm:inline">{cat.label}</span>
-                            <span className="sm:hidden">{cat.shortLabel}</span>
+                            {activeFilters.includes('uncategorized') ? <Check size={12} strokeWidth={4} /> : <Target size={12} />}
+                            <span className="hidden sm:inline">Pendientes</span>
+                            <span className="sm:hidden">Pend.</span>
                         </button>
-                    ))}
-                    <button
-                        onClick={() => toggleFilter('uncategorized')}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all text-[11px] font-black ${activeFilters.includes('uncategorized') ? 'bg-slate-800 text-white border-slate-800 shadow-md' : 'bg-white text-slate-400 border-slate-100'}`}
-                    >
-                        {activeFilters.includes('uncategorized') ? <Check size={12} strokeWidth={4} /> : <Target size={12} />}
-                        <span className="hidden sm:inline">Pendientes</span>
-                        <span className="sm:hidden">Pend.</span>
-                    </button>
+                    </div>
                 </div>
             </header>
 

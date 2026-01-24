@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Camera, TrendingUp, TrendingDown, Activity, ChevronRight, Scale, Footprints, Settings, Trash2, CalendarDays, BarChart } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Camera, TrendingUp, TrendingDown, Activity, ChevronRight, Scale, Footprints, Settings, Trash2, CalendarDays, BarChart, User as UserIcon } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { TrainingDB } from '../../services/db';
 import { useAuth } from '../../../../context/AuthContext';
@@ -77,11 +78,20 @@ const AthleteTracking = () => {
     const lastEntry = history.length > 0 ? history[history.length - 1] : null;
 
     return (
-        <div className="p-4 md:p-6 max-w-lg lg:max-w-4xl mx-auto space-y-6 pb-32">
-            <header className="flex justify-between items-end">
-                <div>
-                    <h1 className="text-3xl font-black text-slate-900 tracking-tight">Progreso</h1>
-                    <p className="text-slate-500 font-bold uppercase text-[10px] tracking-widest mt-1 italic">Tus estadísticas en tiempo real</p>
+        <div className="p-6 max-w-lg lg:max-w-4xl mx-auto space-y-8 pb-32">
+            <header className="flex justify-between items-center">
+                <div className="flex items-center gap-4">
+                    <Link to="/training/profile" className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center border border-slate-200 text-slate-400 hover:text-slate-600 hover:border-slate-300 transition-all shrink-0 overflow-hidden shadow-sm">
+                        {currentUser?.photoURL ? (
+                            <img src={currentUser.photoURL} alt="Profile" className="w-full h-full object-cover" />
+                        ) : (
+                            <UserIcon size={24} />
+                        )}
+                    </Link>
+                    <div>
+                        <h1 className="text-3xl font-black text-slate-900 tracking-tight leading-none">Progreso</h1>
+                        <p className="text-slate-500 font-bold uppercase text-[10px] tracking-widest mt-1">Tus estadísticas y evolución</p>
+                    </div>
                 </div>
             </header>
 

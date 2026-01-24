@@ -1,11 +1,16 @@
 import React from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-import { Dumbbell, Layers, Calendar, ClipboardList, ArrowLeft, Users, LogOut, Sparkles } from 'lucide-react';
+import { Dumbbell, Layers, Calendar, ClipboardList, ArrowLeft, Users, LogOut, Sparkles, MessageCircle } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
+import AdminChatManager from './components/AdminChatManager';
+import { onSnapshot, collection, query, where } from 'firebase/firestore';
+import { db } from '../../../lib/firebase';
 
 const AdminLayout = () => {
     const { logout } = useAuth();
     const [isMobileLandscape, setIsMobileLandscape] = React.useState(false);
+    const [isChatOpen, setIsChatOpen] = React.useState(false);
+    const [totalUnread, setTotalUnread] = React.useState(0);
 
     React.useEffect(() => {
         const checkOrientation = () => {
@@ -15,6 +20,20 @@ const AdminLayout = () => {
         window.addEventListener('resize', checkOrientation);
         checkOrientation();
         return () => window.removeEventListener('resize', checkOrientation);
+    }, []);
+
+    // Listen for Global Unread Count
+    React.useEffect(() => {
+        // Query users with unreadAdmin > 0
+        const q = query(collection(db, 'users'), where('unreadAdmin', '>', 0));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            let total = 0;
+            snapshot.docs.forEach(doc => {
+                total += (doc.data().unreadAdmin || 0);
+            });
+            setTotalUnread(total);
+        });
+        return () => unsubscribe();
     }, []);
 
     return (
@@ -30,6 +49,19 @@ const AdminLayout = () => {
                     <AdminLink to="/training/admin/global-creator" icon={Sparkles} label="Editor Global" />
                     <AdminLink to="/training/admin/programs" icon={Calendar} label="Programas" />
                     <AdminLink to="/training/admin/forms" icon={ClipboardList} label="Control o Seguimiento" />
+
+                    <button
+                        onClick={() => setIsChatOpen(true)}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium text-slate-400 hover:bg-slate-800 hover:text-white group relative`}
+                    >
+                        <MessageCircle size={20} />
+                        Mensajes
+                        {totalUnread > 0 && (
+                            <span className="absolute right-4 top-1/2 -translate-y-1/2 bg-rose-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+                                {totalUnread}
+                            </span>
+                        )}
+                    </button>
                     <div className="pt-4 mt-4 border-t border-slate-800">
                         <AdminLink to="/training/admin/users" icon={Users} label="Usuarios" />
                     </div>
@@ -53,13 +85,28 @@ const AdminLayout = () => {
                 </div>
             </aside>
 
-            <div className={`lg:hidden bg-slate-900 text-white shrink-0 flex justify-between items-center border-b border-slate-800 transition-all ${isMobileLandscape ? 'p-1 px-4' : 'p-3'}`}>
-                <div className="flex items-center gap-2">
-                    <span className={`font-black text-emerald-400 tracking-wider transition-all ${isMobileLandscape ? 'text-[10px]' : 'text-sm'}`}>PDP ADMIN</span>
-                </div>
-                <NavLink to="/training" className={`rounded-full text-slate-300 font-bold transition-colors bg-slate-800 hover:bg-slate-700 ${isMobileLandscape ? 'text-[9px] px-2 py-0.5' : 'text-xs px-3 py-1.5'}`}>
-                    Salir
+            <div className={`lg:hidden bg-slate-900 text-white shrink-0 flex justify-between items-center border-b border-slate-800 transition-all z-20 relative ${isMobileLandscape ? 'p-1 px-4' : 'p-3'}`}>
+                {/* Left: Exit */}
+                <NavLink to="/training" className={`rounded-full text-slate-300 font-bold transition-colors bg-slate-800 hover:bg-slate-700 flex items-center gap-2 ${isMobileLandscape ? 'text-[9px] px-3 py-1' : 'text-xs px-3 py-1.5'}`}>
+                    <ArrowLeft size={14} />
+                    {!isMobileLandscape && "Salir"}
                 </NavLink>
+
+                {/* Center: Title */}
+                <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2">
+                    <span className={`font-black text-emerald-400 tracking-wider transition-all ${isMobileLandscape ? 'text-[10px]' : 'text-sm'}`}>ADMIN</span>
+                </div>
+
+                {/* Right: Chat */}
+                <button
+                    onClick={() => setIsChatOpen(true)}
+                    className={`p-2 rounded-full ${isChatOpen ? 'bg-emerald-500 text-slate-900' : 'bg-slate-800 text-slate-400'} relative transition-all`}
+                >
+                    <MessageCircle size={20} />
+                    {totalUnread > 0 && (
+                        <span className="absolute -top-1 -right-1 w-3 h-3 bg-rose-500 rounded-full border-2 border-slate-900" />
+                    )}
+                </button>
             </div>
 
             {/* Main Content */}
@@ -71,9 +118,16 @@ const AdminLayout = () => {
             <nav className={`lg:hidden fixed bottom-0 left-0 right-0 bg-slate-900 text-white flex justify-around p-2 pb-safe z-50 border-t border-slate-800 transition-all ${isMobileLandscape ? 'p-1' : 'p-2'}`}>
                 <MobileLink to="/training/admin/global-creator" icon={Sparkles} label="Editor" isMobileLandscape={isMobileLandscape} />
                 <MobileLink to="/training/admin/programs" icon={Calendar} label="Progr." isMobileLandscape={isMobileLandscape} />
+
                 <MobileLink to="/training/admin/forms" icon={ClipboardList} label="Control" isMobileLandscape={isMobileLandscape} />
+
                 <MobileLink to="/training/admin/users" icon={Users} label="Usuarios" isMobileLandscape={isMobileLandscape} />
             </nav>
+
+            <AdminChatManager
+                isOpen={isChatOpen}
+                onClose={() => setIsChatOpen(false)}
+            />
         </div>
     );
 };

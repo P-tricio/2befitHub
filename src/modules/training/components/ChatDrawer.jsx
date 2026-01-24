@@ -18,10 +18,17 @@ const ChatDrawer = ({ isOpen, onClose, athleteId, athleteName }) => {
         const unsubscribe = TrainingDB.messages.listen(athleteId, (msgs) => {
             setMessages(msgs);
             setLoading(false);
+
+            // Mark unread messages from others as read
+            msgs.forEach(msg => {
+                if (!msg.read && msg.senderId !== currentUser.uid) {
+                    TrainingDB.messages.markAsRead(athleteId, msg.id);
+                }
+            });
         });
 
         return () => unsubscribe();
-    }, [isOpen, athleteId]);
+    }, [isOpen, athleteId, currentUser.uid]);
 
     useEffect(() => {
         if (scrollRef.current) {
@@ -67,8 +74,12 @@ const ChatDrawer = ({ isOpen, onClose, athleteId, athleteName }) => {
                         {/* Header */}
                         <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-white shadow-sm z-10 shrink-0">
                             <div className="flex items-center gap-4">
-                                <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-black shadow-inner shrink-0">
-                                    {athleteName?.[0] || 'A'}
+                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black shadow-inner shrink-0 overflow-hidden ${athleteName === 'Tu Coach' ? 'bg-slate-900' : 'bg-indigo-50 text-indigo-600'}`}>
+                                    {athleteName === 'Tu Coach' ? (
+                                        <img src="/brand-compact.png" alt="Coach" className="w-6 h-auto brightness-0 invert" />
+                                    ) : (
+                                        athleteName?.[0] || 'A'
+                                    )}
                                 </div>
                                 <div>
                                     <h2 className="text-lg font-black text-slate-900 tracking-tight leading-none">
@@ -116,7 +127,7 @@ const ChatDrawer = ({ isOpen, onClose, athleteId, athleteName }) => {
                                                     <span className="text-[9px] font-black text-slate-300 uppercase tracking-tighter">
                                                         {msg.timestamp ? new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit' }).format(msg.timestamp) : ''}
                                                     </span>
-                                                    {!isMe && <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest">Soporte</span>}
+                                                    {!isMe && <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest">{athleteName === 'Tu Coach' ? 'Coach' : 'Soporte'}</span>}
                                                     {isMe && <ShieldCheck size={10} className="text-emerald-500" />}
                                                 </div>
                                             </div>

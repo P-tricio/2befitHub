@@ -146,17 +146,20 @@ const AthleteAgenda = () => {
     const showTasks = !isFutureRestricted(selectedDate);
 
     return (
-        <div className="p-4 max-w-xl mx-auto space-y-4 pb-32">
-            <header className="flex justify-between items-center mb-4">
-                <div className="flex items-center gap-3">
-                    <Link to="/training/profile" className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center border border-slate-200 text-slate-400 hover:text-slate-600 transition-all shrink-0 overflow-hidden">
+        <div className="p-6 max-w-xl mx-auto space-y-8 pb-32">
+            <header className="flex justify-between items-center">
+                <div className="flex items-center gap-4">
+                    <Link to="/training/profile" className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center border border-slate-200 text-slate-400 hover:text-slate-600 transition-all shrink-0 overflow-hidden shadow-sm">
                         {currentUser?.photoURL ? (
                             <img src={currentUser.photoURL} alt="Profile" className="w-full h-full object-cover" />
                         ) : (
-                            <UserIcon size={20} />
+                            <UserIcon size={24} />
                         )}
                     </Link>
-                    <h1 className="text-3xl font-black text-slate-900 tracking-tight">Agenda</h1>
+                    <div>
+                        <h1 className="text-3xl font-black text-slate-900 tracking-tight leading-none">Agenda</h1>
+                        <p className="text-slate-500 font-bold uppercase text-[10px] tracking-widest mt-1">de tareas</p>
+                    </div>
                 </div>
                 <div className="flex gap-2">
                     <button
