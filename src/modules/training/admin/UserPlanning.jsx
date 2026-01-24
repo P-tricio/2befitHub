@@ -1276,7 +1276,7 @@ const GenericTaskSection = ({ id, label, icon, expanded, toggle, onAssign, avail
                                 </div>
                                 <div className="grid grid-cols-2 gap-2 mb-4">
                                     {[
-                                        { id: 'nutrition', label: 'Nutrición' },
+                                        { id: 'nutrition', label: 'Alimentación' },
                                         { id: 'movement', label: 'Movimiento' },
                                         { id: 'health', label: 'Salud' }
                                     ].map(cat => (

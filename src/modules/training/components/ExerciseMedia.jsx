@@ -39,13 +39,28 @@ const ExerciseMedia = ({
 
     // Auto-GIF Animation loop
     useEffect(() => {
-        if (hasMediaUrl || youtubeId || !hasAutoGif || thumbnailMode) return;
+        // If we have a YouTube video, don't use the alternating loop
+        if (youtubeId || !hasAutoGif) return;
+
+        // If we have a mediaUrl that ISN'T one of the auto-gif images, 
+        // it means we have a real video/GIF link, so we don't need the loop.
+        const isRealMediaUrl = hasMediaUrl &&
+            exercise.mediaUrl !== exercise.imageStart &&
+            exercise.mediaUrl !== exercise.imageEnd;
+
+        if (isRealMediaUrl) return;
+
+        // If in thumbnailMode, we want it static
+        if (thumbnailMode) {
+            setCurrentImage(exercise.imageStart);
+            return;
+        }
 
         const interval = setInterval(() => {
             setCurrentImage(prev => prev === exercise.imageStart ? exercise.imageEnd : exercise.imageStart);
-        }, 700);
+        }, 750);
         return () => clearInterval(interval);
-    }, [exercise, hasMediaUrl, youtubeId, hasAutoGif, thumbnailMode]);
+    }, [exercise.imageStart, exercise.imageEnd, exercise.mediaUrl, hasMediaUrl, youtubeId, hasAutoGif, thumbnailMode]);
 
     function getYoutubeVideoId(url) {
         if (!url) return null;

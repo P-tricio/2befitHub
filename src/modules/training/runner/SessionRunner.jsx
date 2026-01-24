@@ -353,7 +353,7 @@ const SessionRunner = () => {
                             <CollapsiblePlanningBlock
                                 key={mIdx}
                                 module={mod}
-                                onSelectExercise={(ex) => setSessionState(prev => ({ ...prev, selectedExercise: ex }))}
+                                onSelectExercise={(ex) => setSessionState(prev => ({ ...prev, selectedExercise: { ...ex, protocol: mod.protocol } }))}
                             />
                         ))}
                     </div>
@@ -376,6 +376,7 @@ const SessionRunner = () => {
                             <ExerciseDetailModal
                                 selectedExercise={sessionState.selectedExercise}
                                 onClose={() => setSessionState(prev => ({ ...prev, selectedExercise: null }))}
+                                protocol={sessionState.selectedExercise.protocol}
                             />
                         )}
                     </AnimatePresence>
@@ -459,7 +460,7 @@ const SessionRunner = () => {
                                 step={currentStep}
                                 plan={sessionState.plans[currentStep.module.id]}
                                 onComplete={handleStepComplete}
-                                onSelectExercise={(ex) => setSessionState(prev => ({ ...prev, selectedExercise: ex }))}
+                                onSelectExercise={(ex) => setSessionState(prev => ({ ...prev, selectedExercise: { ...ex, protocol: currentStep.module.protocol } }))}
                                 playCountdownShort={playCountdownShort}
                                 playCountdownFinal={playCountdownFinal}
                                 playHalfway={playHalfway}
@@ -500,6 +501,7 @@ const SessionRunner = () => {
                     <ExerciseDetailModal
                         selectedExercise={sessionState.selectedExercise}
                         onClose={() => setSessionState(prev => ({ ...prev, selectedExercise: null }))}
+                        protocol={sessionState.selectedExercise.protocol}
                     />
                 )}
             </AnimatePresence>
@@ -509,7 +511,7 @@ const SessionRunner = () => {
 
 // --- Sub-components & Logic ---
 
-const ExerciseDetailModal = ({ selectedExercise, onClose }) => (
+const ExerciseDetailModal = ({ selectedExercise, onClose, protocol }) => (
     <div className="fixed inset-0 z-[6000] flex items-center justify-center p-4">
         <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -542,7 +544,12 @@ const ExerciseDetailModal = ({ selectedExercise, onClose }) => (
 
                     {/* Load/Config Badge */}
                     <div className="inline-flex flex-wrap gap-2">
-                        {(selectedExercise.targetReps > 0 || selectedExercise.manifestation) && (
+                        {protocol === 'T' ? (
+                            <div className="px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-2">
+                                <span className="text-xs font-bold text-emerald-500 uppercase tracking-wider">Objetivo:</span>
+                                <span className="text-sm font-black text-white">Máximas Repeticiones</span>
+                            </div>
+                        ) : (selectedExercise.targetReps > 0 || selectedExercise.manifestation) && (
                             <div className="px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-2">
                                 <span className="text-xs font-bold text-emerald-500 uppercase tracking-wider">Objetivo:</span>
                                 <span className="text-sm font-black text-white">
@@ -655,7 +662,12 @@ const CollapsiblePlanningBlock = ({ module, onSelectExercise }) => {
                                             {module.protocol === 'T' && (
                                                 <span className="inline-flex items-center px-2 py-1 bg-emerald-500/10 text-emerald-500 rounded text-[10px] font-black uppercase tracking-wider border border-emerald-500/20">
                                                     <Clock size={12} className="mr-1" />
-                                                    {module.targeting?.[0]?.timeCap ? `${module.targeting[0].timeCap}s` : 'Tiempo'}
+                                                    {(() => {
+                                                        const seconds = module.targeting?.[0]?.timeCap || 240;
+                                                        const m = Math.floor(seconds / 60);
+                                                        const s = seconds % 60;
+                                                        return s === 0 ? `${m}'` : `${m}:${s.toString().padStart(2, '0')}`;
+                                                    })()}
                                                 </span>
                                             )}
                                             {(module.protocol === 'E' || ex.config?.isEMOM) && (
@@ -940,7 +952,18 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
     };
 
     const handleWeightInput = (idx, val) => {
-        setWeightsUsed(prev => ({ ...prev, [idx]: val }));
+        // Normalize comma to dot for internal processing
+        const normalized = val.replace(',', '.');
+        setWeightsUsed(prev => ({ ...prev, [idx]: normalized }));
+    };
+
+    const adjustWeight = (idx, delta) => {
+        setWeightsUsed(prev => {
+            const current = parseFloat(prev[idx] || 0);
+            if (isNaN(current)) return { ...prev, [idx]: delta > 0 ? delta.toString() : '0' };
+            const newValue = Math.max(0, current + delta);
+            return { ...prev, [idx]: newValue.toString() };
+        });
     };
 
     // Auto-Stop Timer for PDP-R when all targets are reached
@@ -1239,59 +1262,83 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                     const previousWeight = previousLog?.results?.actualWeights?.[idx];
 
                                     return (
-                                        <div key={idx} className="bg-slate-900/50 rounded-xl p-3 border border-slate-700">
-                                            {/* Header with exercise name and recommendation badge */}
-                                            <div className="flex items-center justify-between mb-2">
-                                                <label className="text-xs font-bold text-slate-400 truncate flex-1">
-                                                    {ex.nameEs || ex.name}
-                                                </label>
+                                        <div key={idx} className="bg-slate-900/40 rounded-2xl p-4 border border-slate-700/50 relative group overflow-hidden">
+                                            {/* Glow effect on hover */}
+                                            <div className="absolute inset-0 bg-emerald-500/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
 
-                                                {/* Recommendation Badge */}
+                                            {/* Header */}
+                                            <div className="flex items-start justify-between mb-3 relative z-10">
+                                                <div className="flex flex-col">
+                                                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-tighter mb-0.5">Ejercicio</span>
+                                                    <span className="text-xs font-bold text-white line-clamp-1">{ex.nameEs || ex.name}</span>
+                                                </div>
+
                                                 {recommendation && (
-                                                    <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ml-2
-                                                        ${recommendation.type === 'up' ? 'bg-emerald-500/20 text-emerald-500 border border-emerald-500/30' :
-                                                            recommendation.type === 'down' ? 'bg-amber-500/20 text-amber-500 border border-amber-500/30' :
-                                                                'bg-blue-500/20 text-blue-500 border border-blue-500/30'}`}>
-                                                        {recommendation.type === 'up' ? '↑ Subir' :
-                                                            recommendation.type === 'down' ? '↓ Bajar' :
-                                                                '→ Mantener'}
-                                                    </span>
+                                                    <div className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border shadow-sm
+                                                        ${recommendation.type === 'up' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' :
+                                                            recommendation.type === 'down' ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' :
+                                                                'bg-blue-500/10 text-blue-500 border-blue-500/20'}`}>
+                                                        {recommendation.type === 'up' ? 'Sube Peso' :
+                                                            recommendation.type === 'down' ? 'Baja Peso' :
+                                                                'Mantén'}
+                                                    </div>
                                                 )}
                                             </div>
 
-                                            <div className="flex items-center gap-2">
-                                                {/* Show previous weight and adjustment */}
-                                                {previousWeight && (
-                                                    <div className="flex items-center gap-1.5 text-xs">
-                                                        <span className="text-slate-500 font-bold">
-                                                            {previousWeight}kg
-                                                        </span>
-                                                        {recommendation?.adjustment && recommendation.adjustment !== 0 && (
-                                                            <span className={`font-black ${recommendation.adjustment > 0 ? 'text-emerald-500' : 'text-amber-500'}`}>
-                                                                {recommendation.adjustment > 0 ? '+' : ''}{recommendation.adjustment}kg
-                                                            </span>
-                                                        )}
+                                            {/* Previous Stats */}
+                                            {previousWeight && (
+                                                <div className="flex items-center gap-3 mb-4 bg-slate-800/40 rounded-lg p-2 border border-slate-700/30 relative z-10">
+                                                    <div className="flex flex-col">
+                                                        <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Anterior</span>
+                                                        <span className="text-xs font-black text-slate-400 tabular-nums">{previousWeight}<span className="text-[9px] ml-0.5">kg</span></span>
                                                     </div>
-                                                )}
+                                                    {recommendation?.adjustment && recommendation.adjustment !== 0 && (
+                                                        <>
+                                                            <div className="h-4 w-px bg-slate-700"></div>
+                                                            <div className="flex flex-col">
+                                                                <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Recomendación</span>
+                                                                <span className={`text-xs font-black tabular-nums ${recommendation.adjustment > 0 ? 'text-emerald-500' : 'text-amber-500'}`}>
+                                                                    {recommendation.adjustment > 0 ? '+' : ''}{recommendation.adjustment}kg
+                                                                </span>
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            )}
 
-                                                {/* Input with contextual border color */}
-                                                <div className="relative flex-1">
+                                            {/* Input Wrapper with Controls */}
+                                            <div className="flex items-center gap-2 relative z-10">
+                                                <button
+                                                    onClick={() => adjustWeight(idx, -1)}
+                                                    className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-700 active:scale-95 transition-all outline-none"
+                                                >
+                                                    <Minus size={16} />
+                                                </button>
+
+                                                <div className="relative flex-1 group/input">
                                                     <input
-                                                        type="number"
-                                                        placeholder="0"
+                                                        type="text"
+                                                        inputMode="decimal"
+                                                        placeholder="0.0"
                                                         value={weightsUsed[idx] || ''}
                                                         onChange={(e) => handleWeightInput(idx, e.target.value)}
-                                                        className={`w-full bg-slate-800 border-2 rounded-xl py-2.5 pl-3 pr-10 
-                                                                   text-white font-mono font-black text-base outline-none 
-                                                                   transition-all placeholder:text-slate-600
-                                                                   ${recommendation?.type === 'up' ? 'border-emerald-500 focus:ring-emerald-500/10' :
-                                                                recommendation?.type === 'down' ? 'border-amber-500 focus:ring-amber-500/10' :
-                                                                    recommendation?.type === 'keep' ? 'border-blue-500 focus:ring-blue-500/10' :
-                                                                        'border-slate-700'} 
-                                                                   focus:ring-4`}
+                                                        className={`w-full bg-slate-800/80 border-2 rounded-xl py-2 pl-3 pr-8 
+                                                                   text-white font-black text-lg outline-none 
+                                                                   transition-all hover:bg-slate-800 placeholder:text-slate-600
+                                                                   ${recommendation?.type === 'up' ? 'border-emerald-500/50 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10' :
+                                                                recommendation?.type === 'down' ? 'border-amber-500/50 focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10' :
+                                                                    recommendation?.type === 'keep' ? 'border-blue-500/50 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10' :
+                                                                        'border-slate-700 focus:border-emerald-500/50 focus:ring-4 focus:ring-emerald-500/5'}`}
                                                     />
-                                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-500 pointer-events-none">kg</span>
+                                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-500 uppercase tracking-widest pointer-events-none">kg</span>
                                                 </div>
+
+                                                <button
+                                                    onClick={() => adjustWeight(idx, 1)}
+                                                    className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-700 active:scale-95 transition-all outline-none"
+                                                >
+                                                    <Plus size={16} />
+                                                </button>
                                             </div>
                                         </div>
                                     );
@@ -1305,10 +1352,10 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                 {/* Main Timer Display (Protocol Specific) */}
                 {/* Main Timer Display (Protocol Specific) */}
                 {(protocol === 'T' || protocol === 'E' || protocol === 'R' || protocol === 'LIBRE') && (
-                    <div className={`mb-2 bg-slate-800/30 rounded-3xl border border-slate-700/50 backdrop-blur relative overflow-hidden ${protocol === 'E' || protocol === 'LIBRE' ? 'px-4 py-3 mt-2' : 'p-6 mt-6'}`}>
+                    <div className={`mb-2 bg-slate-800/30 rounded-3xl border border-slate-700/50 backdrop-blur relative overflow-hidden ${protocol === 'E' || protocol === 'LIBRE' ? 'px-4 py-2 mt-2' : 'p-4 mt-4'}`}>
                         {getTimerDisplay()}
 
-                        <div className="flex gap-3 mt-3">
+                        <div className="flex gap-3 mt-2">
                             <button
                                 onClick={() => {
                                     initAudio(); // Initialize audio context
@@ -1321,7 +1368,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                         setIsActive(!isActive);
                                     }
                                 }}
-                                className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-black uppercase tracking-wider transition-all ${isActive
+                                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-black uppercase tracking-wider transition-all ${isActive
                                     ? 'bg-amber-500/10 text-amber-500 border-2 border-amber-500 hover:bg-amber-500 hover:text-white'
                                     : 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 active:scale-[0.98]'
                                     }`}
@@ -1352,7 +1399,10 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                 )}
             </div>
 
-            <div className={`relative flex items-center justify-center mt-2 mb-2 ${protocol === 'E' ? 'w-48 h-48' : 'w-64 h-64'}`}>
+            <div className={`relative flex items-center justify-center transition-all duration-500 ease-in-out ${isActive
+                ? (protocol === 'E' ? 'w-48 h-48 mt-2 mb-2' : 'w-56 h-56 mt-3 mb-3')
+                : (protocol === 'E' ? 'w-36 h-36 mt-1 mb-1' : 'w-44 h-44 mt-1 mb-1')
+                }`}>
                 <div className="absolute inset-0 bg-emerald-500/10 blur-3xl rounded-full opacity-30"></div>
                 <svg className="absolute inset-0 w-full h-full -rotate-90 drop-shadow-xl">
                     <circle cx="50%" cy="50%" r="45%" stroke="#1e293b" strokeWidth="8" fill="none" />
@@ -1363,19 +1413,12 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                             stroke={protocol === 'R' ? '#10b981' : (isActive ? '#10b981' : '#64748b')}
                             strokeWidth="8"
                             fill="none"
-                            strokeDasharray={2 * Math.PI * (protocol === 'E' ? 90 : 115)}
+                            strokeDasharray={2 * Math.PI * (isActive ? (protocol === 'E' ? 85 : 100) : (protocol === 'E' ? 65 : 80))}
                             strokeDashoffset={(() => {
-                                const approxRadius = protocol === 'E' ? 90 : 115;
+                                const approxRadius = isActive ? (protocol === 'E' ? 85 : 100) : (protocol === 'E' ? 65 : 80);
                                 const circumference = 2 * Math.PI * approxRadius;
 
                                 if (protocol === 'R') {
-                                    // Calculate Rep Progress (Count UP)
-                                    // 0% Progress -> Full Offset (Empty Ring) ? No, standard is Full -> Empty or Empty -> Full?
-                                    // User wants "rellenando" (filling up).
-                                    // Full Offset = Empty Ring. 0 Offset = Full Ring.
-                                    // Progress 0% -> Offset = Circumference (Empty)
-                                    // Progress 100% -> Offset = 0 (Full)
-
                                     const totalTarget = exercises.reduce((acc, ex) => acc + (ex.targetReps || module.targeting?.[0]?.volume || 0), 0);
                                     let totalDone = 0;
                                     exercises.forEach((_, idx) => {
@@ -1386,13 +1429,8 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                     return circumference * (1 - progress);
                                 }
 
-                                // Time Progress (Countdown)
-                                // TimeLeft starts at Total (Full Ring) -> 0 (Empty Ring)
                                 const totalTime = (protocol === 'T' ? module.targeting?.[0]?.timeCap : module.emomParams?.durationMinutes * 60) || 240;
                                 const timeRatio = (timeLeft || 0) / totalTime;
-                                // We want the ring to shrink as time goes down.
-                                // TimeLeft = Total -> Ratio 1 -> Offset 0 (Full)
-                                // TimeLeft = 0 -> Ratio 0 -> Offset Circumference (Empty)
                                 return circumference * (1 - timeRatio);
                             })()}
                             strokeLinecap="round"
@@ -1401,7 +1439,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                     )}
                 </svg>
                 <button onClick={() => setIsActive(!isActive)} className="z-20 text-center group">
-                    <div className={`text-[clamp(2.5rem,12vw,4rem)] font-black tabular-nums tracking-tighter transition-colors ${isActive ? 'text-white' : 'text-slate-500'} group-hover:text-emerald-400`}>
+                    <div className={`text-[clamp(2rem,12vw,4rem)] font-black tabular-nums tracking-tighter transition-all duration-500 ${isActive ? 'text-white' : 'text-slate-500'} group-hover:text-emerald-400`}>
                         {protocol === 'R' || protocol === 'LIBRE' || protocol === 'mix' ? formatTime(elapsed) : formatTime(timeLeft || 0)}
                     </div>
                     <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mt-1 flex items-center justify-center gap-1">
@@ -1410,7 +1448,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                 </button>
             </div>
 
-            <div className="w-full px-4 mb-32">
+            <div className={`w-full px-4 mb-32 transition-all duration-500 ease-in-out flex flex-col ${isActive ? 'flex-1' : ''}`}>
                 {protocol === 'E' ? (
                     // EMOM SPECIFIC UI: Round Tracker + Static Exercise Info
                     <div className="space-y-4">
@@ -1449,7 +1487,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                     </div>
                 ) : (
                     // STANDARD UI (R/T/Mix) - Rep Counters
-                    <div className={`flex items-stretch ${exercises.length > 1 ? 'gap-2' : 'gap-4'}`}>
+                    <div className={`flex items-stretch transition-all duration-500 ${exercises.length > 1 ? 'gap-2' : 'gap-4'} ${isActive ? 'flex-1 mb-4' : ''}`}>
                         {exercises.map((ex, idx) => {
                             // Color Feedback Logic
                             const targetReps = ex.targetReps || module.targeting?.[0]?.volume || 0;
@@ -1475,15 +1513,18 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
 
                             const isDual = exercises.length > 1;
                             return (
-                                <div key={idx} className={`flex-1 w-0 rounded-2xl border flex flex-col items-center justify-between h-full transition-all duration-300 ${cardClass} ${isDual ? 'p-2' : 'p-4'}`}>
-                                    <span className={`text-xs font-bold text-center mb-1 truncate w-full px-1 ${isTargetReached ? 'text-emerald-400' : 'text-slate-400'}`}>
+                                <div key={idx} className={`flex-1 w-0 rounded-[2rem] border flex flex-col items-center justify-between transition-all duration-500 ${cardClass} ${isDual ? 'p-2' : 'p-4'} ${isActive ? 'py-5 shadow-xl' : ''}`}>
+                                    <span className={`text-xs font-bold text-center mb-1 truncate w-full px-1 transition-all ${isTargetReached ? 'text-emerald-400' : 'text-slate-400'} ${isActive ? 'text-sm' : ''}`}>
                                         {ex.nameEs || ex.name}
                                     </span>
 
                                     {/* Thumbnail Image */}
                                     <button
                                         onClick={() => onSelectExercise(ex)}
-                                        className={`shrink-0 bg-slate-900 rounded-xl overflow-hidden border border-slate-700/50 mb-2 transition-all hover:border-emerald-500/50 ${isDual ? 'w-16 h-16' : 'w-24 h-24'}`}
+                                        className={`shrink-0 bg-slate-900 rounded-xl overflow-hidden border border-slate-700/50 mb-1.5 transition-all hover:border-emerald-500/50 ${isActive
+                                            ? (isDual ? 'w-18 h-18' : 'w-24 h-24')
+                                            : (isDual ? 'w-14 h-14' : 'w-16 h-16')
+                                            }`}
                                     >
                                         <ExerciseMedia exercise={ex} thumbnailMode={true} />
                                     </button>
@@ -1493,25 +1534,25 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                             OBJ: {ex.targetReps ? `${ex.targetReps} reps` : ex.manifestation}
                                         </div>
                                     )}
-                                    <div className={`flex items-center ${isDual ? 'gap-1' : 'gap-3'}`}>
+                                    <div className={`flex items-center ${isDual ? 'gap-1' : 'gap-2'}`}>
                                         {/* Subtract Button - Low Visual Weight */}
                                         <button
                                             onClick={() => decrementReps(idx)}
                                             disabled={!cardReps || cardReps <= 0}
-                                            className={`rounded-full flex items-center justify-center text-slate-500 hover:text-white hover:bg-slate-700/50 transition-all disabled:opacity-20 disabled:pointer-events-none ${isDual ? 'w-8 h-8' : 'w-8 h-8'}`}
+                                            className={`rounded-full flex items-center justify-center text-slate-500 hover:text-white hover:bg-slate-700/50 transition-all disabled:opacity-20 disabled:pointer-events-none ${isDual ? 'w-7 h-7' : 'w-8 h-8'}`}
                                         >
-                                            <Minus size={isDual ? 16 : 18} />
+                                            <Minus size={isDual ? 14 : 16} />
                                         </button>
 
-                                        <span className={`font-black tabular-nums text-center ${isTargetReached ? 'text-emerald-500' : isTimeExpired ? 'text-red-500' : 'text-white'} ${isDual ? 'text-[clamp(1.5rem,5vw,2.25rem)] min-w-[1.2em]' : 'text-[clamp(2rem,6vw,3rem)] min-w-[1.5em]'}`}>
+                                        <span className={`font-black tabular-nums text-center ${isTargetReached ? 'text-emerald-500' : isTimeExpired ? 'text-red-500' : 'text-white'} ${isDual ? 'text-[clamp(1.2rem,4vw,1.8rem)] min-w-[1.1em]' : 'text-[clamp(1.8rem,5vw,2.5rem)] min-w-[1.3em]'}`}>
                                             {cardReps}
                                         </span>
 
                                         <button
                                             onClick={() => incrementReps(idx)}
-                                            className={`rounded-full flex items-center justify-center text-white shadow-lg active:scale-95 transition-all ${isTargetReached ? 'bg-emerald-600 hover:bg-emerald-500' : isTimeExpired ? 'bg-red-600 hover:bg-red-500' : 'bg-emerald-600 hover:bg-emerald-500'} ${isDual ? 'w-10 h-10' : 'w-12 h-12'}`}
+                                            className={`rounded-full flex items-center justify-center text-white shadow-lg active:scale-95 transition-all ${isTargetReached ? 'bg-emerald-600 hover:bg-emerald-500' : isTimeExpired ? 'bg-red-600 hover:bg-red-500' : 'bg-emerald-600 hover:bg-emerald-500'} ${isDual ? 'w-9 h-9' : 'w-11 h-11'}`}
                                         >
-                                            <Plus size={isDual ? 20 : 24} />
+                                            <Plus size={isDual ? 18 : 22} />
                                         </button>
                                     </div>
                                 </div>

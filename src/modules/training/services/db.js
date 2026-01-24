@@ -14,7 +14,8 @@ import {
     serverTimestamp,
     setDoc,
     arrayUnion,
-    arrayRemove
+    arrayRemove,
+    onSnapshot
 } from 'firebase/firestore';
 
 /**
@@ -450,6 +451,31 @@ export const TrainingDB = {
         async deleteEntry(userId, date) {
             const ref = doc(db, 'users', userId, 'tracking', date);
             await deleteDoc(ref);
+        }
+    },
+    // --- MESSAGES (Real-time Chat) ---
+    messages: {
+        async send(athleteId, senderId, text) {
+            const chatRef = collection(db, 'chats', athleteId, 'messages');
+            return await addDoc(chatRef, {
+                senderId,
+                text,
+                timestamp: serverTimestamp(),
+                read: false
+            });
+        },
+        listen(athleteId, callback) {
+            const chatRef = collection(db, 'chats', athleteId, 'messages');
+            const q = query(chatRef, orderBy('timestamp', 'asc'));
+
+            return onSnapshot(q, (snapshot) => {
+                const msgs = snapshot.docs.map(d => ({
+                    id: d.id,
+                    ...d.data(),
+                    timestamp: d.data().timestamp?.toDate() || new Date()
+                }));
+                callback(msgs);
+            });
         }
     }
 };

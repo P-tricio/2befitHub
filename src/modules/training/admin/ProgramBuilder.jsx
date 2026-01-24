@@ -578,55 +578,68 @@ const ProgramBuilder = () => {
     );
 
     return (
-        <div className="max-w-6xl mx-auto relative">
-            {/* Compact Header */}
-            <div className="mb-6">
-                <h1 className="text-xl font-black text-slate-900 mb-1">Programas</h1>
-                <p className="text-sm text-slate-500 mb-4">Utiliza la biblioteca de programas para crear programas predefinidos para los clientes.</p>
-
-                {/* Add Program Button - Prominent */}
-                <button
-                    onClick={handleCreate}
-                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-3.5 rounded-full font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/20 active:scale-95 transition-all mb-4"
-                >
-                    <Plus size={20} />
-                    Añadir programa
-                </button>
-
-                {/* Search Input */}
-                <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                    <input
-                        type="text"
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        placeholder="Busca programas por nombre o descripció"
-                        className="w-full pl-10 pr-4 py-3 rounded-xl bg-white border border-slate-200 outline-none focus:border-emerald-500 text-sm font-medium placeholder:text-slate-400"
-                    />
+        <div className="max-w-7xl mx-auto relative p-6">
+            {/* Header Redesigned */}
+            <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
+                <div>
+                    <h1 className="text-4xl font-black text-slate-900 tracking-tight">Programas</h1>
+                    <p className="text-slate-500 text-sm font-medium mt-1">Biblioteca de programas maestros para atletas.</p>
                 </div>
-            </div>
 
-            {/* List */}
-            <div className="space-y-2 pb-20">
+                <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
+                    <div className="relative flex-1 sm:w-80 group">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-slate-900 transition-colors" size={20} />
+                        <input
+                            type="text"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            placeholder="Buscar programas..."
+                            className="w-full pl-12 pr-6 py-3.5 bg-white border border-slate-200 rounded-[20px] text-sm font-medium outline-none focus:border-slate-900 focus:ring-4 focus:ring-slate-900/5 transition-all shadow-sm"
+                        />
+                    </div>
+                    <button
+                        onClick={handleCreate}
+                        className="bg-slate-900 hover:bg-slate-800 text-white px-8 py-3.5 rounded-[20px] font-black flex items-center justify-center gap-2 shadow-xl shadow-slate-900/20 active:scale-95 transition-all text-sm uppercase tracking-widest shrink-0"
+                    >
+                        <Plus size={20} />
+                        Nuevo Programa
+                    </button>
+                </div>
+            </header>
+
+            {/* List Redesigned */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pb-20">
                 {filteredPrograms.length === 0 && (
-                    <div className="text-center py-20 text-slate-400">
-                        {programs.length === 0 ? 'No hay programas creados.' : 'No se encontraron programas.'}
+                    <div className="col-span-full py-20 text-center">
+                        <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-200">
+                            <Plus size={32} />
+                        </div>
+                        <p className="text-slate-400 font-black text-xs uppercase tracking-widest italic">
+                            {programs.length === 0 ? 'No hay programas creados aún.' : 'No se encontraron programas.'}
+                        </p>
                     </div>
                 )}
                 {filteredPrograms.map(p => (
-                    <div key={p.id} className="group bg-white p-4 rounded-xl border border-slate-100 hover:shadow-md transition-all cursor-pointer relative flex items-center justify-between">
-                        <div className="flex-1 min-w-0" onClick={() => handleEdit(p)}>
-                            <h3 className="font-bold text-slate-900 truncate">{p.name}</h3>
-                            <p className="text-xs text-slate-400">{p.weeks || 4} semanas</p>
-                        </div>
-
-                        {/* Actions */}
-                        <div className="shrink-0">
-                            <ActionMenu actions={[
-                                { label: 'Editar', icon: <Edit2 size={16} />, onClick: () => handleEdit(p) },
-                                { label: 'Duplicar', icon: <Copy size={16} />, onClick: () => handleDuplicate(p) },
-                                { label: 'Eliminar', icon: <Trash2 size={16} />, onClick: () => handleDelete(p.id), variant: 'danger' }
-                            ]} />
+                    <div
+                        key={p.id}
+                        onClick={() => handleEdit(p)}
+                        className="group bg-white p-6 rounded-[32px] border border-slate-100 hover:border-slate-200 hover:shadow-2xl hover:shadow-slate-200/50 transition-all cursor-pointer relative flex flex-col justify-between gap-4"
+                    >
+                        <div className="flex justify-between items-start gap-3">
+                            <div className="min-w-0">
+                                <h3 className="font-black text-slate-900 text-lg leading-tight truncate group-hover:text-indigo-600 transition-colors">{p.name}</h3>
+                                <div className="flex items-center gap-2 mt-2">
+                                    <span className="px-2 py-0.5 bg-slate-100 text-[10px] font-black text-slate-500 rounded-md uppercase tracking-wider">{p.weeks || 4} Semanas</span>
+                                    {p.description && <span className="text-[10px] text-slate-400 font-bold truncate max-w-[120px]">{p.description}</span>}
+                                </div>
+                            </div>
+                            <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                                <ActionMenu actions={[
+                                    { label: 'Editar', icon: <Edit2 size={16} />, onClick: () => handleEdit(p) },
+                                    { label: 'Duplicar', icon: <Copy size={16} />, onClick: () => handleDuplicate(p) },
+                                    { label: 'Eliminar', icon: <Trash2 size={16} />, onClick: () => handleDelete(p.id), variant: 'danger' }
+                                ]} />
+                            </div>
                         </div>
                     </div>
                 ))}
@@ -639,7 +652,7 @@ const ProgramBuilder = () => {
                         {/* Backdrop */}
                         <motion.div
                             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                            className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40"
+                            className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100]"
                             onClick={handleClose}
                         />
 
@@ -647,109 +660,110 @@ const ProgramBuilder = () => {
                         <motion.div
                             initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
                             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                            className="fixed inset-y-0 right-0 w-full max-w-4xl bg-white shadow-2xl z-[60] flex flex-col h-full border-l border-slate-100"
+                            className="fixed inset-y-0 right-0 w-full max-w-5xl bg-white shadow-2xl z-[110] flex flex-col h-full border-l border-slate-100"
                         >
                             {/* Header */}
-                            <div className="p-4 border-b border-slate-100 flex justify-between items-center shrink-0 bg-white z-10">
+                            <div className="p-6 border-b border-slate-100 flex justify-between items-center shrink-0 bg-white shadow-sm z-10">
                                 <div>
-                                    <h2 className="text-xl font-black text-slate-900">
+                                    <h2 className="text-2xl font-black text-slate-900 tracking-tight">
                                         {currentProgram ? 'Editar Programa' : 'Nuevo Programa'}
                                     </h2>
-                                    <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mt-1">Planificación</p>
+                                    <p className="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] mt-1">Panel de Configuración Técnica</p>
                                 </div>
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-3">
                                     <button
                                         onClick={handleSave}
-                                        className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-1 shadow-sm text-sm"
+                                        className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-2xl font-black flex items-center gap-2 shadow-lg shadow-indigo-900/20 text-sm transition-all"
                                     >
-                                        <Save size={16} />
-                                        Guardar
+                                        <Save size={18} />
+                                        GUARDAR
                                     </button>
-                                    <button onClick={handleClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-400 hover:text-slate-600">
+                                    <button onClick={handleClose} className="p-2.5 bg-slate-50 hover:bg-slate-100 rounded-2xl transition-all text-slate-400 hover:text-slate-900">
                                         <X size={24} />
                                     </button>
                                 </div>
                             </div>
 
                             {/* Main Scrollable Content */}
-                            <div className="flex-1 overflow-auto bg-slate-50/50 p-4">
+                            <div className="flex-1 overflow-auto bg-slate-50/30 p-8 space-y-8">
                                 {/* Program Info */}
-                                <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 mb-4">
-                                    <div className="mb-3">
-                                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Nombre del Programa</label>
-                                        <input
-                                            type="text"
-                                            value={progName}
-                                            onChange={e => setProgName(e.target.value)}
-                                            placeholder="Ej: Bloque Hipertrofia I"
-                                            className="w-full text-lg font-bold text-slate-900 placeholder:text-slate-300 outline-none border-b border-slate-100 focus:border-emerald-500 pb-1 transition-all"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Descripción</label>
-                                        <textarea
-                                            value={progDescription}
-                                            onChange={e => setProgDescription(e.target.value)}
-                                            placeholder="Descripción del programa..."
-                                            className="w-full text-sm text-slate-600 placeholder:text-slate-300 outline-none border-b border-slate-100 focus:border-emerald-500 pb-1 transition-all resize-none"
-                                            rows={2}
-                                        />
+                                <div className="bg-white p-8 rounded-[2.5rem] shadow-xl shadow-slate-200/50 border border-slate-100">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                        <div className="space-y-2">
+                                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Nombre Maestro</label>
+                                            <input
+                                                type="text"
+                                                value={progName}
+                                                onChange={e => setProgName(e.target.value)}
+                                                placeholder="Ej: Bloque de Hipertrofia Pro"
+                                                className="w-full text-xl font-black text-slate-900 placeholder:text-slate-200 outline-none border-b-2 border-slate-100 focus:border-indigo-600 pb-2 transition-all"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Descripción del Objetivo</label>
+                                            <textarea
+                                                value={progDescription}
+                                                onChange={e => setProgDescription(e.target.value)}
+                                                placeholder="Breve resumen del enfoque del programa..."
+                                                className="w-full text-sm font-medium text-slate-600 placeholder:text-slate-200 outline-none border-b-2 border-slate-100 focus:border-indigo-600 pb-2 transition-all resize-none"
+                                                rows={1}
+                                            />
+                                        </div>
                                     </div>
                                 </div>
 
-                                {/* Weeks */}
-                                <div className="space-y-4">
+                                {/* Weeks Container */}
+                                <div className="space-y-8 pb-12">
                                     {Array.from({ length: durationWeeks }).map((_, wIdx) => {
                                         const weekNum = wIdx + 1;
                                         return (
-                                            <div key={weekNum} className={`bg-white rounded-xl shadow-sm border overflow-hidden transition-all
-                                                ${moveWeekMode === weekNum ? 'border-2 border-blue-500 ring-2 ring-blue-200' : 'border-slate-100'}
+                                            <div key={weekNum} className={`bg-white rounded-[2.5rem] shadow-sm border-2 overflow-hidden transition-all
+                                                ${moveWeekMode === weekNum ? 'border-indigo-600 ring-4 ring-indigo-50' : 'border-slate-100/50'}
                                             `}>
                                                 {/* Week Header */}
-                                                <div className={`p-3 border-b border-slate-100 flex justify-between items-center
-                                                    ${moveWeekMode === weekNum ? 'bg-blue-100' : moveWeekMode ? 'bg-blue-50/30 hover:bg-blue-50 cursor-pointer' : 'bg-slate-50'}
+                                                <div className={`px-6 py-4 border-b border-slate-100 flex justify-between items-center
+                                                    ${moveWeekMode === weekNum ? 'bg-indigo-50/50' : moveWeekMode ? 'bg-indigo-50/20 hover:bg-indigo-50 cursor-pointer' : 'bg-slate-50/30'}
                                                 `}
                                                     onClick={() => moveWeekMode && moveWeekMode !== weekNum && handleMoveWeek(weekNum)}
                                                 >
-                                                    <h3 className="text-sm font-black text-slate-700">
-                                                        {moveWeekMode === weekNum && '📍 '}
-                                                        Semana {weekNum}
-                                                        {moveWeekMode && moveWeekMode !== weekNum && ' ← Mover aquí'}
-                                                    </h3>
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-8 h-8 rounded-xl bg-slate-900 text-white flex items-center justify-center text-xs font-black">
+                                                            W{weekNum}
+                                                        </div>
+                                                        <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">
+                                                            {moveWeekMode === weekNum && '📍 '}
+                                                            Semana {weekNum}
+                                                            {moveWeekMode && moveWeekMode !== weekNum && <span className="text-indigo-600 ml-2">← MOVER AQUÍ</span>}
+                                                        </h3>
+                                                    </div>
                                                     <ActionMenu actions={
                                                         durationWeeks === 1 ? [
-                                                            { label: 'Duplicar', icon: <Copy size={14} />, onClick: () => handleDuplicateWeek(weekNum) },
-                                                            { label: 'Limpiar', icon: <Trash2 size={14} />, onClick: () => handleClearWeek(weekNum), variant: 'danger' }
+                                                            { label: 'Duplicar', icon: <Copy size={16} />, onClick: () => handleDuplicateWeek(weekNum) },
+                                                            { label: 'Limpiar', icon: <Trash2 size={16} />, onClick: () => handleClearWeek(weekNum), variant: 'danger' }
                                                         ] : [
-                                                            { label: 'Mover', icon: <ArrowRightLeft size={14} />, onClick: () => handleMoveWeek(weekNum) },
-                                                            { label: 'Duplicar', icon: <Copy size={14} />, onClick: () => handleDuplicateWeek(weekNum) },
-                                                            { label: 'Eliminar', icon: <Trash2 size={14} />, onClick: () => handleRemoveWeek(weekNum), variant: 'danger' }
+                                                            { label: 'Mover', icon: <ArrowRightLeft size={16} />, onClick: () => handleMoveWeek(weekNum) },
+                                                            { label: 'Duplicar', icon: <Copy size={16} />, onClick: () => handleDuplicateWeek(weekNum) },
+                                                            { label: 'Eliminar', icon: <Trash2 size={16} />, onClick: () => handleRemoveWeek(weekNum), variant: 'danger' }
                                                         ]
                                                     } />
                                                 </div>
 
-                                                {/* Days */}
-                                                <div className="p-2 md:grid md:grid-cols-7 md:gap-2">
+                                                {/* Days Grid */}
+                                                <div className="p-4 grid grid-cols-1 md:grid-cols-7 gap-3">
                                                     {DAYS.map((day, dIdx) => {
                                                         const slotId = `w${weekNum}-d${dIdx}`;
                                                         const assignedId = schedule[slotId];
-                                                        const isLastDay = dIdx === DAYS.length - 1;
 
                                                         return (
                                                             <div
                                                                 key={slotId}
-                                                                data-slot-id={slotId}
-                                                                className={`flex md:flex-col md:items-stretch items-center gap-2 p-2 rounded-lg transition-all ${!isLastDay ? 'border-b border-slate-100 md:border-b-0' : ''}`}
+                                                                className="flex flex-col h-full min-h-[140px] bg-slate-50/50 rounded-3xl p-3 border border-slate-100/50 hover:bg-white hover:shadow-lg hover:shadow-slate-200/50 transition-all group"
                                                             >
-                                                                {/* Day Label */}
-                                                                <div className="w-20 shrink-0 md:w-full md:text-center md:mb-2">
-                                                                    <span className="text-xs font-bold text-slate-500">{day}</span>
+                                                                <div className="text-center mb-3">
+                                                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{day}</span>
                                                                 </div>
 
-
-                                                                {/* Session Slot(s) */}
-                                                                <div className="flex-1 space-y-1">
-                                                                    {/* Existing Sessions */}
+                                                                <div className="flex-1 space-y-2">
                                                                     {assignedId && assignedId.length > 0 && assignedId.map((sessionId, sessionIdx) => {
                                                                         const isThisSessionMoving = moveMode && moveMode.slotId === slotId && moveMode.sessionIndex === sessionIdx;
                                                                         return (
@@ -760,15 +774,15 @@ const ProgramBuilder = () => {
                                                                                 dragMomentum={false}
                                                                                 whileDrag={{ scale: 1.05, zIndex: 50, cursor: 'grabbing', opacity: 0.9 }}
                                                                                 onDragEnd={(e, info) => handleSessionDragEnd(e, info, slotId, sessionIdx)}
-                                                                                className={`flex items-center justify-between rounded-lg p-2 hover:shadow-sm transition-all cursor-grab active:cursor-grabbing group touch-none
-                                                                                    ${isThisSessionMoving ? 'bg-blue-100 border-2 border-blue-500 ring-2 ring-blue-200' : 'bg-slate-50 border border-slate-200'}
+                                                                                className={`flex items-center justify-between rounded-2xl p-3 hover:shadow-md transition-all cursor-grab active:cursor-grabbing group touch-none border
+                                                                                    ${isThisSessionMoving ? 'bg-indigo-100 border-indigo-500 ring-2 ring-indigo-200' : 'bg-white border-slate-100 shadow-sm'}
                                                                                 `}
                                                                             >
-                                                                                <span className="text-sm font-bold text-slate-800 flex-1 truncate select-none">
+                                                                                <span className="text-[11px] font-black text-slate-700 truncate select-none">
                                                                                     {isThisSessionMoving && '📍 '}
                                                                                     {getSessionName(sessionId)}
                                                                                 </span>
-                                                                                <div className="shrink-0">
+                                                                                <div className="shrink-0 scale-90 opacity-0 group-hover:opacity-100 transition-opacity">
                                                                                     <ActionMenu actions={[
                                                                                         { label: 'Mover', icon: <ArrowRightLeft size={14} />, onClick: () => handleMoveClick(slotId, sessionIdx) },
                                                                                         { label: 'Editar', icon: <Edit2 size={14} />, onClick: () => setEditingSlot(`${slotId}-${sessionIdx}`) },
@@ -780,51 +794,36 @@ const ProgramBuilder = () => {
                                                                         );
                                                                     })}
 
-                                                                    {/* Add Session Button */}
                                                                     <button
                                                                         onClick={() => {
                                                                             if (moveMode) {
-                                                                                // Move to end of this slot's list
                                                                                 const sourceSlot = moveMode.slotId;
                                                                                 const sourceIdx = moveMode.sessionIndex;
-
                                                                                 setSchedule(prev => {
                                                                                     const newSchedule = { ...prev };
                                                                                     const sourceSessions = [...(newSchedule[sourceSlot] || [])];
                                                                                     const targetSessions = [...(newSchedule[slotId] || [])];
-
                                                                                     const sessionToMove = sourceSessions[sourceIdx];
-
-                                                                                    // Remove from source
                                                                                     sourceSessions.splice(sourceIdx, 1);
-
-                                                                                    // Add to end of target
                                                                                     targetSessions.push(sessionToMove);
-
-                                                                                    // Update schedule
-                                                                                    if (sourceSessions.length > 0) {
-                                                                                        newSchedule[sourceSlot] = sourceSessions;
-                                                                                    } else {
-                                                                                        delete newSchedule[sourceSlot];
-                                                                                    }
+                                                                                    if (sourceSessions.length > 0) newSchedule[sourceSlot] = sourceSessions;
+                                                                                    else delete newSchedule[sourceSlot];
                                                                                     newSchedule[slotId] = targetSessions;
-
                                                                                     return newSchedule;
                                                                                 });
-
                                                                                 setMoveMode(null);
                                                                             } else {
                                                                                 setActiveSlot(slotId);
                                                                             }
                                                                         }}
-                                                                        className={`w-full border rounded-lg p-2 transition-all text-sm font-bold flex items-center justify-center gap-1
-                                                                            ${moveMode ? 'border-2 border-blue-400 bg-blue-50 text-blue-600 hover:bg-blue-100' : 'border-dashed border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/50 text-slate-400 hover:text-emerald-600'}
+                                                                        className={`w-full py-4 px-2 rounded-2xl transition-all text-[10px] font-black uppercase tracking-widest flex flex-col items-center justify-center gap-1 border-2 border-dashed
+                                                                            ${moveMode ? 'border-indigo-400 bg-indigo-50 text-indigo-600 hover:bg-indigo-100' : 'border-slate-100 text-slate-300 hover:border-indigo-300 hover:bg-indigo-50/50 hover:text-indigo-600'}
                                                                         `}
                                                                     >
                                                                         {moveMode ? (
-                                                                            <>↓ Mover aquí</>
+                                                                            <>↓ SOLTAR</>
                                                                         ) : (
-                                                                            <><Plus size={14} /> Añadir sesión</>
+                                                                            <><Plus size={16} /> <span className="mt-1">AÑADIR</span></>
                                                                         )}
                                                                     </button>
                                                                 </div>
@@ -839,10 +838,10 @@ const ProgramBuilder = () => {
                                     {/* Add Week Button */}
                                     <button
                                         onClick={handleAddWeek}
-                                        className="w-full border-2 border-dashed border-slate-200 rounded-xl p-4 hover:border-emerald-400 hover:bg-emerald-50/30 transition-all text-slate-400 hover:text-emerald-600 font-bold flex items-center justify-center gap-2"
+                                        className="w-full border-4 border-dashed border-slate-100 rounded-[2.5rem] p-8 hover:border-indigo-200 hover:bg-indigo-50/20 transition-all text-slate-300 hover:text-indigo-600 font-black flex items-center justify-center gap-3 uppercase tracking-[0.3em]"
                                     >
-                                        <Plus size={18} />
-                                        Añadir semana
+                                        <Plus size={24} />
+                                        NUEVA SEMANA
                                     </button>
                                 </div>
                             </div>

@@ -4,7 +4,7 @@ import { X, Plus, Trash2, Edit2, Save, Utensils, Footprints, Heart, Package, Che
 import { TrainingDB } from '../services/db';
 
 const CATEGORIES = [
-    { id: 'nutrition', label: 'Nutrición', icon: <Utensils size={18} />, color: 'orange' },
+    { id: 'nutrition', label: 'Alimentación', icon: <Utensils size={18} />, color: 'orange' },
     { id: 'movement', label: 'Movimiento', icon: <Footprints size={18} />, color: 'emerald' },
     { id: 'health', label: 'Salud', icon: <Heart size={18} />, color: 'rose' },
 ];

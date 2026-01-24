@@ -80,7 +80,7 @@ const AthleteTracking = () => {
         <div className="p-4 md:p-6 max-w-lg lg:max-w-4xl mx-auto space-y-6 pb-32">
             <header className="flex justify-between items-end">
                 <div>
-                    <h1 className="text-3xl font-black text-slate-900 tracking-tight">Tu Progreso</h1>
+                    <h1 className="text-3xl font-black text-slate-900 tracking-tight">Progreso</h1>
                     <p className="text-slate-500 font-bold uppercase text-[10px] tracking-widest mt-1 italic">Tus estadísticas en tiempo real</p>
                 </div>
             </header>

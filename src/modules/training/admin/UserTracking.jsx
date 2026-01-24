@@ -740,7 +740,7 @@ const HabitsManagement = ({ user, minimums, setMinimums, history }) => {
     };
 
     const categories = [
-        { id: 'nutrition', label: 'Nutrición', icon: <Utensils size={16} />, color: 'orange' },
+        { id: 'nutrition', label: 'Alimentación', icon: <Utensils size={16} />, color: 'orange' },
         { id: 'movement', label: 'Movimiento', icon: <Footprints size={16} />, color: 'emerald' },
         { id: 'health', label: 'Salud', icon: <Heart size={16} />, color: 'rose' },
     ];

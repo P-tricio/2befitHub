@@ -185,7 +185,30 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                         ...userMinimums.uncategorized
                     ];
                 }
-                habitsToShow = Array.from(new Set(habitsToShow));
+
+                // Helper to de-duplicate habits by name (normalized)
+                const uniqueHabits = (arr) => {
+                    const seen = new Set();
+                    return arr.filter(h => {
+                        const name = typeof h === 'string' ? h : h.name;
+                        if (!name) return false;
+                        const normalized = name.toLowerCase().trim().replace(/\.+$/, "");
+                        if (seen.has(normalized)) return false;
+                        seen.add(normalized);
+                        return true;
+                    });
+                };
+
+                habitsToShow = uniqueHabits(habitsToShow);
+
+                // Filter habitsResults to only include habits intended for this task
+                const filteredHabitsResults = {};
+                habitsToShow.forEach(h => {
+                    const hName = typeof h === 'string' ? h : h.name;
+                    if (habitsResults.hasOwnProperty(hName)) {
+                        filteredHabitsResults[hName] = habitsResults[hName];
+                    }
+                });
 
                 if (task.config?.isWeeklyReporting) {
                     let totalTargets = 0;
@@ -194,19 +217,20 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                         const hName = typeof h === 'string' ? h : h.name;
                         const hTarget = typeof h === 'string' ? 7 : (h.target || 7);
                         totalTargets += hTarget;
-                        totalDone += Math.min(parseInt(habitsResults[hName]) || 0, hTarget);
+                        totalDone += Math.min(parseInt(filteredHabitsResults[hName]) || 0, hTarget);
                     });
                     const percent = totalTargets > 0 ? Math.round((totalDone / totalTargets) * 100) : 0;
                     taskSummary = `Semana: ${percent}% de metas`;
                 } else {
                     const doneCount = habitsToShow.filter(h => {
                         const hName = typeof h === 'string' ? h : h.name;
-                        return habitsResults[hName] === true;
+                        return filteredHabitsResults[hName] === true;
                     }).length;
                     const totalCount = habitsToShow.length;
                     taskSummary = `${doneCount}/${totalCount} hábitos`;
                 }
-                taskResults = { ...taskResults, habitsResults };
+                updateData.habitsResults = filteredHabitsResults;
+                taskResults = { ...taskResults, habitsResults: filteredHabitsResults };
             } else if (task.type === 'checkin' || task.type === 'tracking') {
                 // Weight
                 if (task.config?.weight !== false && weight) {
@@ -366,7 +390,7 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                                 <span>
                                     Hábitos: {task.config?.categories ?
                                         task.config.categories.map(c => {
-                                            const map = { nutrition: 'Nutrición', movement: 'Movimiento', health: 'Salud' };
+                                            const map = { nutrition: 'Alimentación', movement: 'Movimiento', health: 'Salud' };
                                             return map[c] || c;
                                         }).join(' + ')
                                         : 'Seguimiento'}
@@ -423,7 +447,21 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                                             ...userMinimums.uncategorized
                                         ];
                                     }
-                                    return Array.from(new Set(habitsToShow)).map(habit => {
+
+                                    // Helper to de-duplicate habits by name (normalized)
+                                    const uniqueHabits = (arr) => {
+                                        const seen = new Set();
+                                        return arr.filter(h => {
+                                            const name = typeof h === 'string' ? h : h.name;
+                                            if (!name) return false;
+                                            const normalized = name.toLowerCase().trim().replace(/\.+$/, "");
+                                            if (seen.has(normalized)) return false;
+                                            seen.add(normalized);
+                                            return true;
+                                        });
+                                    };
+
+                                    return uniqueHabits(habitsToShow).map(habit => {
                                         const habitName = typeof habit === 'string' ? habit : habit.name;
                                         const habitTarget = typeof habit === 'string' ? 7 : (habit.target || 7);
                                         const status = habitsResults[habitName];

@@ -7,7 +7,7 @@ import { TrainingDB } from '../../services/db';
 import { useAuth } from '../../../../context/AuthContext';
 
 const CATEGORIES = [
-    { id: 'nutrition', label: 'Nutrición', shortLabel: 'Nutr.', icon: <Utensils size={14} />, color: 'orange' },
+    { id: 'nutrition', label: 'Alimentación', shortLabel: 'Alim.', icon: <Utensils size={14} />, color: 'orange' },
     { id: 'movement', label: 'Movimiento', shortLabel: 'Mov.', icon: <Footprints size={14} />, color: 'emerald' },
     { id: 'health', label: 'Salud', shortLabel: 'Salud', icon: <Heart size={14} />, color: 'rose' },
 ];
@@ -256,7 +256,7 @@ const AthleteHabits = ({ userId, isAdminView = false }) => {
             <header className="space-y-4">
                 <div className="flex justify-between items-center text-left">
                     <div>
-                        <h1 className="text-3xl font-black text-slate-900 tracking-tight">Mis Hábitos</h1>
+                        <h1 className="text-3xl font-black text-slate-900 tracking-tight">Hábitos</h1>
                         <p className="text-slate-500 font-bold uppercase text-[10px] tracking-widest mt-1">Cumplimiento y Mínimos</p>
                     </div>
                     <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-2xl border border-slate-100 shadow-sm">
