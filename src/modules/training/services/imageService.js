@@ -11,11 +11,17 @@ const getApiKey = () => {
 // Diagnostic log (masking the key for security)
 const logStatus = () => {
     const key = getApiKey();
+    const isProduction = import.meta.env.PROD;
+
     if (key) {
         console.log(`[imageService] API Key detected: ${key.slice(0, 4)}...${key.slice(-4)}`);
     } else {
-        console.warn("[imageService] API Key NOT detected in import.meta.env. Available VITE keys:",
-            Object.keys(import.meta.env).filter(k => k.startsWith('VITE_')));
+        if (isProduction) {
+            console.error("[imageService] CRITICAL: API Key NOT detected in production build.");
+            console.error("Please add VITE_IMGBB_API_KEY to your Vercel/Hosting Provider Environment Variables and RE-DEPLOY.");
+        } else {
+            console.warn("[imageService] API Key NOT detected. Check your local .env file.");
+        }
     }
 };
 
@@ -65,7 +71,10 @@ export const uploadToImgBB = async (image) => {
             const errorMsg = data.error?.message || "Error desconocido.";
 
             if (errorMsg.toLowerCase().includes("invalid api key")) {
-                throw new Error("La API Key de ImgBB parece ser inválida. Revisa tu archivo .env");
+                throw new Error("La API Key de ImgBB es inválida. Revisa tu archivo .env y asegúrate de que sea la clave correcta (4ebc...629).");
+            }
+            if (errorMsg.toLowerCase().includes("file too large")) {
+                throw new Error("La imagen es demasiado grande para ImgBB (máx 32MB).");
             }
             throw new Error(`Error de ImgBB: ${errorMsg}`);
         }

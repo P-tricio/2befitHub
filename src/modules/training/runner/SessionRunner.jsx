@@ -1490,9 +1490,18 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                             const isDual = exercises.length > 1;
                             return (
                                 <div key={idx} className={`flex-1 w-0 rounded-2xl border flex flex-col items-center justify-between h-full transition-all duration-300 ${cardClass} ${isDual ? 'p-2' : 'p-4'}`}>
-                                    <span className={`text-xs font-bold text-center mb-2 truncate w-full px-1 ${isTargetReached ? 'text-emerald-400' : 'text-slate-400'}`}>
+                                    <span className={`text-xs font-bold text-center mb-1 truncate w-full px-1 ${isTargetReached ? 'text-emerald-400' : 'text-slate-400'}`}>
                                         {ex.nameEs || ex.name}
                                     </span>
+
+                                    {/* Thumbnail Image */}
+                                    <button
+                                        onClick={() => onSelectExercise(ex)}
+                                        className={`shrink-0 bg-slate-900 rounded-xl overflow-hidden border border-slate-700/50 mb-2 transition-all hover:border-emerald-500/50 ${isDual ? 'w-16 h-16' : 'w-24 h-24'}`}
+                                    >
+                                        <ExerciseMedia exercise={ex} thumbnailMode={true} />
+                                    </button>
+
                                     {protocol === 'LIBRE' && (ex.targetReps || ex.manifestation) && (
                                         <div className="mb-2 bg-blue-500/10 px-2 py-0.5 rounded text-[10px] font-black text-blue-400 border border-blue-500/10">
                                             OBJ: {ex.targetReps ? `${ex.targetReps} reps` : ex.manifestation}

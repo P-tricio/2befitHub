@@ -32,7 +32,7 @@ const ExerciseMedia = ({
         } else if (exercise?.imageStart) {
             initialImage = exercise.imageStart;
         } else if (youtubeId) {
-            initialImage = `https://img.youtube.com/vi/${youtubeId}/mqdefault.jpg`;
+            initialImage = `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg`;
         }
         setCurrentImage(initialImage);
     }, [exercise, youtubeId]);
@@ -59,7 +59,7 @@ const ExerciseMedia = ({
         return (
             <div className={`relative ${className} bg-black`}>
                 <iframe
-                    src={`https://www.youtube.com/embed/${youtubeId}?autoplay=1&rel=0&modestbranding=1`}
+                    src={`https://www.youtube.com/embed/${youtubeId}?autoplay=1&mute=1&rel=0&modestbranding=1`}
                     title={exercise.name_es || exercise.name}
                     frameBorder="0"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
