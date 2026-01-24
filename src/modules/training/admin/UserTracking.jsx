@@ -22,6 +22,15 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
     const [compareDate1, setCompareDate1] = useState(null);
     const [compareDate2, setCompareDate2] = useState(null);
     const [compareView, setCompareView] = useState('front');
+    const [collapsedSections, setCollapsedSections] = useState({
+        kpis: false,
+        analysis: false,
+        visual: false
+    });
+
+    const toggleSection = (section) => {
+        setCollapsedSections(prev => ({ ...prev, [section]: !prev[section] }));
+    };
 
     const normalizeMinimums = (m) => {
         const defaultStructure = { nutrition: [], movement: [], health: [], uncategorized: [] };
@@ -176,313 +185,373 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
                     {activeTab === 'metrics' ? (
                         <>
                             {/* KPIs Summary Bar */}
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                <div className="bg-white px-6 py-4 rounded-3xl border border-slate-100 shadow-sm flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className="p-2 bg-indigo-50 text-indigo-500 rounded-xl"><Activity size={18} /></div>
-                                        <div>
-                                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Peso Actual</p>
-                                            <p className="text-xl font-black text-slate-900">{currentWeight || '-'} <span className="text-xs text-slate-400 font-medium">kg</span></p>
-                                        </div>
-                                    </div>
-                                    {weightChange !== 0 && (
-                                        <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black ${weightChange < 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
-                                            {weightChange < 0 ? <TrendingDown size={14} /> : <TrendingUp size={14} />}
-                                            {Math.abs(weightChange)} kg
-                                        </div>
-                                    )}
-                                </div>
-
-                                <div className="bg-white px-6 py-4 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-3">
-                                    <div className="p-2 bg-emerald-50 text-emerald-500 rounded-xl"><Footprints size={18} /></div>
-                                    <div>
-                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Último NEAT (Pasos)</p>
-                                        <p className="text-xl font-black text-slate-900">{lastEntry?.steps?.toLocaleString() || '-'} <span className="text-xs text-slate-400 font-medium lowercase">pasos</span></p>
-                                    </div>
-                                </div>
-
-                                <div className="bg-white px-6 py-4 rounded-3xl border border-slate-100 shadow-sm flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className="p-2 bg-blue-50 text-blue-500 rounded-xl"><Settings size={18} /></div>
-                                        <div>
-                                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Métricas Activas</p>
-                                            <p className="text-xl font-black text-slate-900">{customMetrics.length} <span className="text-xs text-slate-400 font-medium lowercase">perímetros</span></p>
-                                        </div>
-                                    </div>
-                                    <button onClick={() => setShowConfigInline(!showConfigInline)} className="p-2 bg-slate-50 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all">
-                                        <Edit2 size={16} />
-                                    </button>
-                                </div>
+                            <div className="flex items-center justify-between mb-2 px-2">
+                                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Resumen Rápido</h4>
+                                <button
+                                    onClick={() => toggleSection('kpis')}
+                                    className="text-[10px] font-black text-indigo-600 hover:text-indigo-700 uppercase tracking-widest"
+                                >
+                                    {collapsedSections.kpis ? 'Mostrar' : 'Contraer'}
+                                </button>
                             </div>
+                            <AnimatePresence initial={false}>
+                                {!collapsedSections.kpis && (
+                                    <motion.div
+                                        initial={{ height: 0, opacity: 0 }}
+                                        animate={{ height: 'auto', opacity: 1 }}
+                                        exit={{ height: 0, opacity: 0 }}
+                                        className="overflow-hidden"
+                                    >
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                                            <div className="bg-white px-6 py-4 rounded-3xl border border-slate-100 shadow-sm flex items-center justify-between">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="p-2 bg-indigo-50 text-indigo-500 rounded-xl"><Activity size={18} /></div>
+                                                    <div>
+                                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Peso Actual</p>
+                                                        <p className="text-xl font-black text-slate-900">{currentWeight || '-'} <span className="text-xs text-slate-400 font-medium">kg</span></p>
+                                                    </div>
+                                                </div>
+                                                {weightChange !== 0 && (
+                                                    <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black ${weightChange < 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                                                        {weightChange < 0 ? <TrendingDown size={14} /> : <TrendingUp size={14} />}
+                                                        {Math.abs(weightChange)} kg
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <div className="bg-white px-6 py-4 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-3">
+                                                <div className="p-2 bg-emerald-50 text-emerald-500 rounded-xl"><Footprints size={18} /></div>
+                                                <div>
+                                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Último NEAT (Pasos)</p>
+                                                    <p className="text-xl font-black text-slate-900">{lastEntry?.steps?.toLocaleString() || '-'} <span className="text-xs text-slate-400 font-medium lowercase">pasos</span></p>
+                                                </div>
+                                            </div>
+
+                                            <div className="bg-white px-6 py-4 rounded-3xl border border-slate-100 shadow-sm flex items-center justify-between">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="p-2 bg-blue-50 text-blue-500 rounded-xl"><Settings size={18} /></div>
+                                                    <div>
+                                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Métricas Activas</p>
+                                                        <p className="text-xl font-black text-slate-900">{customMetrics.length} <span className="text-xs text-slate-400 font-medium lowercase">perímetros</span></p>
+                                                    </div>
+                                                </div>
+                                                <button onClick={() => setShowConfigInline(!showConfigInline)} className="p-2 bg-slate-50 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all">
+                                                    <Edit2 size={16} />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
 
                             {/* Main Analysis Block (Chart + Legend + Table) */}
                             <div className="space-y-6">
-                                {/* Chart Section */}
-                                <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm flex flex-col">
-                                    <div className="flex flex-col gap-8 mb-8">
-                                        <div className="flex items-center justify-between">
-                                            <div>
-                                                <h3 className="text-2xl font-black text-slate-900 tracking-tight">Análisis de Evolución</h3>
-                                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Selecciona una medida para visualizar su historial</p>
-                                            </div>
-                                            <div className="flex gap-2">
-                                                <button
-                                                    onClick={() => setUseSmoothing(!useSmoothing)}
-                                                    className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-[10px] font-black transition-all border ${useSmoothing ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-400 border-slate-100 hover:bg-slate-50'}`}
-                                                    title="Limpiar ruido (Media móvil)"
-                                                >
-                                                    <TrendingUp size={14} />
-                                                    <span className="hidden sm:inline">{useSmoothing ? 'QUITAR FILTRO' : 'LIMPIAR RUIDO'}</span>
-                                                </button>
-                                                <button
-                                                    onClick={() => setShowConfigInline(!showConfigInline)}
-                                                    className={`flex items-center gap-2 px-5 py-2 rounded-2xl text-[10px] font-black transition-all border ${showConfigInline ? 'bg-slate-900 text-white border-slate-900 shadow-lg' : 'bg-white text-slate-400 border-slate-100 hover:bg-slate-50'}`}
-                                                >
-                                                    <Settings size={14} />
-                                                    <span className="hidden sm:inline">{showConfigInline ? 'CERRAR PANEL' : 'GESTIONAR VARIABLES'}</span>
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        {/* Simplified Legend Selector (Interactive) */}
-                                        <div className="flex flex-wrap items-center gap-2 p-2 bg-slate-50/50 rounded-[2rem] border border-slate-100/50">
-                                            {[
-                                                { id: 'weight', label: 'Peso Corporal', color: '#6366f1' },
-                                                { id: 'steps', label: 'NEAT (Pasos)', color: '#10b981' },
-                                                ...customMetrics.map(m => ({ id: m, label: m === 'waist' ? 'Cintura' : m === 'hip' ? 'Cadera' : m, color: '#f43f5e' }))
-                                            ].map(metric => (
-                                                <button
-                                                    key={metric.id}
-                                                    onClick={() => setActiveMetric(metric.id)}
-                                                    className={`px-4 py-2.5 rounded-2xl flex items-center gap-3 transition-all ${activeMetric === metric.id ? 'bg-white shadow-md ring-1 ring-slate-200' : 'hover:bg-white/50 grayscale opacity-60'}`}
-                                                >
-                                                    <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: metric.color }} />
-                                                    <span className={`text-[11px] font-black uppercase tracking-tight ${activeMetric === metric.id ? 'text-slate-900' : 'text-slate-400'}`}>
-                                                        {metric.label}
-                                                    </span>
-                                                </button>
-                                            ))}
-                                        </div>
-
-                                        <AnimatePresence>
-                                            {showConfigInline && (
-                                                <motion.div
-                                                    initial={{ height: 0, opacity: 0 }}
-                                                    animate={{ height: 'auto', opacity: 1 }}
-                                                    exit={{ height: 0, opacity: 0 }}
-                                                    className="overflow-hidden border-b border-slate-100 bg-slate-50/30 rounded-3xl"
-                                                >
-                                                    <div className="p-8 max-w-md mx-auto">
-                                                        <MetricsConfigInline
-                                                            initialMetrics={customMetrics}
-                                                            onSave={handleSaveMetrics}
-                                                        />
+                                <div className="flex items-center justify-between mb-2 px-2">
+                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Análisis y Datos</h4>
+                                    <button
+                                        onClick={() => toggleSection('analysis')}
+                                        className="text-[10px] font-black text-indigo-600 hover:text-indigo-700 uppercase tracking-widest"
+                                    >
+                                        {collapsedSections.analysis ? 'Mostrar' : 'Contraer'}
+                                    </button>
+                                </div>
+                                <AnimatePresence initial={false}>
+                                    {!collapsedSections.analysis && (
+                                        <motion.div
+                                            initial={{ height: 0, opacity: 0 }}
+                                            animate={{ height: 'auto', opacity: 1 }}
+                                            exit={{ height: 0, opacity: 0 }}
+                                            className="space-y-6 overflow-hidden"
+                                        >
+                                            {/* Chart Section */}
+                                            <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm flex flex-col">
+                                                <div className="flex flex-col gap-8 mb-8">
+                                                    <div className="flex items-center justify-between">
+                                                        <div>
+                                                            <h3 className="text-2xl font-black text-slate-900 tracking-tight">Análisis de Evolución</h3>
+                                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Selecciona una medida para visualizar su historial</p>
+                                                        </div>
+                                                        <div className="flex gap-2">
+                                                            <button
+                                                                onClick={() => setUseSmoothing(!useSmoothing)}
+                                                                className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-[10px] font-black transition-all border ${useSmoothing ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-400 border-slate-100 hover:bg-slate-50'}`}
+                                                                title="Limpiar ruido (Media móvil)"
+                                                            >
+                                                                <TrendingUp size={14} />
+                                                                <span className="hidden sm:inline">{useSmoothing ? 'QUITAR FILTRO' : 'LIMPIAR RUIDO'}</span>
+                                                            </button>
+                                                            <button
+                                                                onClick={() => setShowConfigInline(!showConfigInline)}
+                                                                className={`flex items-center gap-2 px-5 py-2 rounded-2xl text-[10px] font-black transition-all border ${showConfigInline ? 'bg-slate-900 text-white border-slate-900 shadow-lg' : 'bg-white text-slate-400 border-slate-100 hover:bg-slate-50'}`}
+                                                            >
+                                                                <Settings size={14} />
+                                                                <span className="hidden sm:inline">{showConfigInline ? 'CERRAR PANEL' : 'GESTIONAR VARIABLES'}</span>
+                                                            </button>
+                                                        </div>
                                                     </div>
-                                                </motion.div>
-                                            )}
-                                        </AnimatePresence>
-                                    </div>
 
-                                    <div className="h-[400px] w-full">
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <LineChart data={chartData}>
-                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                                                <XAxis
-                                                    dataKey="date"
-                                                    tickFormatter={(date) => format(new Date(date), 'dd MMM', { locale: es })}
-                                                    stroke="#94a3b8"
-                                                    fontSize={10}
-                                                    tickLine={false}
-                                                    axisLine={false}
-                                                    fontWeight="bold"
-                                                />
-                                                <YAxis
-                                                    domain={['auto', 'auto']}
-                                                    stroke="#94a3b8"
-                                                    fontSize={10}
-                                                    tickLine={false}
-                                                    axisLine={false}
-                                                    fontWeight="bold"
-                                                />
-                                                <Tooltip
-                                                    contentStyle={{ borderRadius: '24px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)', padding: '16px' }}
-                                                    labelStyle={{ fontWeight: '900', color: '#0f172a', marginBottom: '8px', fontSize: '12px' }}
-                                                    itemStyle={{ fontSize: '12px', fontWeight: '700' }}
-                                                    labelFormatter={(date) => format(new Date(date), 'dd MMMM yyyy', { locale: es })}
-                                                />
-                                                <Line
-                                                    type="monotone"
-                                                    dataKey={activeMetric === 'weight' ? 'weight' : activeMetric === 'steps' ? 'steps' : `measurements.${activeMetric}`}
-                                                    stroke={activeMetric === 'weight' ? '#6366f1' : activeMetric === 'steps' ? '#10b981' : '#f43f5e'}
-                                                    strokeWidth={4}
-                                                    dot={{ r: 6, fill: activeMetric === 'weight' ? '#6366f1' : activeMetric === 'steps' ? '#10b981' : '#f43f5e', strokeWidth: 3, stroke: '#fff' }}
-                                                    activeDot={{ r: 8, strokeWidth: 0 }}
-                                                    animationDuration={1000}
-                                                />
-                                            </LineChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                </div>
-
-                                <div className="bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden">
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full text-left text-sm whitespace-nowrap">
-                                            <thead className="bg-slate-50/50 text-slate-500 font-black uppercase text-[10px] tracking-widest">
-                                                <tr>
-                                                    <th className="p-6">Fecha</th>
-                                                    <th className={`p-6 cursor-pointer transition-colors ${activeMetric === 'weight' ? 'text-indigo-600 bg-indigo-50/30' : ''}`} onClick={() => setActiveMetric('weight')}>Peso (kg)</th>
-                                                    <th className={`p-6 cursor-pointer transition-colors ${activeMetric === 'steps' ? 'text-emerald-600 bg-emerald-50/30' : ''}`} onClick={() => setActiveMetric('steps')}>NEAT (Pasos)</th>
-                                                    {customMetrics.map(m => (
-                                                        <th
-                                                            key={m}
-                                                            onClick={() => setActiveMetric(m)}
-                                                            className={`p-6 cursor-pointer transition-colors ${activeMetric === m ? 'text-rose-500 bg-rose-50/30' : ''}`}
-                                                        >
-                                                            {m === 'waist' ? 'Cintura' : m === 'hip' ? 'Cadera' : m} (cm)
-                                                        </th>
-                                                    ))}
-                                                    <th className="p-6 text-right">Acciones</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-slate-50">
-                                                {[...history].reverse().map((entry) => (
-                                                    <tr key={entry.date} className="group hover:bg-slate-50/50 transition-all">
-                                                        <td className="p-6 text-slate-500 font-bold text-xs uppercase">
-                                                            {format(new Date(entry.date), 'dd MMMM yyyy', { locale: es })}
-                                                        </td>
-                                                        <td className={`p-6 font-black text-sm ${activeMetric === 'weight' ? 'text-indigo-600 bg-indigo-50/10' : 'text-slate-900'}`}>
-                                                            {entry.weight || '-'}
-                                                        </td>
-                                                        <td className={`p-6 font-black text-sm ${activeMetric === 'steps' ? 'text-emerald-600 bg-emerald-50/10' : 'text-slate-900'}`}>
-                                                            {entry.steps?.toLocaleString() || '-'}
-                                                        </td>
-                                                        {customMetrics.map(m => (
-                                                            <td key={m} className={`p-6 font-black text-sm ${activeMetric === m ? 'text-rose-500 bg-rose-50/10' : 'text-slate-900'}`}>
-                                                                {entry.measurements?.[m] || '-'}
-                                                            </td>
+                                                    {/* Simplified Legend Selector (Interactive) */}
+                                                    <div className="flex flex-wrap items-center gap-2 p-2 bg-slate-50/50 rounded-[2rem] border border-slate-100/50">
+                                                        {[
+                                                            { id: 'weight', label: 'Peso Corporal', color: '#6366f1' },
+                                                            { id: 'steps', label: 'NEAT (Pasos)', color: '#10b981' },
+                                                            ...customMetrics.map(m => ({ id: m, label: m === 'waist' ? 'Cintura' : m === 'hip' ? 'Cadera' : m, color: '#f43f5e' }))
+                                                        ].map(metric => (
+                                                            <button
+                                                                key={metric.id}
+                                                                onClick={() => setActiveMetric(metric.id)}
+                                                                className={`px-4 py-2.5 rounded-2xl flex items-center gap-3 transition-all ${activeMetric === metric.id ? 'bg-white shadow-md ring-1 ring-slate-200' : 'hover:bg-white/50 grayscale opacity-60'}`}
+                                                            >
+                                                                <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: metric.color }} />
+                                                                <span className={`text-[11px] font-black uppercase tracking-tight ${activeMetric === metric.id ? 'text-slate-900' : 'text-slate-400'}`}>
+                                                                    {metric.label}
+                                                                </span>
+                                                            </button>
                                                         ))}
-                                                        <td className="p-6">
-                                                            <div className="flex items-center justify-end gap-2">
-                                                                <button
-                                                                    onClick={() => handleDeleteEntry(entry.date)}
-                                                                    className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
-                                                                >
-                                                                    <Trash2 size={16} />
-                                                                </button>
-                                                            </div>
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                                {history.length === 0 && (
-                                                    <tr>
-                                                        <td colSpan={customMetrics.length + 4} className="p-20 text-center">
-                                                            <div className="space-y-4">
-                                                                <Activity size={48} className="mx-auto text-slate-100" />
-                                                                <p className="text-slate-400 font-black text-xs uppercase tracking-widest">No hay registros aún</p>
-                                                            </div>
-                                                        </td>
-                                                    </tr>
-                                                )}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
+                                                    </div>
+
+                                                    <AnimatePresence>
+                                                        {showConfigInline && (
+                                                            <motion.div
+                                                                initial={{ height: 0, opacity: 0 }}
+                                                                animate={{ height: 'auto', opacity: 1 }}
+                                                                exit={{ height: 0, opacity: 0 }}
+                                                                className="overflow-hidden border-b border-slate-100 bg-slate-50/30 rounded-3xl"
+                                                            >
+                                                                <div className="p-8 max-w-md mx-auto">
+                                                                    <MetricsConfigInline
+                                                                        initialMetrics={customMetrics}
+                                                                        onSave={handleSaveMetrics}
+                                                                    />
+                                                                </div>
+                                                            </motion.div>
+                                                        )}
+                                                    </AnimatePresence>
+                                                </div>
+
+                                                <div className="h-[400px] w-full">
+                                                    <ResponsiveContainer width="100%" height="100%">
+                                                        <LineChart data={chartData}>
+                                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                                            <XAxis
+                                                                dataKey="date"
+                                                                tickFormatter={(date) => format(new Date(date), 'dd MMM', { locale: es })}
+                                                                stroke="#94a3b8"
+                                                                fontSize={10}
+                                                                tickLine={false}
+                                                                axisLine={false}
+                                                                fontWeight="bold"
+                                                            />
+                                                            <YAxis
+                                                                domain={['auto', 'auto']}
+                                                                stroke="#94a3b8"
+                                                                fontSize={10}
+                                                                tickLine={false}
+                                                                axisLine={false}
+                                                                fontWeight="bold"
+                                                            />
+                                                            <Tooltip
+                                                                contentStyle={{ borderRadius: '24px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)', padding: '16px' }}
+                                                                labelStyle={{ fontWeight: '900', color: '#0f172a', marginBottom: '8px', fontSize: '12px' }}
+                                                                itemStyle={{ fontSize: '12px', fontWeight: '700' }}
+                                                                labelFormatter={(date) => format(new Date(date), 'dd MMMM yyyy', { locale: es })}
+                                                            />
+                                                            <Line
+                                                                type="monotone"
+                                                                dataKey={activeMetric === 'weight' ? 'weight' : activeMetric === 'steps' ? 'steps' : `measurements.${activeMetric}`}
+                                                                stroke={activeMetric === 'weight' ? '#6366f1' : activeMetric === 'steps' ? '#10b981' : '#f43f5e'}
+                                                                strokeWidth={4}
+                                                                dot={{ r: 6, fill: activeMetric === 'weight' ? '#6366f1' : activeMetric === 'steps' ? '#10b981' : '#f43f5e', strokeWidth: 3, stroke: '#fff' }}
+                                                                activeDot={{ r: 8, strokeWidth: 0 }}
+                                                                animationDuration={1000}
+                                                            />
+                                                        </LineChart>
+                                                    </ResponsiveContainer>
+                                                </div>
+                                            </div>
+
+                                            <div className="bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden">
+                                                <div className="overflow-x-auto">
+                                                    <table className="w-full text-left text-sm whitespace-nowrap">
+                                                        <thead className="bg-slate-50/50 text-slate-500 font-black uppercase text-[10px] tracking-widest">
+                                                            <tr>
+                                                                <th className="p-6">Fecha</th>
+                                                                <th className={`p-6 cursor-pointer transition-colors ${activeMetric === 'weight' ? 'text-indigo-600 bg-indigo-50/30' : ''}`} onClick={() => setActiveMetric('weight')}>Peso (kg)</th>
+                                                                <th className={`p-6 cursor-pointer transition-colors ${activeMetric === 'steps' ? 'text-emerald-600 bg-emerald-50/30' : ''}`} onClick={() => setActiveMetric('steps')}>NEAT (Pasos)</th>
+                                                                {customMetrics.map(m => (
+                                                                    <th
+                                                                        key={m}
+                                                                        onClick={() => setActiveMetric(m)}
+                                                                        className={`p-6 cursor-pointer transition-colors ${activeMetric === m ? 'text-rose-500 bg-rose-50/30' : ''}`}
+                                                                    >
+                                                                        {m === 'waist' ? 'Cintura' : m === 'hip' ? 'Cadera' : m} (cm)
+                                                                    </th>
+                                                                ))}
+                                                                <th className="p-6 text-right">Acciones</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody className="divide-y divide-slate-50">
+                                                            {[...history].reverse().map((entry) => (
+                                                                <tr key={entry.date} className="group hover:bg-slate-50/50 transition-all">
+                                                                    <td className="p-6 text-slate-500 font-bold text-xs uppercase">
+                                                                        {format(new Date(entry.date), 'dd MMMM yyyy', { locale: es })}
+                                                                    </td>
+                                                                    <td className={`p-6 font-black text-sm ${activeMetric === 'weight' ? 'text-indigo-600 bg-indigo-50/10' : 'text-slate-900'}`}>
+                                                                        {entry.weight || '-'}
+                                                                    </td>
+                                                                    <td className={`p-6 font-black text-sm ${activeMetric === 'steps' ? 'text-emerald-600 bg-emerald-50/10' : 'text-slate-900'}`}>
+                                                                        {entry.steps?.toLocaleString() || '-'}
+                                                                    </td>
+                                                                    {customMetrics.map(m => (
+                                                                        <td key={m} className={`p-6 font-black text-sm ${activeMetric === m ? 'text-rose-500 bg-rose-50/10' : 'text-slate-900'}`}>
+                                                                            {entry.measurements?.[m] || '-'}
+                                                                        </td>
+                                                                    ))}
+                                                                    <td className="p-6">
+                                                                        <div className="flex items-center justify-end gap-2">
+                                                                            <button
+                                                                                onClick={() => handleDeleteEntry(entry.date)}
+                                                                                className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
+                                                                            >
+                                                                                <Trash2 size={16} />
+                                                                            </button>
+                                                                        </div>
+                                                                    </td>
+                                                                </tr>
+                                                            ))}
+                                                            {history.length === 0 && (
+                                                                <tr>
+                                                                    <td colSpan={customMetrics.length + 4} className="p-20 text-center">
+                                                                        <div className="space-y-4">
+                                                                            <Activity size={48} className="mx-auto text-slate-100" />
+                                                                            <p className="text-slate-400 font-black text-xs uppercase tracking-widest">No hay registros aún</p>
+                                                                        </div>
+                                                                    </td>
+                                                                </tr>
+                                                            )}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
                             </div>
 
                             {/* Visual Evolution Section (Photo Comparison) */}
-                            <div className="bg-slate-900 rounded-[3rem] p-10 text-white shadow-2xl relative overflow-hidden">
-                                <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 blur-[120px] rounded-full -mr-48 -mt-48" />
-                                <div className="relative z-10 space-y-8">
-                                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                                        <div>
-                                            <h3 className="text-2xl font-black tracking-tight">Evolución Visual</h3>
-                                            <p className="text-[10px] text-emerald-400 font-bold uppercase tracking-widest mt-1">Comparativa físico</p>
-                                        </div>
-                                        <div className="flex bg-white/10 p-1 rounded-2xl gap-1 w-full md:w-auto overflow-x-auto">
-                                            {['front', 'side', 'back'].map(v => (
-                                                <button
-                                                    key={v}
-                                                    onClick={() => setCompareView(v)}
-                                                    className={`px-4 py-2 rounded-xl text-[10px] font-black transition-all uppercase ${compareView === v ? 'bg-white text-slate-900 shadow-lg' : 'text-slate-400 hover:text-white'}`}
-                                                >
-                                                    {v === 'front' ? 'Frente' : v === 'side' ? 'Perfil' : 'Espalda'}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    {photoEntries.length >= 1 ? (
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                            {/* Comparison Main Area */}
-                                            <div className="flex gap-4 min-h-[400px]">
-                                                {[compareDate1, compareDate2].map((date, idx) => {
-                                                    const entry = history.find(e => e.date === date);
-                                                    const photo = entry?.photos?.[compareView];
-                                                    return (
-                                                        <div key={idx} className="flex-1 flex flex-col gap-4">
-                                                            <div className="flex flex-col items-center">
-                                                                <select
-                                                                    value={date || ''}
-                                                                    onChange={e => idx === 0 ? setCompareDate1(e.target.value) : setCompareDate2(e.target.value)}
-                                                                    className="bg-white/10 text-white rounded-xl px-4 py-2 text-[10px] font-black uppercase tracking-widest border border-white/20 outline-none hover:bg-white/20 transition-all cursor-pointer"
-                                                                >
-                                                                    {photoEntries.map(e => (
-                                                                        <option key={e.date} value={e.date} className="bg-slate-800">{format(new Date(e.date + 'T12:00:00'), 'dd MMM yyyy', { locale: es })}</option>
-                                                                    ))}
-                                                                </select>
-                                                            </div>
-                                                            <div
-                                                                onClick={() => photo && setSelectedPhoto(photo)}
-                                                                className="flex-1 rounded-[2.5rem] overflow-hidden bg-white/5 border border-white/10 relative group cursor-pointer shadow-inner"
+                            <div className="flex items-center justify-between mb-2 px-2 pt-4">
+                                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Evolución Visual</h4>
+                                <button
+                                    onClick={() => toggleSection('visual')}
+                                    className="text-[10px] font-black text-emerald-500 hover:text-emerald-600 uppercase tracking-widest"
+                                >
+                                    {collapsedSections.visual ? 'Mostrar' : 'Contraer'}
+                                </button>
+                            </div>
+                            <AnimatePresence initial={false}>
+                                {!collapsedSections.visual && (
+                                    <motion.div
+                                        initial={{ height: 0, opacity: 0 }}
+                                        animate={{ height: 'auto', opacity: 1 }}
+                                        exit={{ height: 0, opacity: 0 }}
+                                        className="overflow-hidden"
+                                    >
+                                        <div className="bg-slate-900 rounded-[3rem] p-10 text-white shadow-2xl relative overflow-hidden">
+                                            <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 blur-[120px] rounded-full -mr-48 -mt-48" />
+                                            <div className="relative z-10 space-y-8">
+                                                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                                                    <div>
+                                                        <h3 className="text-2xl font-black tracking-tight">Evolución Visual</h3>
+                                                        <p className="text-[10px] text-emerald-400 font-bold uppercase tracking-widest mt-1">Comparativa físico</p>
+                                                    </div>
+                                                    <div className="flex bg-white/10 p-1 rounded-2xl gap-1 w-full md:w-auto overflow-x-auto">
+                                                        {['front', 'side', 'back'].map(v => (
+                                                            <button
+                                                                key={v}
+                                                                onClick={() => setCompareView(v)}
+                                                                className={`px-4 py-2 rounded-xl text-[10px] font-black transition-all uppercase ${compareView === v ? 'bg-white text-slate-900 shadow-lg' : 'text-slate-400 hover:text-white'}`}
                                                             >
-                                                                {photo ? (
-                                                                    <img src={photo} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" alt={`Progreso ${idx}`} />
-                                                                ) : (
-                                                                    <div className="w-full h-full flex flex-col items-center justify-center text-white/20 gap-3">
-                                                                        <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center"><Camera size={32} /></div>
-                                                                        <span className="text-[10px] font-black uppercase tracking-widest">Sin foto</span>
-                                                                    </div>
-                                                                )}
-                                                                <div className="absolute inset-0 bg-gradient-to-t from-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity" />
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-
-                                            {/* Photo History Timeline */}
-                                            <div className="space-y-4">
-                                                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Historial de Galería</h4>
-                                                <div className="grid grid-cols-3 gap-3">
-                                                    {[...photoEntries].reverse().slice(0, 9).map((entry, idx) => (
-                                                        <button
-                                                            key={entry.date}
-                                                            onClick={() => {
-                                                                setCompareDate1(entry.date);
-                                                                // Optionally set date2 to the previous one
-                                                            }}
-                                                            className="aspect-square rounded-2xl overflow-hidden border-2 border-transparent hover:border-emerald-500 transition-all relative group"
-                                                        >
-                                                            <img src={entry.photos.front || entry.photos.side || entry.photos.back} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all" alt="Thumb" />
-                                                            <div className="absolute bottom-0 left-0 right-0 bg-black/60 p-1">
-                                                                <span className="text-[8px] font-black">{format(new Date(entry.date + 'T12:00:00'), 'dd MMM', { locale: es })}</span>
-                                                            </div>
-                                                        </button>
-                                                    ))}
+                                                                {v === 'front' ? 'Frente' : v === 'side' ? 'Perfil' : 'Espalda'}
+                                                            </button>
+                                                        ))}
+                                                    </div>
                                                 </div>
-                                                {photoEntries.length > 9 && (
-                                                    <p className="text-[8px] text-slate-500 font-bold uppercase tracking-widest text-center">Y {photoEntries.length - 9} registros más...</p>
+
+                                                {photoEntries.length >= 1 ? (
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                                        {/* Comparison Main Area */}
+                                                        <div className="flex gap-4 min-h-[400px]">
+                                                            {[compareDate1, compareDate2].map((date, idx) => {
+                                                                const entry = history.find(e => e.date === date);
+                                                                const photo = entry?.photos?.[compareView];
+                                                                return (
+                                                                    <div key={idx} className="flex-1 flex flex-col gap-4">
+                                                                        <div className="flex flex-col items-center">
+                                                                            <select
+                                                                                value={date || ''}
+                                                                                onChange={e => idx === 0 ? setCompareDate1(e.target.value) : setCompareDate2(e.target.value)}
+                                                                                className="bg-white/10 text-white rounded-xl px-4 py-2 text-[10px] font-black uppercase tracking-widest border border-white/20 outline-none hover:bg-white/20 transition-all cursor-pointer"
+                                                                            >
+                                                                                {photoEntries.map(e => (
+                                                                                    <option key={e.date} value={e.date} className="bg-slate-800">{format(new Date(e.date + 'T12:00:00'), 'dd MMM yyyy', { locale: es })}</option>
+                                                                                ))}
+                                                                            </select>
+                                                                        </div>
+                                                                        <div
+                                                                            onClick={() => photo && setSelectedPhoto(photo)}
+                                                                            className="flex-1 rounded-[2.5rem] overflow-hidden bg-white/5 border border-white/10 relative group cursor-pointer shadow-inner"
+                                                                        >
+                                                                            {photo ? (
+                                                                                <img src={photo} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" alt={`Progreso ${idx}`} />
+                                                                            ) : (
+                                                                                <div className="w-full h-full flex flex-col items-center justify-center text-white/20 gap-3">
+                                                                                    <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center"><Camera size={32} /></div>
+                                                                                    <span className="text-[10px] font-black uppercase tracking-widest">Sin foto</span>
+                                                                                </div>
+                                                                            )}
+                                                                            <div className="absolute inset-0 bg-gradient-to-t from-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+
+                                                        {/* Photo History Timeline */}
+                                                        <div className="space-y-4">
+                                                            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Historial de Galería</h4>
+                                                            <div className="grid grid-cols-3 gap-3">
+                                                                {[...photoEntries].reverse().slice(0, 9).map((entry, idx) => (
+                                                                    <button
+                                                                        key={entry.date}
+                                                                        onClick={() => {
+                                                                            setCompareDate1(entry.date);
+                                                                            // Optionally set date2 to the previous one
+                                                                        }}
+                                                                        className="aspect-square rounded-2xl overflow-hidden border-2 border-transparent hover:border-emerald-500 transition-all relative group"
+                                                                    >
+                                                                        <img src={entry.photos.front || entry.photos.side || entry.photos.back} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all" alt="Thumb" />
+                                                                        <div className="absolute bottom-0 left-0 right-0 bg-black/60 p-1">
+                                                                            <span className="text-[8px] font-black">{format(new Date(entry.date + 'T12:00:00'), 'dd MMM', { locale: es })}</span>
+                                                                        </div>
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                            {photoEntries.length > 9 && (
+                                                                <p className="text-[8px] text-slate-500 font-bold uppercase tracking-widest text-center">Y {photoEntries.length - 9} registros más...</p>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="py-20 text-center space-y-4 bg-white/5 rounded-[3rem] border border-dashed border-white/10">
+                                                        <Camera size={48} className="mx-auto text-white/20" />
+                                                        <p className="text-slate-400 font-black text-xs uppercase tracking-widest">Aún no hay fotos de progreso</p>
+                                                    </div>
                                                 )}
                                             </div>
                                         </div>
-                                    ) : (
-                                        <div className="py-20 text-center space-y-4 bg-white/5 rounded-[3rem] border border-dashed border-white/10">
-                                            <Camera size={48} className="mx-auto text-white/20" />
-                                            <p className="text-slate-400 font-black text-xs uppercase tracking-widest">Aún no hay fotos de progreso</p>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
 
                         </>
                     ) : activeTab === 'habits' ? (
@@ -560,7 +629,7 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
                         </div>
                     )}
                 </div>
-            </div>
+            </div >
 
             {
                 selectedPhoto && (
@@ -582,7 +651,7 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
 };
 
 const HabitsManagement = ({ user, minimums, setMinimums, history }) => {
-    const [editingHabit, setEditingHabit] = useState(null); // { original, category }
+    const [editingHabit, setEditingHabit] = useState(null); // {original, category}
     const [editValue, setEditValue] = useState('');
     const [addingToCategory, setAddingToCategory] = useState(null);
     const [newValue, setNewValue] = useState('');

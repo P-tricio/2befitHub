@@ -5,6 +5,7 @@ import { es } from 'date-fns/locale';
 import { Camera, Trash2, X, Check, Footprints, Clock, Flame, Zap, Scale, Ruler, Utensils, FileText, Dumbbell, History } from 'lucide-react';
 import { TrainingDB } from '../../services/db';
 import { uploadToImgBB } from '../../services/imageService';
+import RPESelector from '../../components/RPESelector';
 
 const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] }) => {
     // Shared State
@@ -51,17 +52,28 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
         return result;
     };
 
-    // Determines the effective date for this checkin (Retroactive support)
+    // --- Date Logic ---
+    // targetDate: The date where the task is displayed (e.g., Today in the dashboard)
+    // retroactive: If true, the data belongs to "Ayer" (Yesterday)
     const isRetroactive = task.config?.retroactive === true;
+
+    // scheduleDateKey: Used to update the "status: completed" in the user schedule
+    const scheduleDateKey = format(targetDate || new Date(), 'yyyy-MM-dd');
+
+    // trackingDateKey: Used to store/load the ACTUAL metrics/habits data in the history
+    const trackingDateKey = isRetroactive
+        ? format(subDays(targetDate || new Date(), 1), 'yyyy-MM-dd')
+        : scheduleDateKey;
+
+    // effectiveDate: Used for the UI label (Yesterday vs Today)
     const effectiveDate = isRetroactive ? subDays(targetDate || new Date(), 1) : (targetDate || new Date());
-    const dateKey = format(effectiveDate, 'yyyy-MM-dd');
 
     // Initial Load for Tracking Data
     useEffect(() => {
         const loadData = async () => {
             try {
                 // Try to load historical data for this date
-                const existing = await TrainingDB.tracking.getByDate(userId, dateKey);
+                const existing = await TrainingDB.tracking.getByDate(userId, trackingDateKey);
                 if (existing) {
                     if (existing.weight) setWeight(existing.weight);
                     if (existing.steps) {
@@ -112,7 +124,7 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
             } catch (e) { console.error(e); }
         };
         loadData();
-    }, [userId, task.type, dateKey, customMetrics, task.config?.formId]);
+    }, [userId, task.type, trackingDateKey, scheduleDateKey, customMetrics, task.config?.formId]);
 
     const handleImageSelect = (e, type) => {
         if (e.target.files && e.target.files[0]) {
@@ -138,18 +150,21 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
         try {
             let taskSummary = '';
             let taskResults = {};
-            const updateData = { date: dateKey };
+            const updateData = { date: trackingDateKey };
 
-            if (task.type === 'neat') {
-                updateData.activityType = activityType;
-                if (activityType === 'steps') {
-                    updateData.steps = parseInt(duration);
-                    taskSummary = `${duration} pasos`;
-                } else {
-                    updateData.duration = parseInt(duration);
-                    taskSummary = `${duration} min`;
+            if (task.type === 'neat' || task.type === 'nutrition') {
+                if (task.type === 'neat') {
+                    updateData.activityType = activityType;
+                    if (activityType === 'steps') {
+                        updateData.steps = parseInt(duration);
+                        taskSummary = `${duration} pasos`;
+                    } else {
+                        updateData.duration = parseInt(duration);
+                        taskSummary = `${duration} min`;
+                    }
+                    taskResults = { duration, activityType };
                 }
-                taskResults = { duration, activityType };
+
                 updateData.habitsResults = habitsResults;
 
                 const selectedCategories = task.config?.categories || (task.config?.category ? [task.config.category] : []);
@@ -191,7 +206,7 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                     const totalCount = habitsToShow.length;
                     taskSummary = `${doneCount}/${totalCount} hábitos`;
                 }
-                taskResults = { habitsResults };
+                taskResults = { ...taskResults, habitsResults };
             } else if (task.type === 'checkin' || task.type === 'tracking') {
                 // Weight
                 if (task.config?.weight !== false && weight) {
@@ -275,11 +290,27 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
 
             if (notes) updateData[`notes_${task.type}`] = notes;
 
-            // Save to Tracking Collection
+            // 1. Save to Tracking Collection (Historical Metric Data)
+            // This goes to trackingDateKey (could be yesterday)
             await TrainingDB.tracking.addEntry(userId, updateData);
 
+            // 2. Handle Schedule Update
+            // This always goes to scheduleDateKey (the context where the task is shown)
+
+            // CONVERT VIRTUAL TASK TO PERSISTENT IF NEEDED
+            let finalTaskId = task.id;
+            if (task.is_virtual) {
+                // Remove virtual flags and ensure clean ID for database
+                const { is_virtual, ...cleanTask } = task;
+                const dbTaskId = cleanTask.id.replace('virtual-', 'real-');
+                const taskToSave = { ...cleanTask, id: dbTaskId };
+
+                await TrainingDB.users.addTaskToSchedule(userId, scheduleDateKey, taskToSave);
+                finalTaskId = dbTaskId;
+            }
+
             // Sync summary to Task in User Schedule
-            await TrainingDB.users.updateTaskInSchedule(userId, dateKey, task.id, {
+            await TrainingDB.users.updateTaskInSchedule(userId, scheduleDateKey, finalTaskId, {
                 summary: taskSummary || "Completado",
                 status: 'completed',
                 results: taskResults,
@@ -299,7 +330,7 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
         if (!confirm('¿Estás seguro de querer eliminar esta tarea?')) return;
         try {
             const { _selectedDate, ...cleanTask } = task;
-            await TrainingDB.users.removeTaskFromSchedule(userId, dateKey, cleanTask);
+            await TrainingDB.users.removeTaskFromSchedule(userId, scheduleDateKey, cleanTask);
             onClose(true);
         } catch (e) {
             console.error(e);
@@ -331,7 +362,16 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                             {isNeat && 'Movimiento Extra'}
                             {isFreeTraining && 'Entrenamiento Libre'}
                             {isCheckin && 'Seguimiento'}
-                            {isNutrition && (task.config?.categories ? `Hábitos: ${task.config.categories.join(' + ')}` : 'Seguimiento de Hábitos')}
+                            {isNutrition && (
+                                <span>
+                                    Hábitos: {task.config?.categories ?
+                                        task.config.categories.map(c => {
+                                            const map = { nutrition: 'Nutrición', movement: 'Movimiento', health: 'Salud' };
+                                            return map[c] || c;
+                                        }).join(' + ')
+                                        : 'Seguimiento'}
+                                </span>
+                            )}
                         </h3>
                         <p className="text-xs text-slate-500 font-medium capitalize flex items-center gap-1">
                             {isRetroactive && <History size={12} className="text-orange-500" />}
@@ -356,7 +396,7 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                     {(isNeat || isNutrition) && (
                         <div className="space-y-4">
                             <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">
-                                {isNeat ? 'Mínimos de Movimiento' : 'Hábitos de Hoy'}
+                                {isNeat ? 'Mínimos de Movimiento' : (isRetroactive ? '¿Ayer cumpliste con tus hábitos de?' : 'Hábitos de Hoy')}
                             </label>
                             <div className="grid grid-cols-1 gap-2">
                                 {(() => {
@@ -420,32 +460,31 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                                         }
 
                                         return (
-                                            <button
+                                            <div
                                                 key={habitName}
-                                                onClick={() => {
-                                                    setHabitsResults(prev => {
-                                                        const current = prev[habitName];
-                                                        if (current === true) return { ...prev, [habitName]: false };
-                                                        if (current === false) return { ...prev, [habitName]: null };
-                                                        return { ...prev, [habitName]: true };
-                                                    });
-                                                }}
                                                 className={`flex items-center justify-between p-4 rounded-3xl border transition-all 
-                                                    ${status === true ? 'bg-emerald-50 border-emerald-200 text-emerald-700 shadow-md ring-1 ring-emerald-200' : ''}
-                                                    ${status === false ? 'bg-red-50 border-red-200 text-red-700 shadow-md ring-1 ring-red-200' : ''}
+                                                    ${status === true ? 'bg-emerald-50 border-emerald-200 text-emerald-700 shadow-sm' : ''}
+                                                    ${status === false ? 'bg-red-50 border-red-200 text-red-700 shadow-sm' : ''}
                                                     ${status === null || status === undefined ? 'bg-white border-slate-100 text-slate-500' : ''}
                                                 `}
                                             >
                                                 <span className="font-black text-sm">{habitName}</span>
-                                                <div className={`w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all 
-                                                    ${status === true ? 'bg-emerald-500 border-emerald-500 text-white scale-110' : ''}
-                                                    ${status === false ? 'bg-red-500 border-red-200 text-white scale-110' : ''}
-                                                    ${status === null || status === undefined ? 'border-slate-200' : ''}
-                                                `}>
-                                                    {status === true && <Check size={16} strokeWidth={4} />}
-                                                    {status === false && <X size={16} strokeWidth={4} />}
+
+                                                <div className="flex gap-2">
+                                                    <button
+                                                        onClick={() => setHabitsResults(prev => ({ ...prev, [habitName]: false }))}
+                                                        className={`w-10 h-10 rounded-2xl border-2 flex items-center justify-center transition-all ${status === false ? 'bg-red-500 border-red-500 text-white shadow-lg scale-110' : 'bg-white border-slate-100 text-slate-300 hover:border-red-200'}`}
+                                                    >
+                                                        <X size={16} strokeWidth={4} />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setHabitsResults(prev => ({ ...prev, [habitName]: true }))}
+                                                        className={`w-10 h-10 rounded-2xl border-2 flex items-center justify-center transition-all ${status === true ? 'bg-emerald-500 border-emerald-500 text-white shadow-lg scale-110' : 'bg-white border-slate-100 text-slate-300 hover:border-emerald-200'}`}
+                                                    >
+                                                        <Check size={16} strokeWidth={4} />
+                                                    </button>
                                                 </div>
-                                            </button>
+                                            </div>
                                         );
                                     });
                                 })()}
@@ -532,37 +571,11 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                                 />
                             </div>
 
-                            <div>
-                                <div className="flex justify-between items-end mb-4 px-1">
-                                    <div className="space-y-1">
-                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Esfuerzo (RPE)</span>
-                                        <span className="text-xs font-bold text-emerald-600 uppercase tracking-widest">
-                                            {rpe === 0 ? 'Descanso' :
-                                                rpe <= 2 ? 'Muy Fácil' :
-                                                    rpe <= 4 ? 'Fácil' :
-                                                        rpe <= 6 ? 'Moderado' :
-                                                            rpe <= 8 ? 'Duro' :
-                                                                rpe === 9 ? 'Muy Duro' :
-                                                                    rpe === 10 ? 'Máximo' : '-'}
-                                        </span>
-                                    </div>
-                                    <span className="text-4xl font-black text-slate-900">{rpe !== null ? rpe : '-'}</span>
-                                </div>
-                                <input
-                                    type="range"
-                                    min="0"
-                                    max="10"
-                                    step="1"
-                                    value={rpe || 0}
-                                    onChange={e => setRpe(parseInt(e.target.value))}
-                                    className="w-full h-3 bg-slate-100 rounded-full appearance-none cursor-pointer accent-emerald-500"
-                                />
-                                <div className="flex justify-between mt-2 px-1 text-[8px] font-black text-slate-300 uppercase tracking-widest">
-                                    <span>Muy Suave</span>
-                                    <span>Moderado</span>
-                                    <span>Máximo</span>
-                                </div>
-                            </div>
+                            <RPESelector
+                                value={rpe}
+                                onChange={setRpe}
+                                label="Esfuerzo (RPE)"
+                            />
                         </div>
                     )}
 

@@ -8,6 +8,7 @@ import { useSessionData } from './hooks/useSessionData.js';
 import { useKeepAwake } from '../../../hooks/useKeepAwake';
 import { useAudioFeedback } from '../../../hooks/useAudioFeedback';
 import ExerciseMedia from '../components/ExerciseMedia';
+import RPESelector from '../components/RPESelector';
 
 const SessionRunner = () => {
     // Keep screen awake during session
@@ -745,26 +746,11 @@ const SummaryBlock = ({ sessionState, timeline, setSessionState, onFinish }) => 
             </div>
 
             <div className="space-y-6">
-                <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Esfuerzo Percibido (RPE)</label>
-                    <div className="flex justify-between gap-1 overflow-x-auto pb-2 no-scrollbar">
-                        {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(val => (
-                            <button
-                                key={val}
-                                onClick={() => setSessionState(prev => ({ ...prev, feedback: { ...prev.feedback, rpe: val } }))}
-                                className={`min-w-[40px] h-12 rounded-xl font-black transition-all flex items-center justify-center border-2 ${sessionState.feedback.rpe === val
-                                    ? 'bg-emerald-500 text-white border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.4)] scale-110'
-                                    : 'bg-slate-800 text-slate-500 border-slate-700 hover:border-slate-500'}`}
-                            >
-                                {val}
-                            </button>
-                        ))}
-                    </div>
-                    <div className="flex justify-between text-[10px] text-slate-500 font-bold uppercase mt-2 px-1">
-                        <span>Muy Fácil</span>
-                        <span>Fallo Muscular</span>
-                    </div>
-                </div>
+                <RPESelector
+                    value={sessionState.feedback.rpe}
+                    onChange={val => setSessionState(prev => ({ ...prev, feedback: { ...prev.feedback, rpe: val } }))}
+                    label="Esfuerzo de la Sesión (RPE)"
+                />
 
                 <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Notas de sesión</label>
@@ -1587,31 +1573,11 @@ const BlockFeedbackModal = ({ onConfirm, blockType }) => {
                     </div>
 
                     <div className="space-y-6">
-                        <div>
-                            <div className="flex justify-between items-end mb-4 px-1">
-                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Esfuerzo (RPE 0-10)</span>
-                                <span className="text-4xl font-black text-white">{rpe !== null ? rpe : '-'}</span>
-                            </div>
-
-                            <div className="flex justify-between gap-1 overflow-x-auto pb-4 no-scrollbar">
-                                {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(val => (
-                                    <button
-                                        key={val}
-                                        onClick={() => setRpe(val)}
-                                        className={`min-w-[32px] sm:min-w-[36px] h-12 rounded-xl font-black transition-all flex items-center justify-center border-2 ${rpe === val
-                                            ? 'bg-emerald-500 text-white border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.4)] scale-110'
-                                            : 'bg-slate-700/50 text-slate-500 border-slate-700/50 hover:border-slate-500'}`}
-                                    >
-                                        {val}
-                                    </button>
-                                ))}
-                            </div>
-                            <div className="flex justify-between text-[8px] text-slate-500 font-bold uppercase mt-2 px-1">
-                                <span>Muy Suave</span>
-                                <span>Intermedio</span>
-                                <span>Al Fallo</span>
-                            </div>
-                        </div>
+                        <RPESelector
+                            value={rpe}
+                            onChange={setRpe}
+                            label="Esfuerzo del Bloque (RPE)"
+                        />
                     </div>
 
                     <button

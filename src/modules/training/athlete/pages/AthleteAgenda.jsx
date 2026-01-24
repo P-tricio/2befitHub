@@ -4,7 +4,7 @@ import { useAuth } from '../../../../context/AuthContext';
 import { db } from '../../../../lib/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { TrainingDB } from '../../services/db';
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Bell, Zap, Footprints, Utensils, ClipboardList, LayoutGrid, Dumbbell, Scale, Plus, Camera, Check, X, User as UserIcon, CheckSquare } from 'lucide-react';
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Bell, Zap, Clock, Footprints, Utensils, ClipboardList, LayoutGrid, Dumbbell, Scale, Plus, Camera, Check, X, User as UserIcon, CheckSquare } from 'lucide-react';
 import CheckinModal from '../components/CheckinModal';
 import SessionResultsModal from '../../components/SessionResultsModal';
 import { format, startOfWeek, endOfWeek, addDays, isSameDay, isSameMonth, subWeeks, addWeeks, startOfMonth, endOfMonth, eachDayOfInterval, subMonths, addMonths, getDay } from 'date-fns';
@@ -58,7 +58,20 @@ const AthleteAgenda = () => {
     const getSessionDetails = (sessionId) => {
         const session = sessionsMap[sessionId];
         if (!session) return { blocks: 0, duration: 60 };
-        return { blocks: session.blockCount || 0, duration: session.duration || 60 };
+
+        const blocks = session.blocks || [];
+        let totalSeconds = 0;
+        blocks.forEach(b => {
+            totalSeconds += b.targeting?.[0]?.timeCap || 240;
+        });
+
+        const baseDuration = Math.ceil(totalSeconds / 60);
+        const transitionTime = blocks.length > 1 ? (blocks.length - 1) * 3 : 0;
+
+        return {
+            blocks: blocks.length,
+            duration: baseDuration + transitionTime
+        };
     };
 
     const getTasksForDate = (date) => {
@@ -74,22 +87,34 @@ const AthleteAgenda = () => {
             (userMinimums.uncategorized?.length > 0)
         );
 
-        if (!hasHabitTask && hasMinimums) {
+        if (hasMinimums) {
             const isWeekly = habitFrequency === 'weekly';
             const isSunday = getDay(date) === 0;
 
-            if (!isWeekly || isSunday) {
-                tasks.push({
-                    id: 'virtual-habits-' + key,
-                    type: 'nutrition',
-                    title: isWeekly ? 'Resumen Semanal: Hábitos' : 'Mínimos Diarios',
-                    is_virtual: true,
-                    config: {
-                        categories: ['nutrition', 'movement', 'health'],
-                        retroactive: !isWeekly,
-                        isWeeklyReporting: isWeekly
-                    }
-                });
+            if (isWeekly && isSunday) {
+                // Weekly reporting only on Sundays
+                if (!tasks.some(t => t.type === 'nutrition')) {
+                    tasks.push({
+                        id: 'virtual-habits-weekly-' + key,
+                        type: 'nutrition',
+                        title: 'Resumen Semanal: Hábitos',
+                        is_virtual: true,
+                        config: { categories: ['nutrition', 'movement', 'health'], isWeeklyReporting: true }
+                    });
+                }
+            } else if (!isWeekly) {
+                // Only show "Yesterday's Reflection" task
+                const hasReflectionTask = tasks.some(t => t.type === 'nutrition' && t.config?.retroactive);
+
+                if (!hasReflectionTask) {
+                    tasks.push({
+                        id: 'virtual-habits-yesterday-' + key,
+                        type: 'nutrition',
+                        title: 'Reflexión: Ayer',
+                        is_virtual: true,
+                        config: { categories: ['nutrition', 'movement', 'health'], retroactive: true }
+                    });
+                }
             }
         }
 
@@ -251,6 +276,8 @@ const AthleteAgenda = () => {
                         const isCompleted = task.status === 'completed';
                         const session = isSession ? sessionsMap[task.sessionId] : null;
 
+                        const sessionMeta = isSession && session ? getSessionDetails(task.sessionId) : null;
+
                         return (
                             <button
                                 key={idx}
@@ -258,30 +285,47 @@ const AthleteAgenda = () => {
                                     if (isSession && isCompleted) setSessionResultsTask({ task, session });
                                     else if (!isSession) setCheckinTask({ ...task, _selectedDate: selectedDate });
                                 }}
-                                className={`w-full p-4 rounded-[1.8rem] border flex items-center justify-between transition-all text-left shadow-sm group ${isCompleted ? 'bg-white border-slate-100 opacity-60' : 'bg-white border-slate-100 hover:border-emerald-100'
+                                className={`w-full p-4 rounded-[1.8rem] border flex items-center justify-between transition-all text-left shadow-sm group ${isCompleted ? 'bg-white border-emerald-100/50' : 'bg-white border-slate-100 hover:border-emerald-100'
                                     }`}
                             >
                                 <div className="flex items-center gap-4">
-                                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-colors ${isCompleted ? 'bg-slate-50 text-slate-400' :
-                                        task.type === 'session' ? 'bg-orange-50 text-orange-500' :
+                                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-colors shrink-0 ${isCompleted ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/10' :
+                                        task.type === 'session' ? 'bg-orange-50 text-orange-600' :
                                             task.type === 'neat' ? 'bg-emerald-50 text-emerald-500' :
-                                                task.type === 'nutrition' ? 'bg-orange-50 text-orange-500' :
+                                                task.type === 'nutrition' ? 'bg-amber-50 text-amber-500' :
                                                     task.type === 'free_training' ? 'bg-slate-100 text-slate-600' :
                                                         'bg-blue-50 text-blue-500'
                                         }`}>
-                                        {task.type === 'session' && <Dumbbell size={20} />}
-                                        {task.type === 'neat' && <Footprints size={20} />}
-                                        {task.type === 'nutrition' && <CheckSquare size={20} />}
-                                        {(task.type === 'tracking' || task.type === 'checkin') && <ClipboardList size={20} />}
-                                        {task.type === 'free_training' && <Dumbbell size={20} />}
+                                        {isCompleted ? <Check size={20} strokeWidth={3} /> : (
+                                            <>
+                                                {task.type === 'session' && <Dumbbell size={20} />}
+                                                {task.type === 'neat' && <Footprints size={20} />}
+                                                {task.type === 'nutrition' && <CheckSquare size={20} />}
+                                                {(task.type === 'tracking' || task.type === 'checkin') && <ClipboardList size={20} />}
+                                                {task.type === 'free_training' && <Dumbbell size={20} />}
+                                            </>
+                                        )}
                                     </div>
                                     <div>
-                                        <h3 className={`font-black ${isCompleted ? 'text-slate-400 text-sm' : 'text-slate-800'}`}>
-                                            {isSession ? (session?.name || 'Entreno') : (task.title || 'Tarea')}
-                                        </h3>
-                                        <p className={`text-[10px] font-black uppercase tracking-widest ${isCompleted ? 'text-emerald-500' : 'text-slate-400'}`}>
-                                            {isCompleted ? (task.summary || 'COMPLETADO') : (isSession ? 'Programado' : 'Pendiente')}
-                                        </p>
+                                        <div className="flex items-center gap-2">
+                                            <h3 className={`font-black ${isCompleted ? 'text-slate-400 text-sm line-through decoration-emerald-500/20' : 'text-slate-800'}`}>
+                                                {isSession ? (session?.name || 'Entreno') : (task.title || 'Tarea')}
+                                            </h3>
+                                            {isCompleted && (
+                                                <span className="px-2 py-0.5 bg-emerald-50 text-emerald-600 text-[7px] font-black rounded-full uppercase tracking-widest">OK</span>
+                                            )}
+                                        </div>
+                                        <div className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-widest ${isCompleted ? 'text-emerald-500' : 'text-slate-400'}`}>
+                                            {isCompleted ? (task.summary || 'Completado') : (
+                                                <>
+                                                    {isSession ? (
+                                                        <>
+                                                            <Clock size={10} className="inline" /> {sessionMeta?.duration} min
+                                                        </>
+                                                    ) : 'Hacer ahora'}
+                                                </>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                                 {isSession && !isCompleted ? (

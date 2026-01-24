@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, ChevronLeft, ChevronRight, Plus, X, Search, Check, Dumbbell, Footprints, ClipboardList, Utensils, Layers, MoreVertical, Trash2, Copy, Edit2, ArrowRight, Copy as DuplicateIcon, Scale, Ruler, Camera, Settings2, FileText, Zap, CheckSquare, Package, ListFilter } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight, Plus, X, Search, Check, Dumbbell, Footprints, ClipboardList, Utensils, Layers, MoreVertical, Trash2, Copy, Edit2, ArrowRight, Copy as DuplicateIcon, Scale, Ruler, Camera, Settings2, FileText, Zap, CheckSquare, Package, ListFilter, Clock } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TrainingDB } from '../services/db';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, getDay, addDays, startOfDay, startOfWeek, endOfWeek } from 'date-fns';
@@ -86,54 +86,30 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
 
     const getSessionDetails = (id) => {
         const session = sessions.find(s => s.id === id);
-        if (!session) return { blocks: 0, duration: 0 };
+        if (!session) return { blocks: 0, duration: 60 };
 
         const blocks = session.blocks || [];
-        let totalMinutes = 0;
-
-        // Protocol-specific time caps per block (in minutes)
-        // PDP-T: [4, 4, 5, 5, 6, 6] for [Boost, Base, Build A, Build B, Burn A, Burn B]
-        // PDP-R: [5, 5, 6, 6, 7, 7] (+1 min more than PDP-T)
-        const TIME_CAPS_T = [4, 4, 5, 5, 6, 6];
-        const TIME_CAPS_R = [5, 5, 6, 6, 7, 7];
-        const TIME_CAPS_E = [4, 4, 5, 5, 6, 6]; // Assuming same as T
-
-        // Detect protocol from session name or blocks
-        const sessionName = session.name || '';
-        let timeCaps = TIME_CAPS_T; // default
-
-        if (sessionName.includes('PDP-R')) {
-            timeCaps = TIME_CAPS_R;
-        } else if (sessionName.includes('PDP-E')) {
-            timeCaps = TIME_CAPS_E;
-        }
-
-        // Add Blocks + Transition time (2 min after each block)
-        blocks.forEach((block, idx) => {
-            // Use protocol-specific time cap, fallback to targeting or defaults
-            const defaultCap = timeCaps[idx] || 4;
-            const timeCapMinutes = block.targeting?.[0]?.timeCap
-                ? Math.ceil(block.targeting[0].timeCap / 60)
-                : defaultCap;
-
-            totalMinutes += timeCapMinutes;
-
-            // Add transition time after each block (2 min)
-            totalMinutes += 2;
+        let totalSeconds = 0;
+        blocks.forEach(b => {
+            totalSeconds += b.targeting?.[0]?.timeCap || 240;
         });
+
+        const baseDuration = Math.ceil(totalSeconds / 60);
+        const transitionTime = blocks.length > 1 ? (blocks.length - 1) * 3 : 0;
 
         return {
             blocks: blocks.length,
-            duration: Math.round(totalMinutes)
+            duration: baseDuration + transitionTime
         };
     };
 
     const getTaskIcon = (task) => {
         switch (task.type) {
-            case 'session': return <Dumbbell size={16} className="text-slate-900" />;
-            case 'neat': return <Footprints size={16} className="text-emerald-500" />;
-            case 'nutrition': return <CheckSquare size={16} className="text-orange-400" />;
-            case 'tracking': return <ClipboardList size={16} className="text-blue-500" />;
+            case 'session': return <Dumbbell size={16} />;
+            case 'neat': return <Footprints size={16} />;
+            case 'nutrition': return <CheckSquare size={16} />;
+            case 'tracking':
+            case 'checkin': return <ClipboardList size={16} />;
             default: return null;
         }
     };
@@ -559,14 +535,16 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
                                                             setDayDetailOpen(true);
                                                         }} // Open detail when clicking a task
                                                         className={`
-                                                            flex items-center gap-1 px-1 py-0.5 overflow-hidden cursor-grab active:cursor-grabbing touch-none
-                                                            ${task.type === 'session' ? (task.status === 'completed' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-900 text-white') : ''}
-                                                            ${task.type === 'neat' ? 'bg-emerald-500 text-white' : ''}
-                                                            ${task.type === 'nutrition' ? 'bg-orange-500 text-white' : ''}
-                                                            ${task.type === 'tracking' || task.type === 'checkin' ? 'bg-blue-500 text-white' : ''}
+                                                            flex items-center gap-1 px-1 py-0.5 overflow-hidden cursor-grab active:cursor-grabbing touch-none rounded-md mb-0.5
+                                                            ${task.status === 'completed' ? 'bg-emerald-600 text-white shadow-sm ring-1 ring-white/20' : (
+                                                                task.type === 'session' ? 'bg-orange-500 text-white' :
+                                                                    task.type === 'neat' ? 'bg-emerald-500 text-white' :
+                                                                        task.type === 'nutrition' ? 'bg-amber-500 text-white' :
+                                                                            'bg-blue-500 text-white'
+                                                            )}
                                                         `}
                                                     >
-                                                        <div className="shrink-0 opacity-90">
+                                                        <div className="shrink-0 opacity-100">
                                                             {task.status === 'completed' ? <Check size={10} className="text-white" strokeWidth={4} /> : (
                                                                 <>
                                                                     {task.type === 'session' && <Dumbbell size={10} className="text-current" />}
@@ -662,17 +640,19 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
                                                             {/* Icon */}
                                                             <div className={`
                                                                 w-10 h-10 rounded-full flex items-center justify-center text-white shrink-0
-                                                                ${task.type === 'session' ? 'bg-slate-900' : ''}
-                                                                ${task.type === 'neat' ? 'bg-emerald-500' : ''}
-                                                                ${task.type === 'nutrition' ? 'bg-orange-500' : ''}
-                                                                ${task.type === 'checkin' ? 'bg-blue-500' : ''}
+                                                                ${task.status === 'completed' ? 'bg-emerald-500 shadow-lg shadow-emerald-500/20' : (
+                                                                    task.type === 'session' ? 'bg-orange-500' :
+                                                                        task.type === 'neat' ? 'bg-emerald-500' :
+                                                                            task.type === 'nutrition' ? 'bg-amber-500' :
+                                                                                'bg-blue-500'
+                                                                )}
                                                             `}>
-                                                                {task.status === 'completed' ? <Check size={18} strokeWidth={3} /> : (
+                                                                {task.status === 'completed' ? <Check size={18} strokeWidth={4} /> : (
                                                                     <>
                                                                         {task.type === 'session' && <Dumbbell size={18} />}
                                                                         {task.type === 'neat' && <Footprints size={18} />}
                                                                         {task.type === 'nutrition' && <CheckSquare size={18} />}
-                                                                        {task.type === 'checkin' && <ClipboardList size={18} />}
+                                                                        {(task.type === 'tracking' || task.type === 'checkin') && <ClipboardList size={18} />}
                                                                     </>
                                                                 )}
                                                             </div>

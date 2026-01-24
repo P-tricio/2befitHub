@@ -128,7 +128,7 @@ const TaskResultsModal = ({ task, onClose }) => {
                     )}
 
                     {/* Habits Results */}
-                    {type === 'nutrition' && results.habitsResults && (
+                    {results.habitsResults && (
                         <div className="space-y-3">
                             <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest px-1">Cumplimiento</h3>
                             <div className="grid gap-2">

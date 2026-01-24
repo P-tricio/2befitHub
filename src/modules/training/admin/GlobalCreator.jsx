@@ -193,7 +193,7 @@ const ExerciseItem = ({ ex, idx, isGrouped, isFirstInGroup, isLastInGroup, onCon
 };
 
 // 2. Block Card Component
-const BlockCard = ({ block, idx, onUpdate, onRemove, onDuplicate, onAddExercise, onSaveModule, onImportModule, onOpenConfig, onSwapExercise, isMobileLandscape }) => {
+const BlockCard = ({ block, idx, onUpdate, onRemove, onDuplicate, onAddExercise, onSaveModule, onImportModule, onOpenConfig, onSwapExercise, onProtocolChange, isMobileLandscape }) => {
     const [isExpanded, setIsExpanded] = useState(true);
     const [linkMode, setLinkMode] = useState(false); // Toggle for connecting exercises
 
@@ -241,7 +241,7 @@ const BlockCard = ({ block, idx, onUpdate, onRemove, onDuplicate, onAddExercise,
                             return (
                                 <button
                                     key={p}
-                                    onClick={() => onUpdate({ ...block, protocol: protoKey })}
+                                    onClick={() => onProtocolChange ? onProtocolChange(protoKey) : onUpdate({ ...block, protocol: protoKey })}
                                     className={`px-2 py-1 text-[9px] font-black rounded-md transition-all ${isSelected ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                                     title={protoKey}
                                 >
@@ -1168,6 +1168,65 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
         'PDP-E': 'Progressive Density Program en formato EMOM. Formato de trabajo: Every Minute On the Minute.\n\n• BOOST (4min): Superserie A+B (6 reps/min).\n• BASE (4min): 1 Ejercicio (6 reps/min).\n• BUILD A/B (5min c/u): 1 Ejercicio (8 reps/min).\n• BURN A/B (6min c/u): Superseries (10+10 reps/min).'
     };
 
+    // --- PDP Protocol Constants & Helpers ---
+    const OFFICIAL_BLOCK_VALUES = {
+        BOOST: { time: 240, reps: 30, emomMin: 4 },
+        BASE: { time: 240, reps: 30, emomMin: 4 },
+        BUILD: { time: 300, reps: 40, emomMin: 5 },
+        BURN: { time: 360, reps: 60, emomMin: 6 }
+    };
+
+    const determineBlockType = (name = '', idx = 0) => {
+        const upperName = name.toUpperCase();
+        if (upperName.includes('BOOST')) return 'BOOST';
+        if (upperName.includes('BASE')) return 'BASE';
+        if (upperName.includes('BUILD')) return 'BUILD';
+        if (upperName.includes('BURN')) return 'BURN';
+
+        // Fallback by index if name doesn't match
+        const defaultTypes = ['BOOST', 'BASE', 'BUILD', 'BUILD', 'BURN', 'BURN'];
+        return defaultTypes[idx] || 'BASE';
+    };
+
+    const createPlaceholderExercise = (blockType, exIdx, protocolType) => {
+        const values = OFFICIAL_BLOCK_VALUES[blockType] || OFFICIAL_BLOCK_VALUES.BASE;
+        const baseConfig = {
+            volType: protocolType === 'PDP-T' ? 'TIME' : 'REPS',
+            intType: 'RIR',
+            sets: []
+        };
+
+        // Define sets based on protocol
+        if (protocolType === 'PDP-T') {
+            let timePerExercise = values.time;
+            if (blockType === 'BOOST') timePerExercise = Math.floor(values.time / 2);
+            baseConfig.sets = [{ reps: String(timePerExercise), rir: '2-3', rest: '0' }];
+            if (blockType === 'BURN') baseConfig.sharedTime = true;
+        } else if (protocolType === 'PDP-R') {
+            let repsPerExercise = values.reps;
+            if (blockType === 'BOOST') repsPerExercise = Math.floor(values.reps / 2);
+            baseConfig.sets = [{ reps: String(repsPerExercise), rir: '2-3', rest: '0' }];
+        } else if (protocolType === 'PDP-E') {
+            const numSets = values.emomMin;
+            let repsPerRound = 6;
+            if (blockType === 'BUILD') repsPerRound = 8;
+            if (blockType === 'BURN') repsPerRound = 10;
+            baseConfig.sets = Array(numSets).fill(null).map(() => ({ reps: String(repsPerRound), rir: '2-3', rest: '0' }));
+            baseConfig.isEMOM = true;
+        }
+
+        return {
+            id: crypto.randomUUID(),
+            name: `Ejercicio ${exIdx + 1}`,
+            type: 'EXERCISE',
+            pattern: 'Global',
+            quality: 'Fuerza',
+            config: baseConfig,
+            isGrouped: (blockType === 'BOOST' || blockType === 'BURN') && exIdx % 2 === 1,
+            mediaUrl: '', imageStart: '', imageEnd: ''
+        };
+    };
+
     const applyTemplate = (protocolType) => {
         const template = PDP_TEMPLATES[protocolType];
         if (!template) return;
@@ -1177,102 +1236,6 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
         setSessionType(protocolType);
         setDescriptionExpanded(true);
 
-        // Helper to create placeholder exercise with config
-        const createPlaceholderExercise = (blockIdx, exIdx, blockDef, protocolType) => {
-            const baseConfig = {
-                volType: protocolType === 'PDP-T' ? 'TIME' : 'REPS',
-                intType: 'RIR',
-                sets: []
-            };
-
-            // Official PDP Protocol Values
-            const OFFICIAL_VALUES = {
-                BOOST: { time: 240, reps: 30, emomMin: 4 },
-                BASE: { time: 240, reps: 30, emomMin: 4 },
-                BUILD: { time: 300, reps: 40, emomMin: 5 },
-                BURN: { time: 360, reps: 60, emomMin: 6 }
-            };
-
-            const blockTypes = ['BOOST', 'BASE', 'BUILD', 'BUILD', 'BURN', 'BURN']; // Indexed by 0-5
-            const blockType = blockTypes[blockIdx]; // Get generic type (e.g., 'BUILD' for both A and B)
-            const values = OFFICIAL_VALUES[blockType];
-
-            // BOOST: superseries (2 exercises)
-            // BASE: solo (1 exercise)
-            // BUILD A/B: solo (1 exercise each)
-            // BURN A/B: superseries (2 exercises each)
-
-            // Define sets based on protocol
-            if (protocolType === 'PDP-T') {
-                // Time-based
-                let timePerExercise;
-                if (blockType === 'BOOST') {
-                    // BOOST: Superseries alternating, share the time
-                    timePerExercise = Math.floor(values.time / 2);
-                } else if (blockType === 'BURN') {
-                    // BURN: Linked Superserie (AMRAP), both share full time visually but logically it's per block
-                    timePerExercise = values.time;
-                } else {
-                    // BASE & BUILD: Solo work
-                    timePerExercise = values.time;
-                }
-                baseConfig.sets = [
-                    { reps: String(timePerExercise), rir: '2-3', rest: '0' }
-                ];
-            } else if (protocolType === 'PDP-R') {
-                // Reps-based - only BOOST shares reps
-                let repsPerExercise;
-                if (blockType === 'BOOST') {
-                    // BOOST: Superseries alternating (15+15 = 30)
-                    repsPerExercise = Math.floor(values.reps / 2);
-                } else {
-                    // BASE: 30 reps solo
-                    // BUILD: 40 reps solo
-                    // BURN: 60 reps EACH exercise in pair
-                    repsPerExercise = values.reps;
-                }
-                baseConfig.sets = [
-                    { reps: String(repsPerExercise), rir: '2-3', rest: '0' }
-                ];
-            } else if (protocolType === 'PDP-E') {
-                // EMOM
-                const numSets = values.emomMin;
-                let repsPerRound = 6;
-                if (blockType === 'BUILD') repsPerRound = 8;
-                if (blockType === 'BURN') repsPerRound = 10;
-
-                baseConfig.sets = Array(numSets).fill(null).map(() => ({
-                    reps: String(repsPerRound),
-                    rir: '2-3',
-                    rest: '0'
-                }));
-            }
-
-            // Mark if time is shared (PDP-T BURN only)
-            const isSharedTime = protocolType === 'PDP-T' && blockType === 'BURN';
-            if (isSharedTime) {
-                baseConfig.sharedTime = true;
-            }
-
-            // Mark if EMOM (PDP-E only)
-            const isEMOM = protocolType === 'PDP-E';
-            if (isEMOM) {
-                baseConfig.isEMOM = true;
-            }
-
-            return {
-                id: crypto.randomUUID(),
-                name: `Ejercicio ${exIdx + 1}`,
-                type: 'EXERCISE',
-                pattern: 'Global',
-                quality: 'Fuerza',
-                config: baseConfig,
-                isGrouped: (blockType === 'BOOST' || blockType === 'BURN') && exIdx % 2 === 1, // Group 2nd exercise in Boost/Burn
-                mediaUrl: '',
-                imageStart: '',
-                imageEnd: ''
-            };
-        };
 
         // 1. Collect existing exercises to reuse
         let availableExercises = [];
@@ -1295,13 +1258,13 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
             else if (blockType === 'BASE') numExercises = 1;
             else if (blockType === 'BUILD') numExercises = 1; // CHANGED: Now single exercise per Build block
             else if (blockType === 'BURN') numExercises = 2;
-
             return {
                 id: crypto.randomUUID(),
                 name: blockDef.name,
                 exercises: Array(numExercises).fill(null).map((_, i) => {
                     // Create base placeholder with correct config for new protocol
-                    const placeholder = createPlaceholderExercise(blockIdx, i, blockDef, protocolType);
+                    const type = determineBlockType(blockDef.name, blockIdx);
+                    const placeholder = createPlaceholderExercise(type, i, protocolType);
 
                     // If we have an existing exercise, merge it
                     if (exIterator < availableExercises.length) {
@@ -1359,6 +1322,59 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
             console.error(e);
             alert('Error al guardar el módulo.');
         }
+    };
+
+    const handleBlockProtocolUpdate = (blockIdx, newProtocol) => {
+        const block = blocks[blockIdx];
+        if (!block) return;
+
+        // If switching to LIBRE, just update protocol but keep exercises
+        if (newProtocol === 'LIBRE') {
+            const newBlocks = [...blocks];
+            newBlocks[blockIdx] = { ...block, protocol: newProtocol, params: {} };
+            setBlocks(newBlocks);
+            return;
+        }
+
+        // Identify block type to apply correct preset
+        const blockType = determineBlockType(block.name, blockIdx);
+        const protocolValues = OFFICIAL_BLOCK_VALUES[blockType] || OFFICIAL_BLOCK_VALUES.BASE;
+
+        // If block has exercises, ask for confirmation before injecting presets
+        if (block.exercises.length > 0) {
+            const confirmOverwrite = window.confirm(
+                `¿Deseas aplicar el preset de ${newProtocol}? \n\nEsto sobrescribirá los ejercicios actuales de este bloque con los valores por defecto del protocolo.`
+            );
+            if (!confirmOverwrite) {
+                // Just update protocol without injecting exercises
+                const newBlocks = [...blocks];
+                newBlocks[blockIdx] = { ...block, protocol: newProtocol };
+                setBlocks(newBlocks);
+                return;
+            }
+        }
+
+        // Determine how many exercises to inject based on block type
+        let numExercises = 1;
+        if (blockType === 'BOOST' || blockType === 'BURN') numExercises = 2;
+
+        const newExercises = Array(numExercises).fill(null).map((_, i) =>
+            createPlaceholderExercise(blockType, i, newProtocol)
+        );
+
+        const newBlocks = [...blocks];
+        newBlocks[blockIdx] = {
+            ...block,
+            protocol: newProtocol,
+            exercises: newExercises,
+            params: {
+                timeCap: protocolValues.time,
+                targetReps: protocolValues.reps,
+                emomMinutes: protocolValues.emomMin
+            }
+        };
+
+        setBlocks(newBlocks);
     };
 
     const updateBlock = (idx, newData) => {
@@ -1912,6 +1928,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                                             onAddExercise={() => handleAddExerciseRequest(idx)}
                                             onOpenConfig={handleOpenConfig}
                                             onSwapExercise={handleSwapExercise}
+                                            onProtocolChange={(p) => handleBlockProtocolUpdate(idx, p)}
                                         />
                                     ))}
 

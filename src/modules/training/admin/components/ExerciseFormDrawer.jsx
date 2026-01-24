@@ -19,7 +19,8 @@ const DEFAULT_FORM_DATA = {
     imageEnd: '',
     youtubeUrl: '',
     description: '',
-    tags: []
+    tags: [],
+    loadable: false
 };
 
 /**
@@ -61,7 +62,8 @@ const ExerciseFormDrawer = ({
                 imageEnd: exercise.imageEnd || '',
                 youtubeUrl: exercise.youtubeUrl || '',
                 description: exercise.description || '',
-                tags: exercise.tags || []
+                tags: exercise.tags || [],
+                loadable: exercise.loadable || false
             } : DEFAULT_FORM_DATA;
 
             setFormData(startData);
@@ -217,7 +219,6 @@ const ExerciseFormDrawer = ({
                                         ))}
                                     </div>
                                 </div>
-
                                 {/* Quality */}
                                 <div>
                                     <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Cualidad Física (FEMC)</label>
@@ -236,6 +237,25 @@ const ExerciseFormDrawer = ({
                                             </button>
                                         ))}
                                     </div>
+                                </div>
+
+                                {/* Loadable Checkbox - Peso Externo */}
+                                <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-xl border-2 border-transparent hover:border-slate-100 transition-all">
+                                    <input
+                                        type="checkbox"
+                                        id="loadable-checkbox-drawer"
+                                        checked={formData.loadable || false}
+                                        onChange={e => setFormData({ ...formData, loadable: e.target.checked })}
+                                        className="w-5 h-5 text-emerald-600 bg-white border-slate-300 rounded-lg focus:ring-emerald-500 focus:ring-2 transition-all cursor-pointer"
+                                    />
+                                    <label htmlFor="loadable-checkbox-drawer" className="flex-1 cursor-pointer">
+                                        <p className="text-sm font-black text-slate-800 flex items-center gap-2">
+                                            ⚖️ Ejercicio con Peso Externo
+                                        </p>
+                                        <p className="text-[10px] text-slate-400 font-bold mt-0.5 leading-tight">
+                                            Marca si usa barras, mancuernas, kettlebells o máquinas con peso ajustable.
+                                        </p>
+                                    </label>
                                 </div>
 
                                 {/* Description */}
@@ -344,10 +364,10 @@ const ExerciseFormDrawer = ({
                                 </div>
                             </form>
                         </div>
-                    </motion.div>
+                    </motion.div >
                 </>
             )}
-        </AnimatePresence>
+        </AnimatePresence >
     );
 };
 

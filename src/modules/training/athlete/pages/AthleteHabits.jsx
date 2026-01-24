@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, subMonths, addMonths, startOfWeek, endOfWeek, addDays, isAfter, startOfDay, getDay } from 'date-fns';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, subMonths, addMonths, startOfWeek, endOfWeek, addDays, isAfter, startOfDay, getDay, isSameMonth } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check, X, Utensils, Footprints, Heart, Calendar as CalendarIcon, ChevronLeft, ChevronRight, Info, Target, Plus } from 'lucide-react';
@@ -7,9 +7,9 @@ import { TrainingDB } from '../../services/db';
 import { useAuth } from '../../../../context/AuthContext';
 
 const CATEGORIES = [
-    { id: 'nutrition', label: 'Nutrición', icon: <Utensils size={18} />, color: 'orange' },
-    { id: 'movement', label: 'Movimiento', icon: <Footprints size={18} />, color: 'emerald' },
-    { id: 'health', label: 'Salud', icon: <Heart size={18} />, color: 'rose' },
+    { id: 'nutrition', label: 'Nutrición', shortLabel: 'Nutr.', icon: <Utensils size={14} />, color: 'orange' },
+    { id: 'movement', label: 'Movimiento', shortLabel: 'Mov.', icon: <Footprints size={14} />, color: 'emerald' },
+    { id: 'health', label: 'Salud', shortLabel: 'Salud', icon: <Heart size={14} />, color: 'rose' },
 ];
 
 const AthleteHabits = ({ userId, isAdminView = false }) => {
@@ -208,13 +208,9 @@ const AthleteHabits = ({ userId, isAdminView = false }) => {
     };
 
     const renderCalendar = () => {
-        const start = startOfMonth(viewDate);
-        const end = endOfMonth(viewDate);
+        const start = startOfWeek(startOfMonth(viewDate), { weekStartsOn: 1 });
+        const end = endOfWeek(endOfMonth(viewDate), { weekStartsOn: 1 });
         const days = eachDayOfInterval({ start, end });
-
-        const firstDayIdx = start.getDay(); // 0 is Sunday
-        const padCount = firstDayIdx === 0 ? 6 : firstDayIdx - 1; // Mon-Sun
-        const padding = Array(padCount).fill(null);
 
         return (
             <div className="bg-white rounded-[2.5rem] p-6 shadow-sm border border-slate-100">
@@ -224,11 +220,10 @@ const AthleteHabits = ({ userId, isAdminView = false }) => {
                     ))}
                 </div>
                 <div className="grid grid-cols-7 gap-1">
-                    {[...padding, ...days].map((date, idx) => {
-                        if (!date) return <div key={`pad-${idx}`} className="h-10" />;
-
+                    {days.map((date, idx) => {
                         const isSelected = isSameDay(date, selectedDate);
                         const isToday = isSameDay(date, new Date());
+                        const isCurrentMonth = isSameMonth(date, viewDate);
                         const status = getDayStatus(date);
 
                         return (
@@ -237,6 +232,7 @@ const AthleteHabits = ({ userId, isAdminView = false }) => {
                                 onClick={() => setSelectedDate(date)}
                                 className={`relative h-10 w-full flex items-center justify-center rounded-2xl text-sm font-bold transition-all
                                     ${isSelected ? 'scale-110 z-10 shadow-md ring-2 ring-slate-900 text-slate-900 bg-white' : 'hover:bg-slate-50 text-slate-400'}
+                                    ${!isCurrentMonth ? 'opacity-30 blur-[0.5px]' : ''}
                                     ${status === 'success' ? '!bg-emerald-500 !text-white' :
                                         status === 'fail' ? '!bg-rose-500 !text-white' :
                                             status === 'partial' ? '!bg-amber-400 !text-white' :
@@ -276,23 +272,25 @@ const AthleteHabits = ({ userId, isAdminView = false }) => {
                     </div>
                 </div>
 
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-1.5">
                     {CATEGORIES.map(cat => (
                         <button
                             key={cat.id}
                             onClick={() => toggleFilter(cat.id)}
-                            className={`flex items-center gap-2 px-4 py-2 rounded-2xl border transition-all text-xs font-black ${activeFilters.includes(cat.id) ? `bg-${cat.color}-500 text-white border-${cat.color}-500 shadow-lg shadow-${cat.color}-500/20` : 'bg-white text-slate-400 border-slate-100'}`}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all text-[11px] font-black ${activeFilters.includes(cat.id) ? `bg-${cat.color}-500 text-white border-${cat.color}-500 shadow-md shadow-${cat.color}-500/10` : 'bg-white text-slate-400 border-slate-100'}`}
                         >
-                            {activeFilters.includes(cat.id) ? <Check size={14} strokeWidth={4} /> : React.cloneElement(cat.icon, { size: 14 })}
-                            {cat.label}
+                            {activeFilters.includes(cat.id) ? <Check size={12} strokeWidth={4} /> : cat.icon}
+                            <span className="hidden sm:inline">{cat.label}</span>
+                            <span className="sm:hidden">{cat.shortLabel}</span>
                         </button>
                     ))}
                     <button
                         onClick={() => toggleFilter('uncategorized')}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-2xl border transition-all text-xs font-black ${activeFilters.includes('uncategorized') ? 'bg-slate-800 text-white border-slate-800 shadow-lg' : 'bg-white text-slate-400 border-slate-100'}`}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all text-[11px] font-black ${activeFilters.includes('uncategorized') ? 'bg-slate-800 text-white border-slate-800 shadow-md' : 'bg-white text-slate-400 border-slate-100'}`}
                     >
-                        {activeFilters.includes('uncategorized') ? <Check size={14} strokeWidth={4} /> : <Target size={14} />}
-                        Próximos
+                        {activeFilters.includes('uncategorized') ? <Check size={12} strokeWidth={4} /> : <Target size={12} />}
+                        <span className="hidden sm:inline">Pendientes</span>
+                        <span className="sm:hidden">Pend.</span>
                     </button>
                 </div>
             </header>
