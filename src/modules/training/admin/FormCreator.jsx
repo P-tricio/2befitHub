@@ -210,17 +210,20 @@ const FormCreator = ({ onClose, isInline = false }) => {
                                                 <option value="number">Número</option>
                                                 <option value="select">Selección</option>
                                                 <option value="boolean">Sí / No</option>
+                                                <option value="scale">Escala (0-10)</option>
                                             </select>
                                         </div>
 
-                                        {field.type === 'select' && (
+                                        {(field.type === 'select' || field.type === 'scale') && (
                                             <div>
-                                                <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block">Opciones (separadas por comas)</label>
+                                                <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block">
+                                                    {field.type === 'select' ? 'Opciones (separadas por comas)' : 'Etiquetas Extremos (0, 10)'}
+                                                </label>
                                                 <input
                                                     type="text"
                                                     value={field.options}
                                                     onChange={e => updateField(field.id, { options: e.target.value })}
-                                                    placeholder="Mal, Regular, Bien, Excelente"
+                                                    placeholder={field.type === 'select' ? "Mal, Regular, Bien, Excelente" : "Nada, Mucho"}
                                                     className="w-full bg-slate-50 p-3 rounded-xl text-xs font-bold text-slate-600 outline-none border border-slate-100"
                                                 />
                                             </div>

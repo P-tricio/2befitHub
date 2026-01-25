@@ -4,7 +4,7 @@ import { format, subDays } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { X, Check, Footprints, Utensils, ClipboardList, Scale, Ruler, Camera, CheckSquare, Clock, History, Dumbbell } from 'lucide-react';
 
-const TaskResultsModal = ({ task, onClose }) => {
+const TaskResultsModal = ({ task, onClose, availableForms }) => {
     if (!task) return null;
 
     const results = task.results || {};
@@ -223,15 +223,30 @@ const TaskResultsModal = ({ task, onClose }) => {
                             )}
 
                             {results.formAnswers && Object.keys(results.formAnswers).length > 0 && (
-                                <div className="space-y-2">
+                                <div className="space-y-4">
                                     <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest px-1">Cuestionario</h3>
-                                    <div className="space-y-2">
-                                        {Object.entries(results.formAnswers).map(([key, val]) => (
-                                            <div key={key} className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight block mb-1">{key}</span>
-                                                <span className="text-sm font-bold text-slate-700">{val?.toString() || '-'}</span>
-                                            </div>
-                                        ))}
+                                    <div className="space-y-3">
+                                        {(() => {
+                                            // Find form definition if available
+                                            const formDef = config.formId ? availableForms?.find(f => f.id === config.formId) : null;
+
+                                            return Object.entries(results.formAnswers).map(([key, val]) => {
+                                                // Try to find field definition
+                                                const field = formDef?.fields?.find(f => f.id === key);
+                                                const label = field?.label || key;
+
+                                                return (
+                                                    <div key={key} className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight block mb-2 leading-relaxed">
+                                                            {label}
+                                                        </p>
+                                                        <div className="text-sm font-black text-slate-800 bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                                                            {val?.toString() || '-'}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            });
+                                        })()}
                                     </div>
                                 </div>
                             )}

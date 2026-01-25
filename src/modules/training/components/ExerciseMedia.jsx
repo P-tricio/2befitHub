@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Play, X, Image as ImageIcon, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { ExerciseAPI } from '../services/ExerciseAPI';
 
 /**
  * ExerciseMedia - A unified component to handle all types of exercise visualizations:
@@ -19,23 +20,73 @@ const ExerciseMedia = ({
     const [isPlaying, setIsPlaying] = useState(autoPlay);
     const [currentImage, setCurrentImage] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [isHovered, setIsHovered] = useState(false);
 
     const youtubeId = getYoutubeVideoId(exercise?.youtubeUrl);
     const hasMediaUrl = !!exercise?.mediaUrl;
     const hasAutoGif = !!(exercise?.imageStart && exercise?.imageEnd);
 
+    // Lazy loading logic for online exercises in library/picker
+    const isOnline = exercise?.source === 'exercisedb' || (exercise?.mediaUrl && !exercise?.mediaUrl.includes('imgbb') && !exercise?.mediaUrl.includes('ibb.co'));
+    const shouldLazyLoad = thumbnailMode && isOnline;
+
     // Initial image / thumbnail logic
     useEffect(() => {
-        let initialImage = null;
-        if (exercise?.mediaUrl) {
-            initialImage = exercise.mediaUrl;
-        } else if (exercise?.imageStart) {
-            initialImage = exercise.imageStart;
-        } else if (youtubeId) {
-            initialImage = `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg`;
+        // Debugging ImgBB loading issues
+        if (exercise?.mediaUrl && exercise.mediaUrl.includes('imgbb')) {
+            console.log('[ExerciseMedia] Attempting to load ImgBB URL:', exercise.mediaUrl, 'for:', exercise.name);
         }
-        setCurrentImage(initialImage);
-    }, [exercise, youtubeId]);
+
+        if (shouldLazyLoad && !isHovered && !isPlaying) {
+            setCurrentImage(null);
+            setLoading(false);
+            return;
+        }
+
+        const loadContent = async () => {
+            setLoading(true);
+            let initialImage = null;
+
+            if (exercise?.mediaUrl) {
+                // If it's a protected RapidAPI URL or a Raw ID (Legacy/Offline) 
+                const isUrl = exercise.mediaUrl.includes('http') || exercise.mediaUrl.includes('/');
+                const isProtected = exercise.mediaUrl.includes('exercisedb.p.rapidapi.com');
+                const isLegacyId = !isUrl;
+
+                if (isProtected || (exercise.source === 'exercisedb' && !exercise.mediaUrl.includes('imgbb') && !exercise.mediaUrl.includes('ibb.co')) || isLegacyId) {
+                    // It's a protected image or a raw ID, need to fetch blob
+                    try {
+                        // Pass ID or Full URL - ExerciseAPI handles stripping prefixes
+                        const blob = await ExerciseAPI.fetchImageBlob(exercise.mediaUrl || exercise.id);
+                        if (blob) {
+                            initialImage = URL.createObjectURL(blob);
+                        }
+                    } catch (e) {
+                        console.error('Failed to load protected image:', e);
+                        initialImage = null;
+                    }
+                } else {
+                    initialImage = exercise.mediaUrl;
+                }
+            } else if (exercise?.imageStart) {
+                initialImage = exercise.imageStart;
+            } else if (youtubeId) {
+                initialImage = `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg`;
+            }
+
+            setCurrentImage(initialImage);
+            setLoading(false);
+        };
+
+        loadContent();
+
+        // Cleanup blob URLs
+        return () => {
+            if (currentImage && currentImage.startsWith('blob:')) {
+                URL.revokeObjectURL(currentImage);
+            }
+        };
+    }, [exercise, youtubeId, shouldLazyLoad, isHovered, isPlaying]);
 
     // Auto-GIF Animation loop
     useEffect(() => {
@@ -97,6 +148,8 @@ const ExerciseMedia = ({
     return (
         <div
             className={`relative overflow-hidden flex items-center justify-center bg-slate-100 ${className}`}
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
             onClick={() => {
                 if (!thumbnailMode && youtubeId) setIsPlaying(true);
             }}
@@ -114,8 +167,17 @@ const ExerciseMedia = ({
                 />
             ) : (
                 <div className="flex flex-col items-center gap-2 text-slate-300">
-                    <ImageIcon size={thumbnailMode ? 16 : 32} />
-                    {!thumbnailMode && <span className="text-[10px] font-bold uppercase tracking-widest">Sin Media</span>}
+                    {shouldLazyLoad && !isHovered && !loading ? (
+                        <>
+                            <Loader2 className="animate-spin text-slate-200" size={thumbnailMode ? 14 : 24} />
+                            {!thumbnailMode && <span className="text-[10px] font-bold uppercase tracking-widest">Cargando al pasar cursor...</span>}
+                        </>
+                    ) : (
+                        <>
+                            <ImageIcon size={thumbnailMode ? 16 : 32} />
+                            {!thumbnailMode && <span className="text-[10px] font-bold uppercase tracking-widest">Sin Media</span>}
+                        </>
+                    )}
                 </div>
             )}
 

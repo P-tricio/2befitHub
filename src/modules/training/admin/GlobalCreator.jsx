@@ -678,8 +678,6 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
     // Library Edit State
     const [libraryEditDrawerOpen, setLibraryEditDrawerOpen] = useState(false);
     const [libraryEditExercise, setLibraryEditExercise] = useState(null);
-    const [librarySearchTerm, setLibrarySearchTerm] = useState('');
-    const [libraryFilters, setLibraryFilters] = useState({ pattern: [], equipment: [], level: [], quality: [] });
     const [libraryFilterDrawerOpen, setLibraryFilterDrawerOpen] = useState(false);
 
     // Filter Exercise List Helper Function
@@ -793,32 +791,43 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
     // If embedded, the parent (ProgramBuilder) handles the blocking
     useUnsavedChanges(!embeddedMode && (isDirty || exDrawerDirty));
 
+    const [visibleCount, setVisibleCount] = useState(50); // Pagination state
+
     useEffect(() => {
         TrainingDB.exercises.getAll().then(setAllExercises);
         TrainingDB.modules.getAll().then(setAllModules);
         TrainingDB.sessions.getAll().then(setAllSessions);
     }, []);
 
-    // Online Search Debounce
+    // --- Search & Discovery Logic ---
+
+    // Online Search Debounce / Discovery Filter
+    useEffect(() => {
+        // Reset visible count when search term changes or tab changes
+        setVisibleCount(50);
+    }, [pickerSearch, pickerTab]);
+
     useEffect(() => {
         if (pickerTab !== 'online') return;
 
         if (discoveryMode) {
             // Local search in bulk downloaded data
             if (!pickerSearch.trim()) {
-                setOnlineResults(bulkExercises.slice(0, 50)); // Show some initial if empty
+                setOnlineResults(bulkExercises.slice(0, visibleCount));
                 return;
             }
             const filtered = bulkExercises.filter(ex =>
                 ex.name.toLowerCase().includes(pickerSearch.toLowerCase()) ||
-                ex.target.toLowerCase().includes(pickerSearch.toLowerCase()) ||
-                ex.bodyPart.toLowerCase().includes(pickerSearch.toLowerCase())
+                (ex.target || '').toLowerCase().includes(pickerSearch.toLowerCase()) ||
+                (ex.bodyPart || '').toLowerCase().includes(pickerSearch.toLowerCase())
             );
-            setOnlineResults(filtered.slice(0, 50));
+            setOnlineResults(filtered.slice(0, visibleCount));
             return;
         }
 
-        if (!pickerSearch.trim() || pickerSearch.length < 3) {
+        // Standard Online Search logic
+        const term = pickerSearch.trim();
+        if (!term || term.length < 3) {
             setOnlineResults([]);
             return;
         }
@@ -826,7 +835,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
         const timer = setTimeout(async () => {
             setIsSearchingOnline(true);
             try {
-                const results = await ExerciseAPI.searchOnline(pickerSearch);
+                const results = await ExerciseAPI.searchOnline(term);
                 setOnlineResults(results);
             } catch (err) {
                 console.error(err);
@@ -836,7 +845,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
         }, 600);
 
         return () => clearTimeout(timer);
-    }, [pickerSearch, pickerTab, discoveryMode]);
+    }, [pickerSearch, pickerTab, discoveryMode, bulkExercises]);
 
     const handleEnableDiscovery = async () => {
         if (bulkExercises.length > 0) {
@@ -846,13 +855,17 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
 
         setIsSearchingOnline(true);
         try {
-            const all = await ExerciseAPI.getAllExercises();
+            console.log('Fetching full ExerciseDB catalog...');
+            const all = await ExerciseAPI.fetchFullCatalog();
             setBulkExercises(all);
+
+            // Sync current results
             setOnlineResults(all.slice(0, 50));
+
             setDiscoveryMode(true);
         } catch (err) {
             console.error('Error in Discovery Mode:', err);
-            alert('Error al cargar catálogo completo');
+            alert('Error al cargar catálogo completo: ' + err.message);
         } finally {
             setIsSearchingOnline(false);
         }
@@ -1090,7 +1103,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
             // Instead of saving directly, we open the Quick Creator with pre-filled fields
             setCreationData(prefilledData);
             setQuickCreatorOpen(true);
-            setExercisePickerOpen(false); // Close the picker to show the creator
+            if (exercisePickerOpen) setExercisePickerOpen(false); // Close the picker if it was open
         } catch (error) {
             console.error('Error importing exercise details:', error);
             alert('Error al preparar importación: ' + error.message);
@@ -1121,6 +1134,88 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
             }))
         }]);
         setModulePickerOpen(false);
+    };
+
+    const handleLoadSession = async (session) => {
+        if (window.confirm('Cargar esta sesión reemplazará la actual. ¿Estás seguro?')) {
+            let processedBlocks = JSON.parse(JSON.stringify(session.blocks || []));
+
+            // HYDRATION LOGIC: Repair legacy exercises missing data
+            try {
+                // If we don't have the catalog loaded, fetch it silently to repair data
+                let catalog = bulkExercises;
+                if (catalog.length === 0) {
+                    console.log('Fetching catalog to hydrate legacy session...');
+                    catalog = await ExerciseAPI.fetchFullCatalog();
+                    setBulkExercises(catalog);
+                }
+
+                // Map through blocks and exercises
+                const processedBlockPromises = processedBlocks.map(async block => ({
+                    ...block,
+                    exercises: await Promise.all(block.exercises.map(async ex => {
+                        // Attempt to find full data in catalog by ID or Name
+                        const fullData = catalog.find(c =>
+                            c.id === ex.id ||
+                            c.id === `edb_${ex.id}` ||
+                            c.name === ex.name
+                        );
+
+                        // Base merged data
+                        let merged = fullData ? {
+                            ...ex,
+                            id: fullData.id, // Prefer catalog ID
+                            name_es: ex.name_es || fullData.name_es || '',
+                            instructions: ex.instructions || fullData.instructions || [],
+                            instructions_es: ex.instructions_es || fullData.instructions_es || [],
+                            description: ex.description || fullData.description || '',
+                            mediaUrl: ex.mediaUrl || fullData.mediaUrl || fullData.gifUrl || ''
+                        } : ex;
+
+                        // ON-THE-FLY TRANSLATION
+                        // If we still don't have a Spanish name, translate it now
+                        if (!merged.name_es && merged.name) {
+                            try {
+                                merged.name_es = await ExerciseAPI.translateText(merged.name);
+                                // Also translate instructions if missing
+                                if ((!merged.instructions_es || merged.instructions_es.length === 0) && merged.instructions) {
+                                    const combinedInstr = merged.instructions.join('\n');
+                                    const translatedInstr = await ExerciseAPI.translateText(combinedInstr);
+                                    merged.instructions_es = translatedInstr.split('\n');
+                                }
+                            } catch (error) {
+                                console.warn('Translation failed for:', merged.name);
+                            }
+                        }
+
+                        return merged;
+                    }))
+                }));
+
+                processedBlocks = await Promise.all(processedBlockPromises);
+                console.log('Session hydrated and translated successfully.');
+            } catch (err) {
+                console.warn('Auto-hydration failed, loading session as-is:', err);
+            }
+
+            setSessionTitle(session.name);
+            setSessionDescription(session.description || '');
+            setSessionType(session.type || 'LIBRE');
+            setBlocks(processedBlocks);
+            setMainView('editor');
+        }
+    };
+
+    const handleDeleteSession = async (sessionId) => {
+        if (window.confirm('¿Eliminar esta sesión permanentemente?')) {
+            try {
+                await TrainingDB.sessions.delete(sessionId);
+                setAllSessions(prev => prev.filter(s => s.id !== sessionId));
+            } catch (error) {
+                console.error('Error deleting session:', error);
+                alert('Error al eliminar sesión');
+            }
+        }
     };
 
     const handleClearSession = () => {
@@ -1402,8 +1497,8 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
             };
             setSwapMode(false);
             setSwapTarget(null);
-        } else {
-            // Normal mode: Add new exercise
+        } else if (activeBlockIdxForPicker !== null) {
+            // Normal mode: Add new exercise to specific block
             newBlocks[activeBlockIdxForPicker].exercises.push({
                 ...ex,
                 id: crypto.randomUUID(),
@@ -1433,35 +1528,48 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
 
     const handleCreateAndSelect = async () => {
         if (!creationData.name) return;
+
+        // Final sanitization to prevent Firestore "undefined" errors
+        const sanitizedData = JSON.parse(JSON.stringify({
+            name: (creationData.name || '').trim(),
+            pattern: creationData.pattern || 'Global',
+            equipment: creationData.equipment || 'Ninguno',
+            level: creationData.level || 'Intermedio',
+            quality: creationData.quality || 'Fuerza',
+            loadable: !!creationData.loadable,
+            mediaUrl: creationData.mediaUrl || '',
+            imageStart: creationData.imageStart || '',
+            imageEnd: creationData.imageEnd || '',
+            youtubeUrl: creationData.youtubeUrl || '',
+            description: creationData.description || '',
+            tags: creationData.tags || []
+        }, (key, value) => value === undefined ? null : value));
+
+        console.log('SAVING EXERCISE:', sanitizedData);
+
         try {
-            const newExRef = await TrainingDB.exercises.create({
-                name: creationData.name.trim(),
-                pattern: creationData.pattern || 'Global',
-                equipment: creationData.equipment || 'Ninguno',
-                level: creationData.level || 'Intermedio',
-                quality: creationData.quality || 'Fuerza',
-                loadable: creationData.loadable || false, // Include loadable field
-                mediaUrl: creationData.mediaUrl || '',
-                imageStart: creationData.imageStart || '',
-                imageEnd: creationData.imageEnd || '',
-                youtubeUrl: creationData.youtubeUrl || '',
-                description: creationData.description || '',
-                tags: creationData.tags || []
-            });
+            const newExRef = await TrainingDB.exercises.create(sanitizedData);
+
             // Select it immediately
             const exData = {
-                id: newExRef.id, ...creationData,
-                // Ensure defaults for immediate display
-                mediaUrl: creationData.mediaUrl || '',
-                imageStart: creationData.imageStart || '',
-                imageEnd: creationData.imageEnd || ''
+                id: newExRef.id,
+                ...sanitizedData
             };
-            setAllExercises([...allExercises, exData]);
-            handleExerciseSelect(exData);
+
+            setAllExercises(prev => [...prev, exData]);
+
+            // CONTEXT CHECK: Only inject into session if we were in the editor/picker flow
+            // If in Library, we just want to save it to our collection.
+            if (mainView !== 'library' && activeBlockIdxForPicker !== null) {
+                handleExerciseSelect(exData);
+            } else {
+                console.log('Exercise saved to library (no session insertion)');
+            }
+
             setQuickCreatorOpen(false);
         } catch (error) {
-            console.error(error);
-            alert('Error al crear ejercicio: ' + error.message);
+            console.error('SAVE ERROR:', error);
+            alert('Error al guardar ejercicio: ' + (error.message || 'Error desconocido'));
         }
     };
 
@@ -1683,38 +1791,8 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
         }
     };
 
-    // Sessions Handlers
-    const handleLoadSession = (session) => {
-        setSessionTitle(session.name || 'Nueva Sesión');
-        setSessionDescription(session.description || '');
-        setBlocks(session.blocks || [{ id: '1', name: 'Bloque 1', exercises: [] }]);
-        setMainView('editor');
-    };
-
-    const handleDeleteSession = async (sessionId) => {
-        if (!window.confirm('¿Seguro que quieres eliminar esta sesión?')) return;
-        try {
-            await TrainingDB.sessions.delete(sessionId);
-            setAllSessions(prev => prev.filter(s => s.id !== sessionId));
-        } catch (error) {
-            console.error('Error deleting session:', error);
-            alert('Error al eliminar: ' + error.message);
-        }
-    };
-
-    // Filter exercises for library view using the unified logic
-    const filteredLibraryExercises = filterExerciseList(allExercises, librarySearchTerm, libraryFilters);
-
-    // Filter Toggle Helpers
-    const toggleLibraryFilter = (type, value) => {
-        setLibraryFilters(prev => {
-            const current = prev[type];
-            const updated = current.includes(value)
-                ? current.filter(item => item !== value)
-                : [...current, value];
-            return { ...prev, [type]: updated };
-        });
-    };
+    // Filter exercises for unified view
+    const filteredLibraryExercises = filterExerciseList(allExercises, pickerSearch, pickerFilter);
 
     return (
         <div className="w-full h-full md:max-w-[95vw] md:h-[92vh] md:mx-auto bg-white shadow-none md:shadow-2xl md:rounded-3xl border-x-0 md:border border-slate-200 flex flex-col overflow-hidden relative font-sans transition-all">
@@ -2442,67 +2520,30 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                                                         </div>
                                                     )}
 
-                                                    {onlineResults.map(onlineEx => {
-                                                        const isExpanded = expandedOnlineEx === onlineEx.id;
-                                                        return (
-                                                            <div key={onlineEx.id} className="flex flex-col border border-slate-100 rounded-xl bg-white shadow-sm overflow-hidden">
-                                                                <div
-                                                                    className="flex items-center gap-4 p-3 cursor-pointer hover:bg-slate-50 transition-colors"
-                                                                    onClick={() => toggleOnlineExpansion(onlineEx.id)}
-                                                                >
-                                                                    <div className="w-16 h-16 bg-slate-50 rounded-lg overflow-hidden shrink-0 border border-slate-100">
-                                                                        <img src={onlineEx.mediaUrl} className="w-full h-full object-cover" crossOrigin="anonymous" />
-                                                                    </div>
-                                                                    <div className="flex-1 min-w-0">
-                                                                        <div className="flex items-center justify-between">
-                                                                            <p className="font-bold text-slate-800 text-sm truncate uppercase">{onlineEx.name}</p>
-                                                                            {isExpanded ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
-                                                                        </div>
-                                                                        <div className="flex gap-1 mt-1">
-                                                                            <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 uppercase tracking-tighter">{onlineEx.bodyPart}</span>
-                                                                            <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 uppercase tracking-tighter">{onlineEx.equipment}</span>
-                                                                        </div>
-                                                                    </div>
-                                                                    <button
-                                                                        onClick={(e) => { e.stopPropagation(); handleImportOnlineExercise(onlineEx); }}
-                                                                        className="p-2 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-600 hover:text-white transition-colors"
-                                                                        title="Importar y añadir"
-                                                                    >
-                                                                        <Download size={20} />
-                                                                    </button>
-                                                                </div>
+                                                    {onlineResults.map(onlineEx => (
+                                                        <div key={onlineEx.id} className="mb-2">
+                                                            <ExerciseCard
+                                                                ex={{
+                                                                    ...onlineEx,
+                                                                    source: 'exercisedb'
+                                                                }}
+                                                                showCheckbox={false}
+                                                                showActions={false}
+                                                                // Use onImport prop to show the Import button in the header
+                                                                onImport={() => handleImportOnlineExercise(onlineEx)}
+                                                            />
+                                                        </div>
+                                                    ))}
 
-                                                                <AnimatePresence>
-                                                                    {isExpanded && (
-                                                                        <motion.div
-                                                                            initial={{ height: 0, opacity: 0 }}
-                                                                            animate={{ height: 'auto', opacity: 1 }}
-                                                                            exit={{ height: 0, opacity: 0 }}
-                                                                            className="px-4 pb-4 border-t border-slate-50 mt-1"
-                                                                        >
-                                                                            <div className="pt-3 space-y-2">
-                                                                                <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Instructions (English)</p>
-                                                                                <div className="text-[11px] text-slate-600 leading-relaxed italic">
-                                                                                    {(onlineEx.instructions || []).length > 0 ? (
-                                                                                        <ul className="space-y-1">
-                                                                                            {onlineEx.instructions.map((step, idx) => (
-                                                                                                <li key={idx} className="flex gap-2 text-[10px]">
-                                                                                                    <span className="text-blue-500 font-bold">{idx + 1}.</span>
-                                                                                                    <span>{step}</span>
-                                                                                                </li>
-                                                                                            ))}
-                                                                                        </ul>
-                                                                                    ) : (
-                                                                                        <p>No instructions available.</p>
-                                                                                    )}
-                                                                                </div>
-                                                                            </div>
-                                                                        </motion.div>
-                                                                    )}
-                                                                </AnimatePresence>
-                                                            </div>
-                                                        );
-                                                    })}
+                                                    {/* Load More Button (Only in Discovery Mode) */}
+                                                    {discoveryMode && onlineResults.length >= visibleCount && (
+                                                        <button
+                                                            onClick={() => setVisibleCount(prev => prev + 50)}
+                                                            className="w-full py-3 bg-slate-100 text-slate-500 font-bold text-xs uppercase rounded-xl hover:bg-slate-200 transition-colors"
+                                                        >
+                                                            Cargar más resultados ({visibleCount} mostrados)
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </>
                                         )}
@@ -2748,111 +2789,187 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
             }
 
             {/* Library View */}
-            {
-                mainView === 'library' && (
-                    <div className="flex-1 flex flex-col overflow-hidden">
-                        {/* Search & Filter */}
-                        <div className="p-4 border-b border-slate-100 space-y-3 bg-slate-50">
-                            <div className="relative">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                                <input
-                                    type="text"
-                                    value={librarySearchTerm}
-                                    onChange={(e) => setLibrarySearchTerm(e.target.value)}
-                                    placeholder="Buscar ejercicio..."
-                                    className="w-full pl-10 pr-4 py-3 rounded-xl bg-white border border-slate-200 outline-none focus:border-emerald-500 text-sm font-medium"
-                                />
-                            </div>
-                            <div className="flex items-center justify-between mt-2">
-                                <p className="text-[10px] text-slate-400 font-bold">
-                                    {filteredLibraryExercises.length} ejercicios
-                                    {(libraryFilters.pattern.length + libraryFilters.equipment.length + libraryFilters.level.length + libraryFilters.quality.length) > 0 &&
-                                        ` • Filtros activos`
-                                    }
-                                </p>
+            {/* Library View */}
+            {mainView === 'library' && (
+                <div className="flex-1 flex flex-col overflow-hidden">
+                    {/* Search & Filter */}
+                    <div className="p-4 border-b border-slate-100 space-y-3 bg-slate-50">
+                        {/* Unified Tab Selector - Matching Picker Modal */}
+                        <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm relative mb-2">
+                            <button
+                                onClick={() => setPickerTab('library')}
+                                className={`flex-1 py-2 text-xs font-black uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-2 ${pickerTab === 'library' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
+                            >
+                                Biblioteca
+                            </button>
+                            <button
+                                onClick={() => setPickerTab('online')}
+                                className={`flex-1 py-2 text-xs font-black uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-2 ${pickerTab === 'online' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                            >
+                                <UploadCloud size={14} /> Online
+                            </button>
+                        </div>
+
+                        <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                            <input
+                                type="text"
+                                value={pickerSearch}
+                                onChange={(e) => setPickerSearch(e.target.value)}
+                                placeholder={pickerTab === 'online' ? "Buscar en ExerciseDB (en inglés)..." : "Buscar ejercicio..."}
+                                className="w-full pl-10 pr-4 py-3 rounded-xl bg-white border border-slate-200 outline-none focus:border-emerald-500 text-sm font-medium"
+                            />
+                            {isSearchingOnline && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-500 animate-spin" size={18} />}
+                        </div>
+                        <div className="flex items-center justify-between mt-2">
+                            <p className="text-[10px] text-slate-400 font-bold">
+                                {pickerTab === 'library' ? `${filteredLibraryExercises.length} ejercicios` : `${onlineResults.length} resultados`}
+                                {pickerTab === 'library' && (pickerFilter.pattern.length + pickerFilter.equipment.length + pickerFilter.level.length + pickerFilter.quality.length) > 0 &&
+                                    ` • Filtros activos`
+                                }
+                            </p>
+                            {pickerTab === 'library' && (
                                 <button
                                     onClick={() => setLibraryFilterDrawerOpen(!libraryFilterDrawerOpen)}
-                                    className={`p-2 rounded-lg flex items-center gap-2 text-xs font-bold transition-colors ${(libraryFilters.pattern.length + libraryFilters.equipment.length + libraryFilters.level.length + libraryFilters.quality.length) > 0
+                                    className={`p-2 rounded-lg flex items-center gap-2 text-xs font-bold transition-colors ${(pickerFilter.pattern.length + pickerFilter.equipment.length + pickerFilter.level.length + pickerFilter.quality.length) > 0
                                         ? 'bg-slate-900 text-white'
                                         : 'bg-white text-slate-500 border border-slate-200'
                                         }`}
                                 >
                                     <Filter size={14} /> Filtros
                                 </button>
-                            </div>
+                            )}
+                        </div>
 
-                            {/* Library Filter Drawer */}
-                            <AnimatePresence>
-                                {libraryFilterDrawerOpen && (
-                                    <motion.div
-                                        initial={{ height: 0, opacity: 0 }}
-                                        animate={{ height: 'auto', opacity: 1 }}
-                                        exit={{ height: 0, opacity: 0 }}
-                                        className="overflow-hidden bg-white rounded-xl border border-slate-200 mt-2"
-                                    >
-                                        <div className="p-3 space-y-4">
-                                            <div>
-                                                <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Patrón</p>
-                                                <div className="flex flex-wrap gap-2">
-                                                    {PATTERNS.map(p => (
-                                                        <button key={p} onClick={() => toggleLibraryFilter('pattern', p)} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${libraryFilters.pattern.includes(p) ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>{p}</button>
-                                                    ))}
-                                                </div>
+                        {/* Library Filter Drawer (Uses Unified Toggle) */}
+                        <AnimatePresence>
+                            {libraryFilterDrawerOpen && (
+                                <motion.div
+                                    initial={{ height: 0, opacity: 0 }}
+                                    animate={{ height: 'auto', opacity: 1 }}
+                                    exit={{ height: 0, opacity: 0 }}
+                                    className="overflow-hidden bg-white rounded-xl border border-slate-200 mt-2"
+                                >
+                                    <div className="p-3 space-y-4">
+                                        <div>
+                                            <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Patrón</p>
+                                            <div className="flex flex-wrap gap-2">
+                                                {PATTERNS.map(p => (
+                                                    <button key={p} onClick={() => toggleFilter('pattern', p)} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${pickerFilter.pattern.includes(p) ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>{p}</button>
+                                                ))}
                                             </div>
-                                            <div>
-                                                <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Equipamiento</p>
-                                                <div className="flex flex-wrap gap-2">
-                                                    {EQUIPMENT.map(e => (
-                                                        <button key={e} onClick={() => toggleLibraryFilter('equipment', e)} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${libraryFilters.equipment.includes(e) ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>{e}</button>
-                                                    ))}
-                                                </div>
+                                        </div>
+                                        <div>
+                                            <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Equipamiento</p>
+                                            <div className="flex flex-wrap gap-2">
+                                                {EQUIPMENT.map(e => (
+                                                    <button key={e} onClick={() => toggleFilter('equipment', e)} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${pickerFilter.equipment.includes(e) ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>{e}</button>
+                                                ))}
                                             </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
                                             <div>
-                                                <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Dificultad (Nivel)</p>
-                                                <div className="flex flex-wrap gap-2">
+                                                <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Nivel</p>
+                                                <div className="flex flex-col gap-2">
                                                     {LEVELS.map(l => (
-                                                        <button key={l} onClick={() => toggleLibraryFilter('level', l)} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${libraryFilters.level.includes(l) ? 'bg-orange-100 text-orange-700 border-orange-200' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>{l}</button>
+                                                        <button key={l} onClick={() => toggleFilter('level', l)} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors text-left ${pickerFilter.level.includes(l) ? 'bg-orange-100 text-orange-700 border-orange-200' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>{l}</button>
                                                     ))}
                                                 </div>
                                             </div>
                                             <div>
                                                 <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Cualidad</p>
-                                                <div className="flex flex-wrap gap-2">
+                                                <div className="flex flex-col gap-2">
                                                     {QUALITIES.map(q => (
-                                                        <button key={q.id} onClick={() => toggleLibraryFilter('quality', q.id)} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${libraryFilters.quality.includes(q.id) ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>{q.label}</button>
+                                                        <button key={q.id} onClick={() => toggleFilter('quality', q.id)} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors text-left ${pickerFilter.quality.includes(q.id) ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>{q.label}</button>
                                                     ))}
                                                 </div>
                                             </div>
-                                            <button
-                                                onClick={() => setLibraryFilters({ pattern: [], equipment: [], level: [], quality: [] })}
-                                                className="w-full py-2 text-xs text-red-500 font-bold hover:bg-red-50 rounded-lg"
-                                            >
-                                                Limpiar Filtros
-                                            </button>
                                         </div>
-                                    </motion.div>
-                                )}
-                            </AnimatePresence>
-                        </div>
+                                        <button
+                                            onClick={() => setPickerFilter({ pattern: [], equipment: [], level: [], quality: [] })}
+                                            className="w-full py-2 text-xs text-red-500 font-bold hover:bg-red-50 rounded-lg"
+                                        >
+                                            Limpiar Filtros
+                                        </button>
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                    </div>
 
-                        {/* Exercise Grid */}
-                        <div className="flex-1 overflow-y-auto p-4">
-                            <div className="grid grid-cols-1 gap-3">
-                                {filteredLibraryExercises.map(ex => (
-                                    <ExerciseCard
-                                        key={ex.id}
-                                        ex={ex}
-                                        showCheckbox={false}
-                                        onEdit={() => handleLibraryEdit(ex)}
-                                        onDelete={() => handleLibraryDelete(ex.id)}
-                                        onDuplicate={() => handleLibraryDuplicate(ex)}
-                                    />
-                                ))}
-                            </div>
+                    {/* Exercise Grid */}
+                    <div className="flex-1 overflow-y-auto p-4">
+                        <div className="grid grid-cols-1 gap-3">
+                            {pickerTab === 'library' ? (
+                                filteredLibraryExercises.length > 0 ? (
+                                    filteredLibraryExercises.map(ex => (
+                                        <ExerciseCard
+                                            key={ex.id}
+                                            ex={ex}
+                                            showCheckbox={false}
+                                            onEdit={() => handleLibraryEdit(ex)}
+                                            onDelete={() => handleLibraryDelete(ex.id)}
+                                            onDuplicate={() => handleLibraryDuplicate(ex)}
+                                        />
+                                    ))
+                                ) : (
+                                    <div className="text-center py-20 opacity-40">
+                                        <Search size={48} className="mx-auto mb-4" />
+                                        <p className="font-bold text-sm">No hay resultados en la biblioteca local</p>
+                                    </div>
+                                )
+                            ) : (
+                                <>
+                                    {pickerTab === 'online' && (
+                                        <div className="mb-4">
+                                            {!discoveryMode && (
+                                                <button
+                                                    onClick={handleEnableDiscovery}
+                                                    className="w-full p-4 bg-emerald-50 border border-dashed border-emerald-300 rounded-2xl flex items-center gap-4 text-emerald-700 hover:bg-emerald-100 transition-all group"
+                                                >
+                                                    <Zap size={24} className="group-hover:scale-110 transition-transform" />
+                                                    <div className="text-left">
+                                                        <p className="font-black text-sm uppercase tracking-tight">Activar Modo Discovery</p>
+                                                        <p className="text-[10px] font-bold opacity-70">Carga rápida de más de 1300 ejercicios sin límites.</p>
+                                                    </div>
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {isSearchingOnline ? (
+                                        <div className="text-center py-20">
+                                            <Loader2 className="animate-spin mx-auto text-emerald-500 mb-4" size={32} />
+                                            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Buscando en la nube...</p>
+                                        </div>
+                                    ) : onlineResults.length > 0 ? (
+                                        onlineResults.map(onlineEx => (
+                                            <ExerciseCard
+                                                key={onlineEx.id}
+                                                ex={{
+                                                    ...onlineEx,
+                                                    source: 'exercisedb'
+                                                }}
+                                                showCheckbox={false}
+                                                showActions={false}
+                                                onImport={() => handleImportOnlineExercise(onlineEx)}
+                                            />
+                                        ))
+                                    ) : (
+                                        <div className="text-center py-20 opacity-40">
+                                            <UploadCloud size={48} className="mx-auto mb-4" />
+                                            <p className="font-bold text-sm">
+                                                {pickerSearch.length < 3 ? 'Escribe al menos 3 letras para buscar' : 'No se encontraron resultados online'}
+                                            </p>
+                                        </div>
+                                    )}
+                                </>
+                            )}
                         </div>
                     </div>
-                )
-            }
+                </div>
+            )}
+
 
             {/* Sessions View */}
             {
@@ -2910,7 +3027,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                 onSave={handleLibrarySave}
                 onClose={() => { setLibraryEditDrawerOpen(false); setLibraryEditExercise(null); }}
             />
-        </div >
+        </div>
     );
 };
 

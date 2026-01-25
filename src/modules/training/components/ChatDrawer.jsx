@@ -1,15 +1,25 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useDragControls } from 'framer-motion';
 import { X, Send, User, ShieldCheck, ChevronDown } from 'lucide-react';
 import { TrainingDB } from '../services/db';
 import { useAuth } from '../../../context/AuthContext';
 
-const ChatDrawer = ({ isOpen, onClose, athleteId, athleteName }) => {
+const ChatDrawer = ({ isOpen, onClose, athleteId, athleteName, athletePhoto, lastActiveAt, onNameClick }) => {
     const { currentUser } = useAuth();
     const [messages, setMessages] = useState([]);
     const [inputText, setInputText] = useState('');
     const [loading, setLoading] = useState(true);
     const scrollRef = useRef(null);
+    const dragControls = useDragControls();
+
+    // Calculate real presence status
+    const isOnline = lastActiveAt && (
+        (lastActiveAt instanceof Date ? lastActiveAt.getTime() : lastActiveAt.toMillis?.() || 0) > Date.now() - 4 * 60 * 1000
+    );
+
+    const lastActiveText = !isOnline && lastActiveAt ? (
+        `Hace ${Math.abs(Math.round(((lastActiveAt instanceof Date ? lastActiveAt.getTime() : lastActiveAt.toMillis?.() || 0) - Date.now()) / 60000))} min`
+    ) : null;
 
     // Close on Escape key
     useEffect(() => {
@@ -78,6 +88,14 @@ const ChatDrawer = ({ isOpen, onClose, athleteId, athleteName }) => {
                         animate={{ y: 0, opacity: 1 }}
                         exit={{ y: '100%', opacity: 0 }}
                         transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                        drag="y"
+                        dragControls={dragControls}
+                        dragListener={false}
+                        dragConstraints={{ top: 0, bottom: 0 }}
+                        dragElastic={{ top: 0, bottom: 0.8 }}
+                        onDragEnd={(e, info) => {
+                            if (info.offset.y > 100) onClose();
+                        }}
                         className={`
                             fixed z-[250] bg-white shadow-2xl flex flex-col overflow-hidden
                             /* Mobile: Bottom Sheet */
@@ -86,32 +104,48 @@ const ChatDrawer = ({ isOpen, onClose, athleteId, athleteName }) => {
                             md:bottom-6 md:right-6 md:left-auto md:w-[400px] md:h-[600px] md:rounded-[32px] md:border md:border-slate-100
                         `}
                     >
-                        {/* Header */}
-                        <div className="p-4 pt-3 border-b border-slate-100 flex flex-col bg-white shrink-0 relative">
+                        {/* Header (Drag area) */}
+                        <div
+                            onPointerDown={(e) => dragControls.start(e)}
+                            className="p-4 pt-3 border-b border-slate-100 flex flex-col bg-white shrink-0 relative cursor-grab active:cursor-grabbing touch-none"
+                        >
                             {/* Mobile Drag Handle Visual */}
                             <div className="w-12 h-1 bg-slate-200 rounded-full mx-auto mb-4 md:hidden" />
 
                             <div className="flex justify-between items-center px-1">
-                                <div className="flex items-center gap-3">
+                                <div
+                                    className={`flex items-center gap-3 ${onNameClick ? 'cursor-pointer' : ''}`}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onNameClick?.(athleteId);
+                                    }}
+                                >
                                     <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black shadow-sm shrink-0 overflow-hidden ${athleteName === 'Tu Coach' ? 'bg-slate-900' : 'bg-indigo-50 text-indigo-600'}`}>
                                         {athleteName === 'Tu Coach' ? (
                                             <img src="/brand-compact.png" alt="Coach" className="w-5 h-auto brightness-0 invert" />
+                                        ) : athletePhoto ? (
+                                            <img src={athletePhoto} alt={athleteName} className="w-full h-full object-cover" />
                                         ) : (
                                             athleteName?.[0] || 'A'
                                         )}
                                     </div>
                                     <div>
-                                        <h2 className="text-base font-black text-slate-900 tracking-tight leading-none">
+                                        <h2 className="text-base font-black text-slate-900 tracking-tight leading-none hover:text-emerald-500 transition-colors uppercase">
                                             {athleteName || 'Chat'}
                                         </h2>
                                         <div className="flex items-center gap-1.5 mt-1">
-                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                            <p className="text-slate-400 text-[9px] font-black uppercase tracking-wider">En línea</p>
+                                            <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
+                                            <p className="text-slate-400 text-[9px] font-black uppercase tracking-wider">
+                                                {isOnline ? 'En línea' : lastActiveText || 'Desconectado'}
+                                            </p>
                                         </div>
                                     </div>
                                 </div>
                                 <button
-                                    onClick={onClose}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onClose();
+                                    }}
                                     className="p-2 bg-slate-50 hover:bg-slate-100 rounded-full transition-all text-slate-400 hover:text-slate-900"
                                 >
                                     {/* Chevron Down on Mobile (implies "dismiss"), X on Desktop */}

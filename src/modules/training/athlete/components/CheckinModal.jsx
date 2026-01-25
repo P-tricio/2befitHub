@@ -770,6 +770,36 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                                                         ))}
                                                     </select>
                                                 )}
+
+                                                {field.type === 'scale' && (
+                                                    <div className="space-y-2">
+                                                        <div className="flex justify-between px-1">
+                                                            <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">
+                                                                0 = {field.options?.split(',')[0]?.trim() || 'Nada'}
+                                                            </span>
+                                                            <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">
+                                                                10 = {field.options?.split(',')[1]?.trim() || 'Mucho'}
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex flex-wrap gap-2 justify-center pb-2">
+                                                            {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(val => (
+                                                                <button
+                                                                    key={val}
+                                                                    onClick={() => setFormAnswers(prev => ({ ...prev, [field.id]: val }))}
+                                                                    className={`
+                                                                        w-10 h-10 rounded-xl text-sm font-black transition-all
+                                                                        ${parseInt(formAnswers[field.id]) === val
+                                                                            ? 'bg-slate-900 text-white shadow-lg scale-110'
+                                                                            : 'bg-slate-50 text-slate-400 hover:bg-slate-100'
+                                                                        }
+                                                                    `}
+                                                                >
+                                                                    {val}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                         ))}
                                     </div>

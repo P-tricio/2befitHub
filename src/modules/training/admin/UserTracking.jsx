@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { TrainingDB } from '../services/db';
-import { X, TrendingUp, TrendingDown, Activity, Calendar, Settings, Plus, Trash2, Footprints, Heart, BarChart, Utensils, Info, Edit2, Trophy, CalendarDays, CheckSquare, Camera } from 'lucide-react';
+import { X, TrendingUp, TrendingDown, Activity, Calendar, Settings, Plus, Trash2, Footprints, Heart, BarChart, Utensils, Info, Edit2, Trophy, CalendarDays, CheckSquare, Camera, FileText, ChevronDown } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart as RechartsBarChart, Bar } from 'recharts';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -16,6 +16,9 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
     const [activeTab, setActiveTab] = useState(initialTab); // 'metrics' | 'habits' | 'planning' | 'history'
     const [showConfigInline, setShowConfigInline] = useState(false);
     const [selectedPhoto, setSelectedPhoto] = useState(null);
+    const [availableForms, setAvailableForms] = useState([]);
+    const [formTasks, setFormTasks] = useState([]);
+    const [expandedForms, setExpandedForms] = useState({}); // { taskId: boolean }
     const [customMetrics, setCustomMetrics] = useState(user.customMeasurements?.length > 0 ? user.customMeasurements : ['waist', 'hip']);
     const [activeMetric, setActiveMetric] = useState('weight');
     const [useSmoothing, setUseSmoothing] = useState(false);
@@ -56,12 +59,40 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
     }, [user.id]);
 
     const loadData = async () => {
+        if (!user?.id) return;
         try {
-            const data = await TrainingDB.tracking.getHistory(user.id);
-            // TrainingDB.tracking.getHistory already returns chronological [Oldest -> Newest]
-            setHistory(data);
+            setLoading(true);
+            const [data, forms, userSnap] = await Promise.allSettled([
+                TrainingDB.tracking.getHistory(user.id),
+                TrainingDB.forms.getAll(),
+                TrainingDB.users.getById(user.id)
+            ]);
+
+            const historyData = data.status === 'fulfilled' ? data.value : [];
+            const formsData = forms.status === 'fulfilled' ? forms.value : [];
+            const userData = userSnap.status === 'fulfilled' ? userSnap.value : {};
+            const scheduleData = userData?.schedule || {};
+
+            setHistory(Array.isArray(historyData) ? historyData : []);
+            setAvailableForms(Array.isArray(formsData) ? formsData : []);
+
+            // Extract all form results from schedule
+            const formsFound = [];
+            Object.entries(scheduleData || {}).forEach(([date, dayTasks]) => {
+                if (Array.isArray(dayTasks)) {
+                    dayTasks.forEach(task => {
+                        const results = task.results || {};
+                        const answers = results.formAnswers || results.answers; // Defensive check
+                        if (answers && Object.keys(answers).length > 0) {
+                            formsFound.push({ ...task, date, results: { ...results, formAnswers: answers } });
+                        }
+                    });
+                }
+            });
+            // Sort by date newest first
+            setFormTasks(formsFound.sort((a, b) => b.date.localeCompare(a.date)));
         } catch (error) {
-            console.error(error);
+            console.error("Error loading tracking data:", error);
         } finally {
             setLoading(false);
         }
@@ -140,42 +171,45 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
         <div className="fixed inset-0 w-full h-full z-[100] bg-white flex flex-col animate-in slide-in-from-right duration-300">
             {/* Header Redesigned */}
             <div className="relative z-[110] bg-white border-b border-slate-100 px-4 py-2 shrink-0">
-                <div className="max-w-[1600px] mx-auto flex items-center justify-between gap-4">
+                <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row items-center justify-between gap-4 py-1">
                     {/* Left: Close & Title */}
-                    <div className="flex items-center gap-4">
-                        <button
-                            onClick={onClose}
-                            className="p-2.5 bg-slate-50 hover:bg-slate-100 rounded-full transition-all text-slate-400 hover:text-slate-900 active:scale-95"
-                        >
-                            <X size={20} />
-                        </button>
-                        <div>
+                    <div className="w-full md:w-auto flex items-center justify-between md:justify-start gap-4">
+                        <div className="flex items-center gap-4">
+                            <button
+                                onClick={onClose}
+                                className="p-2.5 bg-slate-50 hover:bg-slate-100 rounded-full transition-all text-slate-400 hover:text-slate-900 active:scale-95"
+                            >
+                                <X size={20} />
+                            </button>
                             <h2 className="text-xl font-black text-slate-900 leading-tight">{user.name || user.displayName}</h2>
                         </div>
                     </div>
 
-                    {/* Center: Tabs redesigned with icons */}
-                    <div className="flex bg-slate-100/80 p-1.5 rounded-2xl border border-slate-200/50 gap-1">
-                        {[
-                            { id: 'metrics', icon: <Activity size={18} />, label: 'Métricas' },
-                            { id: 'habits', icon: <CheckSquare size={18} />, label: 'Hábitos' },
-                            { id: 'planning', icon: <CalendarDays size={18} />, label: 'Planificación' },
-                            { id: 'history', icon: <Trophy size={18} />, label: 'Historial' }
-                        ].map(tab => (
-                            <button
-                                key={tab.id}
-                                onClick={() => setActiveTab(tab.id)}
-                                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black transition-all group ${activeTab === tab.id ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-900/5' : 'text-slate-400 hover:text-slate-900 hover:bg-white/50'}`}
-                                title={tab.label}
-                            >
-                                {tab.icon}
-                                <span className="hidden lg:inline uppercase tracking-widest">{tab.label}</span>
-                            </button>
-                        ))}
+                    {/* Center: Tabs redesigned with icons - Unified and responsive */}
+                    <div className="w-full md:w-auto">
+                        <div className="flex bg-slate-100/80 p-1 rounded-2xl border border-slate-200/50 gap-0.5 w-full md:w-fit mx-auto md:mx-0">
+                            {[
+                                { id: 'metrics', icon: <Activity size={18} />, label: 'Métricas' },
+                                { id: 'habits', icon: <CheckSquare size={18} />, label: 'Hábitos' },
+                                { id: 'forms', icon: <FileText size={18} />, label: 'Cuestionarios' },
+                                { id: 'planning', icon: <CalendarDays size={18} />, label: 'Planificación' },
+                                { id: 'history', icon: <Trophy size={18} />, label: 'Historial' }
+                            ].map(tab => (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => setActiveTab(tab.id)}
+                                    className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-2.5 md:px-4 py-2.5 rounded-xl text-[10px] font-black transition-all group ${activeTab === tab.id ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-900/5' : 'text-slate-400 hover:text-slate-900 hover:bg-white/50'}`}
+                                    title={tab.label}
+                                >
+                                    <span className="shrink-0">{tab.icon}</span>
+                                    <span className="uppercase tracking-widest hidden md:inline">{tab.label}</span>
+                                </button>
+                            ))}
+                        </div>
                     </div>
 
-                    {/* Right: Close Spacer */}
-                    <div className="w-10 md:w-40" />
+                    {/* Right: Close Spacer (Hidden on mobile to save space) */}
+                    <div className="hidden md:block md:w-40" />
                 </div>
             </div>
 
@@ -391,44 +425,57 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
                                                             </tr>
                                                         </thead>
                                                         <tbody className="divide-y divide-slate-50">
-                                                            {[...history].reverse().map((entry) => (
-                                                                <tr key={entry.date} className="group hover:bg-slate-50/50 transition-all">
-                                                                    <td className="p-6 text-slate-500 font-bold text-xs uppercase">
-                                                                        {format(new Date(entry.date), 'dd MMMM yyyy', { locale: es })}
-                                                                    </td>
-                                                                    <td className={`p-6 font-black text-sm ${activeMetric === 'weight' ? 'text-indigo-600 bg-indigo-50/10' : 'text-slate-900'}`}>
-                                                                        {entry.weight || '-'}
-                                                                    </td>
-                                                                    <td className={`p-6 font-black text-sm ${activeMetric === 'steps' ? 'text-emerald-600 bg-emerald-50/10' : 'text-slate-900'}`}>
-                                                                        {entry.steps?.toLocaleString() || '-'}
-                                                                    </td>
-                                                                    {customMetrics.map(m => (
-                                                                        <td key={m} className={`p-6 font-black text-sm ${activeMetric === m ? 'text-rose-500 bg-rose-50/10' : 'text-slate-900'}`}>
-                                                                            {entry.measurements?.[m] || '-'}
+                                                            {[...history].reverse()
+                                                                .filter(entry => {
+                                                                    // Only show entries with numeric data
+                                                                    const hasWeight = entry.weight !== null && entry.weight !== undefined && entry.weight !== '';
+                                                                    const hasSteps = entry.steps !== null && entry.steps !== undefined && entry.steps !== '';
+                                                                    const hasMeasurements = entry.measurements && Object.values(entry.measurements).some(v => v !== null && v !== undefined && v !== '');
+                                                                    return hasWeight || hasSteps || hasMeasurements;
+                                                                })
+                                                                .map((entry) => (
+                                                                    <tr key={entry.date} className="group hover:bg-slate-50/50 transition-all">
+                                                                        <td className="p-6 text-slate-500 font-bold text-xs uppercase">
+                                                                            {format(new Date(entry.date + 'T12:00:00'), 'dd MMMM yyyy', { locale: es })}
                                                                         </td>
-                                                                    ))}
-                                                                    <td className="p-6">
-                                                                        <div className="flex items-center justify-end gap-2">
-                                                                            <button
-                                                                                onClick={() => handleDeleteEntry(entry.date)}
-                                                                                className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
-                                                                            >
-                                                                                <Trash2 size={16} />
-                                                                            </button>
-                                                                        </div>
-                                                                    </td>
-                                                                </tr>
-                                                            ))}
-                                                            {history.length === 0 && (
-                                                                <tr>
-                                                                    <td colSpan={customMetrics.length + 4} className="p-20 text-center">
-                                                                        <div className="space-y-4">
-                                                                            <Activity size={48} className="mx-auto text-slate-100" />
-                                                                            <p className="text-slate-400 font-black text-xs uppercase tracking-widest">No hay registros aún</p>
-                                                                        </div>
-                                                                    </td>
-                                                                </tr>
-                                                            )}
+                                                                        <td className={`p-6 font-black text-sm ${activeMetric === 'weight' ? 'text-indigo-600 bg-indigo-50/10' : 'text-slate-900'}`}>
+                                                                            {entry.weight || '-'}
+                                                                        </td>
+                                                                        <td className={`p-6 font-black text-sm ${activeMetric === 'steps' ? 'text-emerald-600 bg-emerald-50/10' : 'text-slate-900'}`}>
+                                                                            {entry.steps?.toLocaleString() || '-'}
+                                                                        </td>
+                                                                        {customMetrics.map(m => (
+                                                                            <td key={m} className={`p-6 font-black text-sm ${activeMetric === m ? 'text-rose-500 bg-rose-50/10' : 'text-slate-900'}`}>
+                                                                                {entry.measurements?.[m] || '-'}
+                                                                            </td>
+                                                                        ))}
+                                                                        <td className="p-6">
+                                                                            <div className="flex items-center justify-end gap-2">
+                                                                                <button
+                                                                                    onClick={() => handleDeleteEntry(entry.date)}
+                                                                                    className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
+                                                                                >
+                                                                                    <Trash2 size={16} />
+                                                                                </button>
+                                                                            </div>
+                                                                        </td>
+                                                                    </tr>
+                                                                ))}
+                                                            {history.filter(entry => {
+                                                                const hasWeight = entry.weight !== null && entry.weight !== undefined && entry.weight !== '';
+                                                                const hasSteps = entry.steps !== null && entry.steps !== undefined && entry.steps !== '';
+                                                                const hasMeasurements = entry.measurements && Object.values(entry.measurements).some(v => v !== null && v !== undefined && v !== '');
+                                                                return hasWeight || hasSteps || hasMeasurements;
+                                                            }).length === 0 && (
+                                                                    <tr>
+                                                                        <td colSpan={customMetrics.length + 4} className="p-20 text-center">
+                                                                            <div className="space-y-4">
+                                                                                <Activity size={48} className="mx-auto text-slate-100" />
+                                                                                <p className="text-slate-400 font-black text-xs uppercase tracking-widest">No hay registros numéricos aún</p>
+                                                                            </div>
+                                                                        </td>
+                                                                    </tr>
+                                                                )}
                                                         </tbody>
                                                     </table>
                                                 </div>
@@ -558,6 +605,16 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
                         <div className="space-y-12">
                             <section>
                                 <div className="text-center mb-8">
+                                    <h3 className="text-2xl font-black text-slate-900">Calendario de Cumplimiento</h3>
+                                    <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest mt-1">Vista del Atleta</p>
+                                </div>
+                                <div className="bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden max-w-lg mx-auto">
+                                    <AthleteHabits userId={user.id} isAdminView={true} key={JSON.stringify(minimums)} />
+                                </div>
+                            </section>
+
+                            <section>
+                                <div className="text-center mb-8">
                                     <h3 className="text-2xl font-black text-slate-900">Gestión de Hábitos</h3>
                                     <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest mt-1">Organizar y Editar Mínimos</p>
                                 </div>
@@ -608,16 +665,74 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
                                     history={history}
                                 />
                             </section>
+                        </div>
+                    ) : activeTab === 'forms' ? (
+                        <div className="space-y-6">
+                            <div className="text-center mb-8">
+                                <h3 className="text-2xl font-black text-slate-900">Cuestionarios Enviados</h3>
+                                <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest mt-1">Historial de formularios completados</p>
+                            </div>
 
-                            <section>
-                                <div className="text-center mb-8">
-                                    <h3 className="text-2xl font-black text-slate-900">Calendario de Cumplimiento</h3>
-                                    <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest mt-1">Vista del Atleta</p>
-                                </div>
-                                <div className="bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden max-w-lg mx-auto">
-                                    <AthleteHabits userId={user.id} isAdminView={true} key={JSON.stringify(minimums)} />
-                                </div>
-                            </section>
+                            <div className="grid grid-cols-1 gap-4 max-w-4xl mx-auto">
+                                {formTasks.length === 0 ? (
+                                    <div className="py-20 text-center space-y-4 bg-white rounded-[3rem] border border-dashed border-slate-200">
+                                        <FileText size={48} className="mx-auto text-slate-100" />
+                                        <p className="text-slate-400 font-black text-xs uppercase tracking-widest">No hay formularios completados aún</p>
+                                    </div>
+                                ) : (
+                                    formTasks.map((task, idx) => {
+                                        const formDef = availableForms.find(f => f.id === task.config?.formId);
+                                        const isExpanded = expandedForms[task.id];
+                                        return (
+                                            <div key={task.id || idx} className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300" style={{ animationDelay: `${idx * 50}ms` }}>
+                                                <button
+                                                    onClick={() => setExpandedForms(prev => ({ ...prev, [task.id]: !prev[task.id] }))}
+                                                    className="w-full text-left p-6 bg-slate-50/50 hover:bg-slate-50 transition-colors flex items-center justify-between group"
+                                                >
+                                                    <div className="flex items-center gap-4">
+                                                        <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-slate-900 shadow-sm ring-1 ring-slate-900/5 transition-transform group-hover:scale-105">
+                                                            <FileText size={20} />
+                                                        </div>
+                                                        <div>
+                                                            <h4 className="font-black text-slate-900">{formDef?.name || task.title || 'Formulario'}</h4>
+                                                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                                                Completado el {format(new Date(task.date + 'T12:00:00'), 'dd MMMM yyyy', { locale: es })}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <div className={`p-2 rounded-xl transition-all ${isExpanded ? 'bg-slate-900 text-white rotate-180' : 'bg-white text-slate-400 border border-slate-100'}`}>
+                                                        <ChevronDown size={20} />
+                                                    </div>
+                                                </button>
+
+                                                <AnimatePresence>
+                                                    {isExpanded && (
+                                                        <motion.div
+                                                            initial={{ height: 0, opacity: 0 }}
+                                                            animate={{ height: 'auto', opacity: 1 }}
+                                                            exit={{ height: 0, opacity: 0 }}
+                                                            className="overflow-hidden border-t border-slate-100"
+                                                        >
+                                                            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                                {Object.entries(task.results.formAnswers).map(([qId, answer]) => {
+                                                                    const field = formDef?.fields?.find(f => f.id === qId);
+                                                                    const label = field?.label || qId;
+                                                                    return (
+                                                                        <div key={qId} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:bg-white transition-colors">
+                                                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 leading-relaxed">{label}</p>
+                                                                            <p className="text-sm font-black text-slate-800">{answer?.toString() || '-'}</p>
+                                                                        </div>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        </motion.div>
+                                                    )}
+                                                </AnimatePresence>
+                                            </div>
+                                        );
+                                    })
+                                )}
+                            </div>
                         </div>
                     ) : activeTab === 'planning' ? (
                         <div className="bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden p-4 min-h-[600px]">

@@ -23,3 +23,6 @@ dist-ssr
 *.sln
 *.sw?
 .env
+service-account.json
+src/data/1324exercisedb_catalog_2026-01-25.json
+src/data/offline_catalog.json

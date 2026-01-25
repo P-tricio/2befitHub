@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useDragControls } from 'framer-motion';
 import { X, Search, MessageCircle, Send, User as UserIcon, Check, ChevronLeft, ArrowRight, ChevronDown, ShieldCheck } from 'lucide-react';
 import { TrainingDB } from '../../services/db';
 import { useAuth } from '../../../../context/AuthContext';
@@ -8,7 +8,7 @@ import { db } from '../../../../lib/firebase';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 
-const AdminChatManager = ({ isOpen, onClose }) => {
+const AdminChatManager = ({ isOpen, onClose, onUserClick }) => {
     const { currentUser } = useAuth();
     const [users, setUsers] = useState([]);
     const [filteredUsers, setFilteredUsers] = useState([]);
@@ -18,6 +18,7 @@ const AdminChatManager = ({ isOpen, onClose }) => {
     const [inputText, setInputText] = useState('');
     const [loading, setLoading] = useState(true);
     const scrollRef = useRef(null);
+    const dragControls = useDragControls();
 
     // Fetch Users
     useEffect(() => {
@@ -71,6 +72,13 @@ const AdminChatManager = ({ isOpen, onClose }) => {
 
         const unsubscribe = TrainingDB.messages.listen(selectedUser.id, (msgs) => {
             setMessages(msgs);
+
+            // Mark unread messages from athlete as read
+            msgs.forEach(msg => {
+                if (!msg.read && msg.senderId === selectedUser.id) {
+                    TrainingDB.messages.markAsRead(selectedUser.id, msg.id);
+                }
+            });
         });
 
         return () => unsubscribe();
@@ -121,6 +129,14 @@ const AdminChatManager = ({ isOpen, onClose }) => {
                         animate={{ y: 0, opacity: 1 }}
                         exit={{ y: '100%', opacity: 0 }}
                         transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                        drag="y"
+                        dragControls={dragControls}
+                        dragListener={false}
+                        dragConstraints={{ top: 0, bottom: 0 }}
+                        dragElastic={{ top: 0, bottom: 0.8 }}
+                        onDragEnd={(e, info) => {
+                            if (info.offset.y > 100) handleClose();
+                        }}
                         className={`
                             fixed z-[250] bg-white shadow-2xl overflow-hidden flex flex-col items-stretch
                             /* Mobile: Bottom Sheet */
@@ -135,8 +151,11 @@ const AdminChatManager = ({ isOpen, onClose }) => {
                             /* Mobile: Hide if chat open */
                             ${selectedUser ? 'hidden md:flex' : 'flex'} w-full md:w-80 h-full
                         `}>
-                            {/* Header */}
-                            <div className="p-4 pt-3 border-b border-slate-100 flex flex-col bg-white shrink-0">
+                            {/* Header (Drag Handle) */}
+                            <div
+                                onPointerDown={(e) => dragControls.start(e)}
+                                className="p-4 pt-3 border-b border-slate-100 flex flex-col bg-white shrink-0 cursor-grab active:cursor-grabbing touch-none"
+                            >
                                 <div className="w-12 h-1 bg-slate-200 rounded-full mx-auto mb-4 md:hidden" />
                                 <div className="flex justify-between items-center px-1">
                                     <h2 className="text-xl font-black text-slate-900 tracking-tight">Mensajes</h2>
@@ -223,17 +242,32 @@ const AdminChatManager = ({ isOpen, onClose }) => {
                         `}>
                             {selectedUser ? (
                                 <>
-                                    {/* Chat Header */}
-                                    <div className="p-4 pt-3 border-b border-slate-100 flex items-center gap-3 shadow-sm z-10 bg-white shrink-0">
+                                    {/* Chat Header (Drag Handle) */}
+                                    <div
+                                        onPointerDown={(e) => dragControls.start(e)}
+                                        className="p-4 pt-3 border-b border-slate-100 flex items-center gap-3 shadow-sm z-10 bg-white shrink-0 relative cursor-grab active:cursor-grabbing touch-none"
+                                    >
                                         <div className="md:hidden w-12 h-1 bg-slate-200 rounded-full absolute top-3 left-1/2 -translate-x-1/2" />
 
                                         {/* Back Button (Mobile Only) */}
-                                        <button onClick={() => setSelectedUser(null)} className="md:hidden p-2 -ml-2 text-slate-400 hover:text-slate-900 mt-2 md:mt-0">
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setSelectedUser(null);
+                                            }}
+                                            className="p-2 -ml-2 text-slate-400 hover:text-slate-900 mt-2 md:mt-0 md:hidden"
+                                        >
                                             <ChevronLeft size={24} />
                                         </button>
 
-                                        <div className="flex items-center gap-3 mt-2 md:mt-0">
-                                            <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden shrink-0">
+                                        <div
+                                            className="flex items-center gap-3 mt-2 md:mt-0 cursor-pointer group/header"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                onUserClick?.(selectedUser);
+                                            }}
+                                        >
+                                            <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden shrink-0 transition-transform group-hover/header:scale-105 shadow-sm">
                                                 {selectedUser.photoURL ? (
                                                     <img src={selectedUser.photoURL} alt="Profile" className="w-full h-full object-cover" />
                                                 ) : (
@@ -241,15 +275,40 @@ const AdminChatManager = ({ isOpen, onClose }) => {
                                                 )}
                                             </div>
                                             <div>
-                                                <h3 className="font-black text-slate-900 text-sm leading-none">{selectedUser.displayName}</h3>
-                                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-1">
-                                                    {selectedUser.email || 'Atleta'}
-                                                </p>
+                                                <h3 className="font-black text-slate-900 text-sm leading-none group-hover/header:text-emerald-500 transition-colors uppercase tracking-tight">
+                                                    {selectedUser.displayName}
+                                                </h3>
+                                                <div className="flex items-center gap-1.5 mt-1">
+                                                    {(() => {
+                                                        const lastActiveAt = selectedUser.lastActiveAt;
+                                                        const isOnline = lastActiveAt && (
+                                                            (lastActiveAt instanceof Date ? lastActiveAt.getTime() : lastActiveAt.toMillis?.() || 0) > Date.now() - 4 * 60 * 1000
+                                                        );
+                                                        const lastActiveText = !isOnline && lastActiveAt ? (
+                                                            `Hace ${Math.abs(Math.round(((lastActiveAt instanceof Date ? lastActiveAt.getTime() : lastActiveAt.toMillis?.() || 0) - Date.now()) / 60000))} min`
+                                                        ) : null;
+
+                                                        return (
+                                                            <>
+                                                                <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
+                                                                <p className="text-slate-400 text-[9px] font-black uppercase tracking-wider">
+                                                                    {isOnline ? 'En línea' : lastActiveText || 'Desconectado'}
+                                                                </p>
+                                                            </>
+                                                        );
+                                                    })()}
+                                                </div>
                                             </div>
                                         </div>
 
                                         {/* Desktop Close */}
-                                        <button onClick={handleClose} className="hidden md:block ml-auto p-2 hover:bg-slate-50 rounded-full text-slate-400">
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleClose();
+                                            }}
+                                            className="hidden md:block ml-auto p-2 hover:bg-slate-50 rounded-full text-slate-400"
+                                        >
                                             <X size={20} />
                                         </button>
                                     </div>

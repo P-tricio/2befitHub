@@ -1,5 +1,5 @@
 import React from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { Dumbbell, Layers, Calendar, ClipboardList, ArrowLeft, Users, LogOut, Sparkles, MessageCircle } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 import AdminChatManager from './components/AdminChatManager';
@@ -8,9 +8,15 @@ import { db } from '../../../lib/firebase';
 
 const AdminLayout = () => {
     const { logout } = useAuth();
+    const navigate = useNavigate();
     const [isMobileLandscape, setIsMobileLandscape] = React.useState(false);
     const [isChatOpen, setIsChatOpen] = React.useState(false);
     const [totalUnread, setTotalUnread] = React.useState(0);
+
+    const handleUserClick = (user) => {
+        setIsChatOpen(false);
+        navigate(`/training/admin/users?athleteId=${user.id}`);
+    };
 
     React.useEffect(() => {
         const checkOrientation = () => {
@@ -127,6 +133,7 @@ const AdminLayout = () => {
             <AdminChatManager
                 isOpen={isChatOpen}
                 onClose={() => setIsChatOpen(false)}
+                onUserClick={handleUserClick}
             />
         </div>
     );

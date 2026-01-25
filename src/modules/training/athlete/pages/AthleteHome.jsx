@@ -80,7 +80,10 @@ const AthleteHome = () => {
     const getSessionDetails = (sessionId) => sessionsMap[sessionId] || null;
 
     const getComputedTasks = () => {
-        const tasks = [...todayTasks];
+        // Filter out scheduled messages from the UI (they are hidden tasks)
+        const visibleTasks = todayTasks.filter(t => t.type !== 'scheduled_message');
+
+        const tasks = [...visibleTasks];
         const todayKey = format(new Date(), 'yyyy-MM-dd');
 
         const hasMinimums = userMinimums && (
@@ -127,6 +130,67 @@ const AthleteHome = () => {
 
         return tasks;
     };
+
+    // Scheduled Messages Delivery Effect
+    const processingRef = React.useRef(new Set());
+
+    useEffect(() => {
+        if (!todayTasks || todayTasks.length === 0) return;
+
+        const checkScheduledMessages = async () => {
+            const now = new Date();
+            const todayStr = format(now, 'yyyy-MM-dd');
+
+            const pendingMessages = todayTasks.filter(t =>
+                t.type === 'scheduled_message' &&
+                t.status !== 'delivered' &&
+                t.config?.message &&
+                t.config?.scheduledTime
+            );
+
+            for (const task of pendingMessages) {
+                // Skip if already processing this task locally to prevent race conditions
+                if (processingRef.current.has(task.id)) continue;
+
+                const [hours, minutes] = task.config.scheduledTime.split(':').map(Number);
+                const scheduledDate = new Date(now);
+                scheduledDate.setHours(hours, minutes, 0, 0);
+
+                // If scheduled time has passed (or is now)
+                if (now >= scheduledDate) {
+                    try {
+                        processingRef.current.add(task.id);
+                        console.log(`[ScheduledMessage] Delivering message: ${task.id}`);
+
+                        // 1. Send Message
+                        await TrainingDB.messages.send(
+                            currentUser.uid,
+                            'coach',
+                            task.config.message,
+                            scheduledDate
+                        );
+
+                        // 2. Mark task as delivered
+                        await TrainingDB.users.updateTaskInSchedule(
+                            currentUser.uid,
+                            todayStr,
+                            task.id,
+                            { status: 'delivered' }
+                        );
+
+                    } catch (error) {
+                        console.error('[ScheduledMessage] Error delivering:', error);
+                        processingRef.current.delete(task.id); // Release lock on error to retry later
+                    }
+                }
+            }
+        };
+
+        const timer = setInterval(checkScheduledMessages, 30000); // Check every 30s
+        checkScheduledMessages(); // Check immediately on mount/update
+
+        return () => clearInterval(timer);
+    }, [todayTasks, currentUser.uid]);
 
     const computedTasks = getComputedTasks();
 
@@ -322,7 +386,7 @@ const AthleteHome = () => {
                                                     )}
                                                 </div>
                                                 <p className={`text-[10px] font-black uppercase tracking-widest ${isCompleted ? 'text-emerald-500' : 'text-slate-400'}`}>
-                                                    {isCompleted ? (task.summary || 'Completado') : 'Hacer ahora'}
+                                                    {isCompleted ? (task.summary || 'Completado') : (task.config?.formId ? 'Formulario' : 'Hacer ahora')}
                                                 </p>
                                             </div>
                                         </div>

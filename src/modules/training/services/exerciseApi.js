@@ -4,8 +4,8 @@ import { collection, getDocs, doc, getDoc, query, where, orderBy, limit } from '
 const COLLECTION_NAME = 'exercises';
 
 // Rapid API Config (Restored as fallback/search)
-const API_KEY = 'fb30cd1a64mshdcda716e9f826c6p19352bjsn65fac58ff883';
-const API_HOST = 'exercisedb.p.rapidapi.com';
+const API_KEY = import.meta.env.VITE_RAPIDAPI_KEY;
+const API_HOST = import.meta.env.VITE_RAPIDAPI_HOST;
 
 const rapidOptions = {
     method: 'GET',
@@ -51,9 +51,43 @@ export const ExerciseAPI = {
     },
 
     // 2. SECONDARY: RapidAPI (Online Search)
+    async fetchFullCatalog() {
+        try {
+            console.log('[ExerciseAPI] Fetching catalog from FIRESTORE (Private Cloud)...');
+
+            // Query the protected collection
+            const q = query(collection(db, 'discovery_catalog'));
+            const snapshot = await getDocs(q);
+
+            if (snapshot.empty) {
+                console.warn('[ExerciseAPI] Firestore catalog is empty. Please run migration script.');
+                return [];
+            }
+
+            console.log(`[ExerciseAPI] Loaded ${snapshot.size} exercises from Firestore`);
+
+            return snapshot.docs.map(doc => {
+                const data = doc.data();
+                return {
+                    ...data,
+                    // Ensure ID is string
+                    id: data.id || doc.id,
+                    // Map pattern if missing (though migration should have set it)
+                    pattern: data.pattern || this.mapBodyPartToPattern(data.bodyPart),
+                    // Ensure mediaUrl is set
+                    mediaUrl: data.gifUrl || data.mediaUrl || '',
+                };
+            });
+
+        } catch (error) {
+            console.error('Failed to load private catalog from Firestore:', error);
+            return [];
+        }
+    },
+
     async searchOnline(name) {
         try {
-            const url = `https://${API_HOST}/exercises/name/${name.toLowerCase()}?limit=15`;
+            const url = `https://${API_HOST}/exercises/name/${name.toLowerCase()}?limit=30`;
             const response = await fetch(url, rapidOptions);
             if (!response.ok) throw new Error('RapidAPI Error');
             const data = await response.json();
@@ -61,9 +95,9 @@ export const ExerciseAPI = {
             // Transform to app format
             return data.map(ex => ({
                 ...ex,
-                mediaUrl: ex.gifUrl || `https://${API_HOST}/image?exerciseId=${ex.id}&resolution=360&rapidapi-key=${API_KEY}`,
-                name_es: '', // Needs translation
-                instructions_es: [] // Needs translation
+                mediaUrl: ex.gifUrl || `https://${API_HOST}/image?exerciseId=${ex.id}&resolution=360`,
+                name_es: '',
+                instructions_es: []
             }));
         } catch (error) {
             console.error('Online search failed:', error);
@@ -89,7 +123,10 @@ export const ExerciseAPI = {
     async fetchImageBlob(urlOrId) {
         // Handle RapidAPI image proxying if passed an ID
         if (!urlOrId.includes('http')) {
-            const url = `https://${API_HOST}/image?exerciseId=${urlOrId}&resolution=360`;
+            // STRIP PREFIXES (edb_, yuh_, etc) BEFORE CALLING API
+            const rawId = urlOrId.replace(/^(edb_|yuh_)/, '');
+
+            const url = `https://${API_HOST}/image?exerciseId=${rawId}&resolution=360`;
             try {
                 const response = await fetch(url, rapidOptions);
                 if (!response.ok) throw new Error(`API Error: ${response.status}`);

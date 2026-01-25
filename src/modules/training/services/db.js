@@ -344,6 +344,9 @@ export const TrainingDB = {
                 customMeasurements: measurements,
                 updatedAt: serverTimestamp()
             });
+        },
+        async delete(userId) {
+            await deleteDoc(doc(db, 'users', userId));
         }
     },
 
@@ -456,12 +459,12 @@ export const TrainingDB = {
     },
     // --- MESSAGES (Real-time Chat) ---
     messages: {
-        async send(athleteId, senderId, text) {
+        async send(athleteId, senderId, text, customTimestamp = null) {
             const chatRef = collection(db, 'chats', athleteId, 'messages');
             const messageData = {
                 senderId,
                 text,
-                timestamp: serverTimestamp(),
+                timestamp: customTimestamp || serverTimestamp(),
                 read: false
             };
 

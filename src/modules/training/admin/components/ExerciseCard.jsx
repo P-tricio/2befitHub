@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Edit2, Trash2, ChevronDown, ChevronUp, Copy, Image as ImageIcon, X } from 'lucide-react';
+import { Edit2, Trash2, ChevronDown, ChevronUp, Copy, Image as ImageIcon, X, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ExerciseAPI } from '../../services/exerciseApi';
+import { ExerciseAPI } from '../../services/ExerciseAPI';
 import ExerciseMedia from '../../components/ExerciseMedia';
 
 /**
@@ -85,6 +85,7 @@ const ExerciseCard = ({
     onEdit,
     onDelete,
     onDuplicate,
+    onImport,
     showCheckbox = true,
     showActions = true,
     onClick
@@ -128,16 +129,31 @@ const ExerciseCard = ({
                     )}
 
                     <div className="flex flex-col min-w-0">
-                        <h3 className="font-bold text-slate-900 text-sm truncate leading-tight" title={ex.name_es || ex.name}>{ex.name_es || ex.name}</h3>
+                        <div className="flex items-center gap-2">
+                            <h3 className="font-bold text-slate-900 text-sm truncate leading-tight" title={ex.name_es || ex.name}>{ex.name_es || ex.name}</h3>
+                            {ex.source === 'exercisedb' && (
+                                <span className="text-[8px] px-1 bg-emerald-50 text-emerald-500 rounded border border-emerald-100 font-black uppercase tracking-tighter">API</span>
+                            )}
+                        </div>
                         {!isExpanded && (
                             <div className="flex items-center gap-2 mt-0.5">
                                 <span className={`text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-wider ${getPatternColor(ex.pattern)}`}>{ex.pattern}</span>
+                                {ex.source === 'exercisedb' && <span className="text-[9px] font-bold text-slate-400 truncate max-w-[80px]">{ex.equipment}</span>}
                             </div>
                         )}
                     </div>
                 </div>
 
                 <div className="flex items-center gap-1">
+                    {onImport && (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onImport(); }}
+                            className="p-2 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-600 hover:text-white transition-all flex items-center gap-1.5 px-3 mr-1"
+                        >
+                            <span className="text-[10px] font-black uppercase tracking-wider hidden md:block">Importar</span>
+                            <Download size={16} />
+                        </button>
+                    )}
                     {showActions && (onEdit || onDuplicate || onDelete) && (
                         <div className="mr-2">
                             <ActionMenu actions={[
@@ -189,11 +205,64 @@ const ExerciseCard = ({
                             <ExerciseMedia exercise={ex} />
                         </div>
 
-                        {(ex.description || (ex.instructions_es && ex.instructions_es.length > 0) || (ex.instructions && ex.instructions.length > 0)) && (
-                            <p className="text-xs text-slate-500 italic mb-2 line-clamp-3">
-                                {ex.description || (ex.instructions_es?.join(' ')) || (ex.instructions?.join(' ')) || ''}
-                            </p>
-                        )}
+                        {/* Details Grid */}
+                        <div className="grid grid-cols-2 gap-2 mb-4">
+                            {ex.target && (
+                                <div className="p-2 bg-slate-50 rounded-xl border border-slate-100">
+                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-0.5">Objetivo</p>
+                                    <p className="text-xs font-bold text-slate-700 capitalize">{ex.target}</p>
+                                </div>
+                            )}
+                            {(ex.secondaryMuscles || []).length > 0 && (
+                                <div className="p-2 bg-slate-50 rounded-xl border border-slate-100">
+                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-0.5">Secundarios</p>
+                                    <p className="text-xs font-medium text-slate-600 capitalize truncate">
+                                        {ex.secondaryMuscles.join(', ')}
+                                    </p>
+                                </div>
+                            )}
+                            {ex.bodyPart && (
+                                <div className="p-2 bg-slate-50 rounded-xl border border-slate-100">
+                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-0.5">Parte del cuerpo</p>
+                                    <p className="text-xs font-bold text-slate-700 capitalize">{ex.bodyPart}</p>
+                                </div>
+                            )}
+                            {ex.equipment && (
+                                <div className="p-2 bg-slate-50 rounded-xl border border-slate-100">
+                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-0.5">Equipo</p>
+                                    <p className="text-xs font-bold text-slate-700 capitalize">{ex.equipment}</p>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Details/Description */}
+                        <div className="space-y-3">
+                            {/* Short Description */}
+                            {ex.description && typeof ex.description === 'string' && (
+                                <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                                    <p className="text-xs text-slate-600 leading-relaxed font-medium">
+                                        {ex.description}
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* Instructions List */}
+                            {((ex.instructions_es && ex.instructions_es.length > 0) || (ex.instructions && ex.instructions.length > 0)) && (
+                                <div className="space-y-2">
+                                    <p className="text-[10px] font-black uppercase text-slate-400 flex items-center gap-2">
+                                        Instrucciones
+                                        {(!ex.instructions_es || ex.instructions_es.length === 0) && <span className="text-[8px] bg-slate-100 px-1 rounded text-slate-400 border border-slate-200">INGLÉS</span>}
+                                    </p>
+                                    <ol className="list-decimal list-inside space-y-2">
+                                        {(ex.instructions_es && ex.instructions_es.length > 0 ? ex.instructions_es : ex.instructions).map((step, idx) => (
+                                            <li key={idx} className="text-xs text-slate-600 pl-1 leading-snug bg-slate-50/50 p-2 rounded-lg border border-slate-100/50">
+                                                {step}
+                                            </li>
+                                        ))}
+                                    </ol>
+                                </div>
+                            )}
+                        </div>
                     </motion.div>
                 )}
             </AnimatePresence>

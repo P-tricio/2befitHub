@@ -1,10 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { Search, MoreVertical, Calendar, Activity, Trophy, MessageCircle } from 'lucide-react';
+import { Search, MoreVertical, Calendar, Activity, Trophy, MessageCircle, Trash2 } from 'lucide-react';
 import { TrainingDB } from '../services/db';
 import UserTracking from './UserTracking';
 import ChatDrawer from '../components/ChatDrawer';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 const UserManager = () => {
+    const navigate = useNavigate();
+    const location = useLocation();
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -25,6 +28,23 @@ const UserManager = () => {
     useEffect(() => {
         loadData();
     }, []);
+
+    // Listen for athleteId in URL
+    useEffect(() => {
+        if (users.length > 0) {
+            const params = new URLSearchParams(location.search);
+            const athleteId = params.get('athleteId');
+            if (athleteId) {
+                const user = users.find(u => u.id === athleteId);
+                if (user) {
+                    setSelectedUser(user);
+                    setInitialTab('planning');
+                    // Clear param to avoid re-opening on back/refresh
+                    navigate(location.pathname, { replace: true });
+                }
+            }
+        }
+    }, [location.search, users]);
 
     const loadData = async () => {
         try {
@@ -48,6 +68,18 @@ const UserManager = () => {
             console.error(error);
             alert("Error al actualizar estado");
             loadData(); // Revert on error
+        }
+    };
+
+    const handleDeleteUser = async (user) => {
+        if (window.confirm(`¿Estás seguro de que quieres eliminar a ${user.displayName}? Esta acción no se puede deshacer.`)) {
+            try {
+                await TrainingDB.users.delete(user.id);
+                setUsers(prev => prev.filter(u => u.id !== user.id));
+            } catch (error) {
+                console.error('Error deleting user:', error);
+                alert('Error al eliminar usuario');
+            }
         }
     };
 
@@ -204,6 +236,16 @@ const UserManager = () => {
                                                             <MessageCircle size={18} />
                                                             CHAT CON ATLETA
                                                         </button>
+                                                        <button
+                                                            onClick={() => {
+                                                                handleDeleteUser(user);
+                                                                setActiveMenuId(null);
+                                                            }}
+                                                            className="w-full text-left px-4 py-3 text-sm font-black text-rose-500 hover:bg-rose-50 transition-all flex items-center gap-3 border-t border-slate-50"
+                                                        >
+                                                            <Trash2 size={18} />
+                                                            ELIMINAR
+                                                        </button>
                                                     </div>
                                                 )}
                                             </div>
@@ -317,6 +359,16 @@ const UserManager = () => {
                                                 <MessageCircle size={16} />
                                                 Chat Directo
                                             </button>
+                                            <button
+                                                onClick={() => {
+                                                    handleDeleteUser(user);
+                                                    setActiveMenuId(null);
+                                                }}
+                                                className="w-full text-left px-4 py-3 text-xs font-black text-rose-500 hover:bg-rose-50 transition-colors uppercase tracking-widest flex items-center gap-3 border-t border-slate-50"
+                                            >
+                                                <Trash2 size={16} />
+                                                Eliminar
+                                            </button>
                                         </div>
                                     )}
                                 </div>
@@ -331,6 +383,16 @@ const UserManager = () => {
                 onClose={() => setChatUser(null)}
                 athleteId={chatUser?.id}
                 athleteName={chatUser?.displayName}
+                athletePhoto={chatUser?.photoURL}
+                lastActiveAt={chatUser?.lastActiveAt}
+                onNameClick={(id) => {
+                    const user = users.find(u => u.id === id);
+                    if (user) {
+                        setSelectedUser(user);
+                        setInitialTab('planning');
+                        setChatUser(null);
+                    }
+                }}
             />
         </>
     );
