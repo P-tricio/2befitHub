@@ -812,15 +812,62 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
 
         if (discoveryMode) {
             // Local search in bulk downloaded data
-            if (!pickerSearch.trim()) {
+            const term = pickerSearch.trim().toLowerCase();
+            const hasFilters = pickerFilter.pattern.length > 0;
+
+            if (!term && !hasFilters) {
                 setOnlineResults(bulkExercises.slice(0, visibleCount));
                 return;
             }
-            const filtered = bulkExercises.filter(ex =>
-                ex.name.toLowerCase().includes(pickerSearch.toLowerCase()) ||
-                (ex.target || '').toLowerCase().includes(pickerSearch.toLowerCase()) ||
-                (ex.bodyPart || '').toLowerCase().includes(pickerSearch.toLowerCase())
-            );
+
+            // Create lookup sets for fast duplicate detection
+            const existingIds = new Set(allExercises.map(e => e.externalId).filter(Boolean));
+            const existingNames = new Set(allExercises.map(e => (e.nameOriginal || e.name || '').toLowerCase()).filter(Boolean));
+
+            const filtered = bulkExercises.filter(ex => {
+                // 0. Exclude Duplicates (Already in Library)
+                if (ex.id && existingIds.has(ex.id)) return false;
+                if (ex.name && existingNames.has(ex.name.toLowerCase())) return false;
+
+                // 1. Safe Text Search
+                const name = (ex.name || '').toLowerCase();
+                const target = (ex.target || '').toLowerCase();
+                const bodyPart = (ex.bodyPart || '').toLowerCase();
+
+                const matchesSearch = !term || name.includes(term) || target.includes(term) || bodyPart.includes(term);
+                if (!matchesSearch) return false;
+
+                // 2. Pattern Filter (Map English BodyPart -> Spanish Pattern)
+                if (pickerFilter.pattern.length > 0) {
+                    // Use the helper to map English bodyPart (e.g. "upper legs") to our Pattern (e.g. "Squat")
+                    const mappedPattern = ExerciseAPI.mapBodyPartToPattern ? ExerciseAPI.mapBodyPartToPattern(ex.bodyPart || '') : '';
+                    if (!pickerFilter.pattern.includes(mappedPattern)) return false;
+                }
+
+                // Equipment Filter (Simple English matching)
+                if (pickerFilter.equipment.length > 0) {
+                    const eqLower = (ex.equipment || '').toLowerCase();
+                    // We match if the English equipment name contains any of our mapped keywords
+                    // OR just simple check if we can't map. 
+                    // For now, let's try to match strict if it's a known type
+                    const matchesEq = pickerFilter.equipment.some(filterEq => {
+                        // Basic mapping: "Barra" -> "barbell", "Mancuernas" -> "dumbbell"
+                        const map = {
+                            'Barra': 'barbell',
+                            'Mancuernas': 'dumbbell',
+                            'Kettlebell': 'kettlebell',
+                            'Peso Corporal': 'body weight',
+                            'Máquina': 'machine',
+                            'Cable': 'cable'
+                        };
+                        const targetEng = map[filterEq] || filterEq.toLowerCase();
+                        return eqLower.includes(targetEng);
+                    });
+                    if (!matchesEq) return false;
+                }
+
+                return true;
+            });
             setOnlineResults(filtered.slice(0, visibleCount));
             return;
         }
@@ -845,7 +892,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
         }, 600);
 
         return () => clearTimeout(timer);
-    }, [pickerSearch, pickerTab, discoveryMode, bulkExercises]);
+    }, [pickerSearch, pickerTab, discoveryMode, bulkExercises, pickerFilter, visibleCount]);
 
     const handleEnableDiscovery = async () => {
         if (bulkExercises.length > 0) {
@@ -1113,8 +1160,10 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
     };
 
     const addBlock = () => {
+        const id = crypto.randomUUID();
         setBlocks([...blocks, {
-            id: crypto.randomUUID(),
+            id,
+            stableId: id, // First generation stable ID
             name: `Bloque ${blocks.length + 1}`,
             exercises: []
         }]);
@@ -1124,6 +1173,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
         setBlocks([...blocks, {
             ...moduleData,
             id: crypto.randomUUID(),
+            stableId: moduleData.stableId || moduleData.id, // Preserve previous or set current as stable
             name: `${moduleData.name} (Imp)`,
             // Ensure exercises get new IDs
             exercises: (moduleData.exercises || []).map(e => ({
@@ -1153,6 +1203,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                 // Map through blocks and exercises
                 const processedBlockPromises = processedBlocks.map(async block => ({
                     ...block,
+                    stableId: block.stableId || block.id, // Backfill stableId if missing
                     exercises: await Promise.all(block.exercises.map(async ex => {
                         // Attempt to find full data in catalog by ID or Name
                         const fullData = catalog.find(c =>
@@ -2293,8 +2344,8 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                                             </button>
                                         </div>
 
-                                        {/* Filter Chips - Only show in Library */}
-                                        {pickerTab === 'library' && (
+                                        {/* Filter Chips - Show in Library AND Online */}
+                                        {(pickerTab === 'library' || pickerTab === 'online') && (
                                             <>
                                                 <div className="flex items-center justify-between">
                                                     <p className="text-xs text-slate-400 font-bold">

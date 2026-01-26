@@ -3,12 +3,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { TrainingDB } from '../services/db';
 import { useAuth } from '../../../context/AuthContext';
-import { ChevronLeft, Play, AlertCircle, CheckCircle, Clock, Plus, TrendingUp, TrendingDown, Minus, Info } from 'lucide-react';
+import { ChevronLeft, Play, AlertCircle, CheckCircle, Clock, Plus, TrendingUp, TrendingDown, Minus, Info, Dumbbell, Zap, X } from 'lucide-react';
 import { useSessionData } from './hooks/useSessionData.js';
 import { useKeepAwake } from '../../../hooks/useKeepAwake';
 import { useAudioFeedback } from '../../../hooks/useAudioFeedback';
 import ExerciseMedia from '../components/ExerciseMedia';
 import RPESelector from '../components/RPESelector';
+import { generateSessionAnalysis } from './utils/analysisUtils';
 
 const SessionRunner = () => {
     // Keep screen awake during session
@@ -26,7 +27,7 @@ const SessionRunner = () => {
     const { currentUser } = useAuth();
 
     // Data State - now using the new hook
-    const { session, modules, timeline, protocol, loading, error } = useSessionData(sessionId);
+    const { session, modules, timeline, protocol, history, loading, error } = useSessionData(sessionId, currentUser?.uid);
 
     // Runner State
     const [currentIndex, setCurrentIndex] = useState(0);
@@ -71,70 +72,12 @@ const SessionRunner = () => {
 
         // If Finishing Session (from SUMMARY)
         if (currentStep.type === 'SUMMARY') {
-            // Generate analysis insights
-            const insights = [];
-            let totalElapsed = 0; // Track total session time
+            // Unify analysis generation
+            const { insights, metrics } = generateSessionAnalysis(sessionState.results, timeline);
+            let totalElapsed = 0;
 
-            Object.entries(sessionState.results).forEach(([stepIndex, res]) => {
-                const step = timeline[stepIndex];
-                if (!step || step.type !== 'WORK') return;
-
-                // Accumulate elapsed time from each block
-                if (res.elapsed) {
-                    totalElapsed += res.elapsed;
-                }
-
-                const exercises = step.module.exercises || [];
-                if (exercises.length === 0) return;
-
-                const targets = step.module.targeting || [];
-
-                // Analyze EACH exercise individually
-                exercises.forEach((ex, idx) => {
-                    const repsDone = res.reps?.[idx] || 0;
-                    const weightUsed = res.actualWeights?.[idx] || res.weights?.[idx] || 0;
-                    const targetReps = ex.targetReps || targets[0]?.volume || 10;
-
-                    // Only analyze exercises with load (loadable exercises)
-                    if (!ex.loadable || !weightUsed) return;
-
-                    // Determine adjustment type based on performance
-                    let type = 'keep';
-                    let adjustment = 0;
-                    let msg = '';
-
-                    if (step.module.protocol === 'R' || step.blockType === 'BASE' || step.blockType === 'BUILD') {
-                        const diff = repsDone - targetReps;
-
-                        if (diff > 2) {
-                            type = 'up';
-                            adjustment = 2.5;
-                            msg = `Subir peso en ${ex.nameEs || ex.name}`;
-                        } else if (diff < -2) {
-                            type = 'down';
-                            adjustment = -2.5;
-                            msg = `Bajar peso en ${ex.nameEs || ex.name}`;
-                        } else {
-                            type = 'keep';
-                            adjustment = 0;
-                            msg = `Mantener peso en ${ex.nameEs || ex.name}`;
-                        }
-
-                        insights.push({
-                            type,
-                            moduleId: step.module.id,
-                            exerciseId: ex.id,
-                            exerciseIndex: idx,
-                            exerciseName: ex.nameEs || ex.name,
-                            blockType: step.blockType,
-                            previousWeight: parseFloat(weightUsed),
-                            targetReps,
-                            actualReps: repsDone,
-                            adjustment,
-                            msg
-                        });
-                    }
-                });
+            Object.values(sessionState.results).forEach(res => {
+                if (res.elapsed) totalElapsed += res.elapsed;
             });
 
             // Determine the target date for markers and logs
@@ -150,7 +93,8 @@ const SessionRunner = () => {
                 scheduledDate: targetDate,
                 type: 'SESSION_FEEDBACK',
                 ...sessionState.feedback,
-                analysis: insights
+                analysis: insights,
+                metrics: metrics
             });
 
             // Mark session as completed in user's schedule
@@ -174,7 +118,9 @@ const SessionRunner = () => {
                             durationMinutes: durationMin,
                             rpe: rpe,
                             notes: sessionState.feedback.comment,
-                            analysis: insights
+                            analysis: insights,
+                            metrics: metrics,
+                            totalVolume: metrics.totalVolume
                         }
                     }
                 );
@@ -184,18 +130,27 @@ const SessionRunner = () => {
 
             // Trigger Notification for Admin
             try {
+                // Collect technical coach insights for the notification
+                const technicalInsights = insights
+                    .filter(i => i.type === 'up' || i.type === 'down' || i.type === 'stagnation')
+                    .map(i => `${i.exerciseName || 'Ejercicio'}: ${i.coachInsight}`)
+                    .join('\n');
+
                 await TrainingDB.notifications.create('admin', {
                     athleteId: currentUser.uid,
                     athleteName: currentUser?.displayName || 'Atleta',
-                    type: 'task_completion',
+                    type: 'session',
                     title: session.name || 'Sesión Completada',
-                    message: `${currentUser?.displayName || 'Un atleta'} ha completado la sesión: ${session.name} (${summary})`,
+                    message: `${currentUser?.displayName || 'Un atleta'} ha completado la sesión: ${session.name} (${summary})${technicalInsights ? '\n\nSugerencias técnicas:\n' + technicalInsights : ''}`,
+                    priority: technicalInsights ? 'high' : 'normal',
                     data: {
                         sessionId: session.id,
                         type: 'session',
                         summary: summary,
                         durationMinutes: durationMin,
-                        rpe: rpe
+                        rpe: rpe,
+                        metrics: metrics,
+                        technicalInsights: technicalInsights
                     }
                 });
             } catch (notiErr) {
@@ -254,6 +209,7 @@ const SessionRunner = () => {
             userId: currentUser.uid,
             sessionId: session.id,
             moduleId: currentStep.module.id,
+            stableId: currentStep.module.stableId || currentStep.module.id,
             blockType: currentStep.blockType,
             protocol: currentStep.module.protocol,
             timestamp: new Date().toISOString(),
@@ -498,8 +454,10 @@ const SessionRunner = () => {
                             <SummaryBlock
                                 sessionState={sessionState}
                                 timeline={timeline}
+                                history={history}
                                 setSessionState={setSessionState}
                                 onFinish={handleNext}
+                                globalTime={globalTime}
                             />
                         )}
 
@@ -512,6 +470,7 @@ const SessionRunner = () => {
                     <BlockFeedbackModal
                         onConfirm={handleBlockFeedbackConfirm}
                         blockType={currentStep?.blockType}
+                        exercises={currentStep?.module?.exercises}
                     />
                 )}
             </AnimatePresence>
@@ -707,98 +666,233 @@ const CollapsiblePlanningBlock = ({ module, onSelectExercise }) => {
     );
 };
 
-const SummaryBlock = ({ sessionState, timeline, setSessionState, onFinish }) => {
-
-    const generateAnalysis = () => {
-        const insights = [];
-
-        // Iterate over executed steps in Results
-        Object.entries(sessionState.results).forEach(([stepIndex, res]) => {
-            const step = timeline[stepIndex];
-            if (!step || step.type !== 'WORK') return;
-
-            const exercises = step.module.exercises || [];
-            if (exercises.length === 0) return;
-
-            // Analyze first exercise as proxy for block intent
-            const target = step.module.targeting?.[0] || {};
-            const repsDone = res.reps ? res.reps[0] : 0;
-            const targetReps = target.volume || 10; // Default fallback
-
-            // Simple heuristic for "R" protocol or Strength blocks
-            if (step.module.protocol === 'R' || step.blockType === 'BASE' || step.blockType === 'BUILD') {
-                if (repsDone > targetReps + 2) {
-                    insights.push({ type: 'up', msg: `Subir peso en ${step.blockType} (${step.module.partLabel || 'Global'})` });
-                } else if (repsDone < targetReps - 2) {
-                    insights.push({ type: 'down', msg: `Bajar peso en ${step.blockType} (${step.module.partLabel || 'Global'})` });
-                } else {
-                    insights.push({ type: 'keep', msg: `Peso correcto en ${step.blockType}` });
-                }
-            }
-        });
-
-        return insights;
-    };
-
-    const insights = generateAnalysis();
+const SummaryBlock = ({ sessionState, timeline, history, setSessionState, onFinish, globalTime }) => {
+    const { insights, metrics } = generateSessionAnalysis(sessionState.results, timeline, history);
+    const [expandedAdjustments, setExpandedAdjustments] = useState(true);
+    const [expandedWork, setExpandedWork] = useState(true);
+    const totalMinutes = Math.floor(globalTime / 60);
 
     return (
-        <div className="flex-1 flex flex-col pt-8 pb-32">
-            <div className="text-center mb-10">
+        <div className="flex-1 flex flex-col pt-4 pb-32 max-w-lg mx-auto w-full bg-slate-50/50 min-h-full">
+            {/* Celebration Header - Premium Light */}
+            <div className="text-center mb-6 px-4 pt-4">
                 <motion.div
                     initial={{ scale: 0 }} animate={{ scale: 1 }}
-                    className="w-24 h-24 bg-emerald-500 rounded-full flex items-center justify-center mx-auto text-slate-900 shadow-xl shadow-emerald-900/50 mb-6"
+                    className="w-16 h-16 bg-emerald-500 rounded-2xl flex items-center justify-center mx-auto text-white shadow-lg shadow-emerald-500/20 mb-3"
                 >
-                    <CheckCircle size={48} className="text-white" />
+                    <CheckCircle size={32} strokeWidth={3} />
                 </motion.div>
-                <h2 className="text-3xl font-black text-white mb-2">¡Sesión Completada!</h2>
-                <p className="text-slate-400">Gran trabajo hoy.</p>
+                <h2 className="text-2xl font-black text-slate-900 mb-0.5 tracking-tight">¡Sesión Fuckin' Lista!</h2>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Rendimiento guardado con éxito</p>
             </div>
 
-            {/* Analysis Cards */}
-            <div className="space-y-3 mb-10">
-                <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest px-1">Análisis de Cargas</h3>
-                {insights.length > 0 ? insights.map((insight, idx) => (
-                    <div key={idx} className="bg-slate-800 p-4 rounded-xl flex items-center gap-4 border border-slate-700">
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${insight.type === 'up' ? 'bg-emerald-500/20 text-emerald-500' :
-                            insight.type === 'down' ? 'bg-amber-500/20 text-amber-500' :
-                                'bg-blue-500/20 text-blue-500'
-                            }`}>
-                            {insight.type === 'up' && <TrendingUp size={20} />}
-                            {insight.type === 'down' && <TrendingDown size={20} />}
-                            {insight.type === 'keep' && <Minus size={20} />}
-                        </div>
-                        <p className="text-sm font-medium text-slate-200">{insight.msg}</p>
-                    </div>
-                )) : (
-                    <div className="bg-slate-800/50 p-4 rounded-xl text-center text-slate-500 text-sm italic">
-                        Sin datos suficientes para análisis.
-                    </div>
-                )}
-            </div>
-
-            <div className="space-y-6">
-                <RPESelector
-                    value={sessionState.feedback.rpe}
-                    onChange={val => setSessionState(prev => ({ ...prev, feedback: { ...prev.feedback, rpe: val } }))}
-                    label="Esfuerzo de la Sesión (RPE)"
-                />
-
-                <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Notas de sesión</label>
-                    <textarea
-                        placeholder="¿Alguna molestia? ¿Notas personales?"
-                        className="w-full bg-slate-800 rounded-xl p-4 text-white text-sm outline-none border border-slate-700 focus:border-emerald-500 transition-colors"
-                        rows={3}
-                        value={sessionState.feedback.comment}
-                        onChange={e => setSessionState(prev => ({ ...prev, feedback: { ...prev.feedback, comment: e.target.value } }))}
-                    />
+            {/* Premium Metrics Grid - Light Theme */}
+            <div className="grid grid-cols-3 gap-3 px-4 mb-6">
+                <div className="bg-white p-4 rounded-3xl shadow-sm border border-slate-100 text-center">
+                    <Clock size={16} className="text-emerald-500 mx-auto mb-1.5" />
+                    <p className="text-xl font-black text-slate-900 leading-none mb-1">{totalMinutes || '--'}</p>
+                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Minutos</p>
+                </div>
+                <div className="bg-white p-4 rounded-3xl shadow-sm border border-slate-100 text-center">
+                    <Dumbbell size={16} className="text-blue-500 mx-auto mb-1.5" />
+                    <p className="text-xl font-black text-slate-900 leading-none mb-1">
+                        {metrics.totalVolume >= 1000 ? `${(metrics.totalVolume / 1000).toFixed(1)}k` : metrics.totalVolume}
+                    </p>
+                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">KG Totales</p>
+                </div>
+                <div className="bg-white p-4 rounded-3xl shadow-sm border border-slate-100 text-center">
+                    <Zap size={16} className="text-amber-500 mx-auto mb-1.5" />
+                    <p className="text-xl font-black text-slate-900 leading-none mb-1">{metrics.efficiency}%</p>
+                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Eficacia</p>
                 </div>
             </div>
 
-            <div className="mt-8">
-                <button onClick={onFinish} className="w-full bg-white text-slate-900 font-black text-lg py-5 rounded-2xl shadow-xl hover:bg-emerald-50 transition-all active:scale-[0.98]">
-                    Guardar Resultados
+            <div className="space-y-4 px-4">
+                {/* Gestión de Carga Section (Collapsible) */}
+                <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
+                    <button
+                        onClick={() => setExpandedAdjustments(!expandedAdjustments)}
+                        className="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition-all"
+                    >
+                        <div className="flex items-center gap-3">
+                            <TrendingUp size={18} className="text-indigo-500" />
+                            <h3 className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Ajustes Técnicos</h3>
+                        </div>
+                        <div className="text-slate-300">
+                            {expandedAdjustments ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                        </div>
+                    </button>
+
+                    <AnimatePresence>
+                        {expandedAdjustments && (
+                            <motion.div
+                                initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }}
+                                className="overflow-hidden"
+                            >
+                                <div className="px-5 pb-5 space-y-2">
+                                    {insights.length > 0 ? insights.map((insight, idx) => (
+                                        <div key={idx} className="bg-slate-50 p-3 rounded-2xl border border-slate-100 flex items-center gap-4">
+                                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${insight.type === 'up' ? 'bg-emerald-100 text-emerald-600' :
+                                                insight.type === 'down' ? 'bg-rose-100 text-rose-600' :
+                                                    insight.type === 'skipped' ? 'bg-slate-100 text-slate-400' :
+                                                        'bg-blue-100 text-blue-600'
+                                                }`}>
+                                                {insight.type === 'up' && <TrendingUp size={16} />}
+                                                {insight.type === 'down' && <TrendingDown size={16} />}
+                                                {insight.type === 'skipped' && <X size={16} />}
+                                                {insight.type === 'keep' && <Minus size={16} />}
+                                            </div>
+                                            <div className="min-w-0">
+                                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-tight truncate">
+                                                    {insight.exerciseName || 'Bloque'}
+                                                </p>
+                                                <p className="text-xs font-bold text-slate-700 leading-tight">
+                                                    {insight.athleteMsg || insight.msg}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    )) : (
+                                        <p className="text-center py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">No hay ajustes pendientes</p>
+                                    )}
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </div>
+
+                {/* Resumen de Trabajo Section (Collapsible) */}
+                <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
+                    <button
+                        onClick={() => setExpandedWork(!expandedWork)}
+                        className="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition-all"
+                    >
+                        <div className="flex items-center gap-3">
+                            <Activity size={18} className="text-emerald-500" />
+                            <h3 className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Resumen de Trabajo</h3>
+                        </div>
+                        <div className="text-slate-300">
+                            {expandedWork ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                        </div>
+                    </button>
+
+                    <AnimatePresence>
+                        {expandedWork && (
+                            <motion.div
+                                initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }}
+                                className="overflow-hidden"
+                            >
+                                <div className="px-5 pb-5 space-y-3">
+                                    {timeline.map((step, idx) => {
+                                        if (step.type !== 'WORK') return null;
+                                        const result = sessionState.results[idx];
+                                        if (!result) return null;
+
+                                        const protocol = step.module.protocol;
+
+                                        return (
+                                            <div key={idx} className="bg-slate-50/50 rounded-2xl p-4 border border-slate-100">
+                                                <div className="flex justify-between items-center mb-3">
+                                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">{step.blockType || step.module.name}</span>
+                                                    <div className="flex items-center gap-2 text-slate-900 font-black text-xs">
+                                                        <Clock size={12} className="text-slate-300" />
+                                                        <span>
+                                                            {protocol === 'R'
+                                                                ? (result.elapsed > 0
+                                                                    ? `${Math.floor(result.elapsed / 60)}:${(result.elapsed % 60).toString().padStart(2, '0')}`
+                                                                    : 'Completado')
+                                                                : protocol === 'T'
+                                                                    ? `${Math.floor((step.module.targeting?.[0]?.timeCap || 0) / 60)} min`
+                                                                    : `${step.module.emomParams?.durationMinutes || '--'} min`}
+                                                        </span>
+                                                    </div>
+                                                </div>
+
+                                                <div className="space-y-2">
+                                                    {protocol === 'E' && result.emomResults ? (
+                                                        <div className="flex flex-col gap-3">
+                                                            <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                                                                {Object.entries(result.emomResults).map(([round, status]) => (
+                                                                    <div key={round} className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 text-[10px] font-black ${status === 'success' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/10' : status === 'fail' ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/10' : 'bg-slate-200 text-slate-400'}`}>
+                                                                        {round}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                            <div className="grid gap-1.5">
+                                                                {step.module.exercises?.map((ex, exIdx) => (
+                                                                    <div key={exIdx} className="flex justify-between items-center bg-white p-2.5 rounded-xl border border-slate-100">
+                                                                        <span className="text-xs font-bold text-slate-700 truncate max-w-[60%]">{ex.nameEs || ex.name}</span>
+                                                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">
+                                                                            {ex.targetReps || step.module.targeting?.[0]?.volume} reps • {result.actualWeights?.[exIdx] || result.weights?.[exIdx] || 0}kg
+                                                                        </span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="grid gap-1.5">
+                                                            {step.module.exercises?.map((ex, exIdx) => (
+                                                                <div key={exIdx} className="flex justify-between items-center bg-white p-2.5 rounded-xl border border-slate-100 shadow-sm">
+                                                                    <div className="flex items-center gap-2 min-w-0">
+                                                                        <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full shrink-0" />
+                                                                        <span className="text-xs font-bold text-slate-700 truncate">{ex.nameEs || ex.name}</span>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="text-xs font-black text-slate-900">{result.reps?.[exIdx] || 0} <span className="text-[8px] opacity-40 uppercase">reps</span></span>
+                                                                        {(result.actualWeights?.[exIdx] || result.weights?.[exIdx]) > 0 && (
+                                                                            <span className="bg-slate-900 text-white px-2 py-0.5 rounded-lg text-[9px] font-black font-mono">
+                                                                                {result.actualWeights?.[exIdx] || result.weights?.[exIdx]}kg
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Block Feedback Notes */}
+                                                    {result.feedback?.notes && (
+                                                        <div className="bg-amber-50/50 p-3 rounded-2xl border border-amber-100 flex gap-3 mt-1 shadow-sm">
+                                                            <MessageSquare size={14} className="text-amber-500 shrink-0 mt-0.5" />
+                                                            <p className="text-[11px] font-medium text-amber-900/70 italic leading-relaxed">"{result.feedback.notes}"</p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </div>
+
+                {/* Feedback Section - Light Theme */}
+                <div className="space-y-4 pt-2">
+                    <RPESelector
+                        value={sessionState.feedback.rpe}
+                        isLight={true}
+                        onChange={val => setSessionState(prev => ({ ...prev, feedback: { ...prev.feedback, rpe: val } }))}
+                        label="Esfuerzo de la Sesión (RPE)"
+                    />
+
+                    <div>
+                        <textarea
+                            placeholder="Notas generales de la sesión..."
+                            className="w-full bg-white rounded-3xl p-4 text-slate-900 text-sm outline-none border border-slate-200 focus:border-emerald-500 transition-all font-medium shadow-sm placeholder:text-slate-300"
+                            rows={3}
+                            value={sessionState.feedback.comment}
+                            onChange={e => setSessionState(prev => ({ ...prev, feedback: { ...prev.feedback, comment: e.target.value } }))}
+                        />
+                    </div>
+                </div>
+            </div>
+
+            <div className="mt-8 px-4">
+                <button
+                    onClick={() => onFinish({ metrics, analysis: insights })}
+                    className="w-full bg-slate-900 text-white font-black text-sm py-5 rounded-[2rem] shadow-xl hover:bg-slate-800 transition-all active:scale-[0.98] uppercase tracking-[0.2em]"
+                >
+                    Finalizar Entrenamiento
                 </button>
             </div>
         </div>
@@ -909,7 +1003,8 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
             if (!currentUser || !module.id) return;
 
             try {
-                const lastLog = await TrainingDB.logs.getLastLog(currentUser.uid, module.id);
+                // Pass stableId to broad logic across sessions
+                const lastLog = await TrainingDB.logs.getLastLog(currentUser.uid, module.id, module.stableId);
                 setPreviousLog(lastLog);
             } catch (error) {
                 console.error('Error fetching history:', error);
@@ -924,6 +1019,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
     // Results Logging
     const [repsDone, setRepsDone] = useState({});
     const [weightsUsed, setWeightsUsed] = useState({}); // New state for actual weight used
+    const [exerciseNotes, setExerciseNotes] = useState({}); // Per-exercise notes
 
     useEffect(() => {
         const initReps = {};
@@ -960,6 +1056,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
         });
         setRepsDone(initReps);
         setWeightsUsed(initWeights);
+        setExerciseNotes({}); // Initialize empty
     }, [module, plan, previousLog, exercises]);
 
     // Reps Increment Handler
@@ -1042,10 +1139,26 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
         }
 
         // Pass actual weights used alongside reps
+        // Fix for EMOM Volume: If EMOM Success, grant reps = Target.
+        const finalReps = { ...repsDone };
+        if (protocol === 'E' && exercises.length > 0) {
+            // Calculate effective volume for EMOM based on success status
+            const roundsSuccess = Object.values(emomResults).filter(s => s === 'success').length;
+            if (roundsSuccess > 0) {
+                exercises.forEach((ex, idx) => {
+                    const targetPerRound = ex.targetReps || module.targeting?.[0]?.volume || 0;
+                    if (targetPerRound > 0) {
+                        finalReps[idx] = roundsSuccess * targetPerRound;
+                    }
+                });
+            }
+        }
+
         onComplete({
-            reps: repsDone,
+            reps: finalReps,
             weights: plan, // Keep planned weights
             actualWeights: weightsUsed, // New field for executed weights
+            exerciseNotes, // Pass the per-exercise notes
             emomResults,
             elapsed: (protocol === 'R' || protocol === 'T') ? elapsed : 0
         });
@@ -1360,6 +1473,21 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                                     <Plus size={16} />
                                                 </button>
                                             </div>
+
+                                            {/* Per-Exercise Note Input */}
+                                            <div className="mt-3 relative z-10">
+                                                <div className="flex items-center gap-2 mb-1.5 px-1">
+                                                    <Info size={10} className="text-slate-500" />
+                                                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Anotaciones del ejercicio</span>
+                                                </div>
+                                                <input
+                                                    type="text"
+                                                    placeholder="Ej: Molestia leve, fácil..."
+                                                    value={exerciseNotes[idx] || ''}
+                                                    onChange={(e) => setExerciseNotes(prev => ({ ...prev, [idx]: e.target.value }))}
+                                                    className="w-full bg-slate-800/50 border border-slate-700/50 rounded-xl py-2 px-3 text-xs text-slate-300 outline-none focus:border-emerald-500/50 transition-all placeholder:text-slate-600"
+                                                />
+                                            </div>
                                         </div>
                                     );
                                 })}
@@ -1596,13 +1724,23 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
 };
 
 
-const BlockFeedbackModal = ({ onConfirm, blockType }) => {
+const BlockFeedbackModal = ({ onConfirm, blockType, exercises }) => {
     const [rpe, setRpe] = useState(null);
     const [notes, setNotes] = useState('');
+    const [exNotes, setExNotes] = useState({});
 
-    const handleConfirm = () => {
-        if (rpe === null) return;
-        onConfirm({ rpe, notes });
+    const handleConfirm = (isSkip = false) => {
+        if (!isSkip && rpe === null) return;
+        onConfirm({
+            rpe,
+            notes: notes.trim(),
+            exerciseNotes: exNotes,
+            skipped: isSkip
+        });
+    };
+
+    const handleExNoteChange = (idx, val) => {
+        setExNotes(prev => ({ ...prev, [idx]: val }));
     };
 
     return (
@@ -1626,23 +1764,59 @@ const BlockFeedbackModal = ({ onConfirm, blockType }) => {
                             <h2 className="text-lg font-black text-white">Bloque {blockType}</h2>
                         </div>
                         <button
-                            onClick={() => onConfirm({ rpe: null, notes: '' })}
+                            onClick={() => {
+                                if (window.confirm("¿Seguro que quieres saltar este bloque? Se marcará como NO COMPLETADO.")) {
+                                    onConfirm({ rpe: null, notes: '', skipped: true });
+                                }
+                            }}
                             className="text-[10px] font-bold text-slate-500 hover:text-white uppercase tracking-widest px-2 py-1"
                         >
                             Saltar
                         </button>
                     </div>
 
-                    <div className="space-y-6">
+                    <div className="space-y-6 max-h-[60vh] overflow-y-auto px-1">
                         <RPESelector
                             value={rpe}
                             onChange={setRpe}
                             label="Esfuerzo del Bloque (RPE)"
                         />
+
+                        {exercises && exercises.length > 0 && (
+                            <div className="space-y-4 pt-4 border-t border-slate-700/50">
+                                <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest text-left px-1">Notas por Ejercicio</h3>
+                                {exercises.map((ex, idx) => (
+                                    <div key={idx} className="space-y-2">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
+                                            <span className="text-xs font-bold text-slate-300 truncate">{ex.nameEs || ex.name}</span>
+                                        </div>
+                                        <textarea
+                                            value={exNotes[idx] || ''}
+                                            onChange={(e) => handleExNoteChange(idx, e.target.value)}
+                                            placeholder="Añade una nota para este ejercicio..."
+                                            className="w-full bg-slate-900/50 border border-slate-700 rounded-xl p-3 text-white text-xs outline-none focus:border-emerald-500/50 transition-all"
+                                            rows={2}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        <div className="pt-4 border-t border-slate-700/50">
+                            <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest text-left px-1 mb-2">Comentario del Bloque</h3>
+                            <textarea
+                                value={notes}
+                                onChange={(e) => setNotes(e.target.value)}
+                                placeholder="Opcional: Molestias, sensaciones generales..."
+                                className="w-full bg-slate-900/50 border border-slate-700 rounded-xl p-3 text-white text-xs outline-none focus:border-emerald-500/50 transition-all font-medium"
+                                rows={2}
+                            />
+                        </div>
                     </div>
 
                     <button
-                        onClick={handleConfirm}
+                        onClick={() => handleConfirm(false)}
                         disabled={rpe === null}
                         className="w-full mt-8 py-4 bg-emerald-500 text-white rounded-xl font-black text-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-emerald-400 transition-colors shadow-lg shadow-emerald-900/20"
                     >

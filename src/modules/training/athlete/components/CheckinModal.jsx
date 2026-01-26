@@ -345,10 +345,20 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
 
             // 3. Trigger Notification for Admin
             try {
+                // Determine granular notification type
+                let notiType = 'tracking';
+                if (task.type === 'free_training' || task.type === 'neat') {
+                    notiType = 'session';
+                } else if (task.type === 'nutrition') {
+                    notiType = 'habit';
+                } else if (task.config?.formId || task.type === 'tracking' && taskResults.formAnswers) {
+                    notiType = 'form';
+                }
+
                 await TrainingDB.notifications.create('admin', {
                     athleteId: userId,
                     athleteName: currentUser?.displayName || 'Atleta',
-                    type: 'task_completion',
+                    type: notiType,
                     title: task.title || 'Tarea Completada',
                     message: `${currentUser?.displayName || 'Un atleta'} ha completado: ${task.title || 'una tarea'} (${taskSummary})`,
                     data: {

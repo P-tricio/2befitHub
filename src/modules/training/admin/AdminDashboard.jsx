@@ -1,7 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { TrainingDB } from '../services/db';
 import { Link, useNavigate } from 'react-router-dom';
-import { Users, ClipboardList, Activity, ArrowRight, CheckCircle2, MessageSquare, Clock } from 'lucide-react';
+import {
+    Users,
+    ClipboardList,
+    Activity,
+    ArrowRight,
+    CheckCircle2,
+    MessageSquare,
+    Clock,
+    Dumbbell,
+    BarChart3,
+    Notebook,
+    SquareCheck,
+    AlertCircle
+} from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -47,7 +60,7 @@ const AdminDashboard = () => {
 
     const cards = [
         { title: 'Atletas', value: stats.totalUsers, icon: <Users className="text-blue-500" />, link: '/training/admin/users', color: 'blue' },
-        { title: 'Actividad Hoy', value: stats.todayActivities, icon: <Activity className="text-emerald-500" />, link: '#', color: 'emerald' },
+        { title: 'Actividad Hoy', value: stats.todayActivities, icon: <Activity className="text-emerald-500" />, link: '/training/admin/activity', color: 'emerald' },
         { title: 'Mensajes', value: stats.unreadMessages, icon: <MessageSquare className="text-amber-500" />, link: '/training/admin/users', color: 'amber' },
         { title: 'Gestión', value: 'Forms', icon: <ClipboardList className="text-violet-500" />, link: '/training/admin/forms', color: 'violet' }
     ];
@@ -87,7 +100,12 @@ const AdminDashboard = () => {
                 <div className="lg:col-span-2 space-y-4 md:space-y-6">
                     <div className="flex justify-between items-end px-2">
                         <h2 className="text-lg md:text-xl font-black text-slate-900">Actividad Reciente</h2>
-                        <button className="text-[10px] md:text-xs font-bold text-blue-600 hover:underline">Ver todo</button>
+                        <button
+                            onClick={() => navigate('/training/admin/activity')}
+                            className="text-[10px] md:text-xs font-bold text-blue-600 hover:underline"
+                        >
+                            Ver todo
+                        </button>
                     </div>
 
                     <div className="bg-white rounded-[1.8rem] md:rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
@@ -97,28 +115,66 @@ const AdminDashboard = () => {
                             </div>
                         ) : (
                             <div className="divide-y divide-slate-50">
-                                {recentNotifications.map((noti) => (
-                                    <div
-                                        key={noti.id}
-                                        onClick={() => navigate(`/training/admin/users?athleteId=${noti.athleteId}`)}
-                                        className="p-4 md:p-6 flex items-start gap-3 md:gap-4 hover:bg-slate-50 transition-colors cursor-pointer group"
-                                    >
-                                        <div className={`w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl shrink-0 flex items-center justify-center ${noti.type === 'task_completion' ? 'bg-emerald-50 text-emerald-500' : 'bg-blue-50 text-blue-500'
-                                            }`}>
-                                            {noti.type === 'task_completion' ? <CheckCircle2 size={window.innerWidth < 768 ? 20 : 24} /> : <Activity size={window.innerWidth < 768 ? 20 : 24} />}
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex justify-between items-start">
-                                                <h3 className="font-black text-slate-900 text-sm md:text-base group-hover:text-blue-600 transition-colors truncate">{noti.athleteName || 'Atleta'}</h3>
-                                                <span className="text-[9px] font-bold text-slate-300 uppercase flex items-center gap-1 shrink-0">
-                                                    <Clock size={10} />
-                                                    {format(noti.createdAt, 'HH:mm', { locale: es })}
-                                                </span>
+                                {recentNotifications.map((noti) => {
+                                    const actualType = noti.type === 'task_completion' ? (noti.data?.type || 'session') : noti.type;
+
+                                    const getStyle = (type, priority) => {
+                                        if (priority === 'high') return { bg: 'bg-orange-50', text: 'text-orange-500', icon: <AlertCircle size={window.innerWidth < 768 ? 20 : 24} /> };
+                                        switch (type) {
+                                            case 'session':
+                                            case 'free_training':
+                                            case 'neat':
+                                                return { bg: 'bg-emerald-50', text: 'text-emerald-500', icon: <Dumbbell size={window.innerWidth < 768 ? 20 : 24} /> };
+                                            case 'tracking':
+                                            case 'checkin':
+                                                return { bg: 'bg-blue-50', text: 'text-blue-500', icon: <BarChart3 size={window.innerWidth < 768 ? 20 : 24} /> };
+                                            case 'form':
+                                            case 'form_submission':
+                                                return { bg: 'bg-purple-50', text: 'text-purple-500', icon: <Notebook size={window.innerWidth < 768 ? 20 : 24} /> };
+                                            case 'habit':
+                                            case 'nutrition':
+                                                return { bg: 'bg-amber-50', text: 'text-amber-500', icon: <SquareCheck size={window.innerWidth < 768 ? 20 : 24} /> };
+                                            default: return { bg: 'bg-slate-50', text: 'text-slate-500', icon: <Activity size={window.innerWidth < 768 ? 20 : 24} /> };
+                                        }
+                                    };
+                                    const style = getStyle(actualType, noti.priority);
+
+                                    return (
+                                        <div
+                                            key={noti.id}
+                                            onClick={() => navigate(`/training/admin/users?athleteId=${noti.athleteId}`)}
+                                            className="p-4 md:p-6 flex items-start gap-3 md:gap-4 hover:bg-slate-50 transition-colors cursor-pointer group"
+                                        >
+                                            <div className={`w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl shrink-0 flex items-center justify-center relative ${style.bg} ${style.text}`}>
+                                                {style.icon}
+                                                {noti.priority === 'high' && (
+                                                    <div className="absolute -top-1 -right-1 w-3 h-3 bg-orange-500 rounded-full flex items-center justify-center text-white border-2 border-white">
+                                                        <AlertCircle size={8} strokeWidth={4} />
+                                                    </div>
+                                                )}
                                             </div>
-                                            <p className="text-xs md:text-sm font-medium text-slate-500 mt-0.5 line-clamp-1">{noti.message}</p>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex justify-between items-start mb-0.5">
+                                                    <div className="flex items-center gap-2">
+                                                        <h3 className="font-black text-slate-900 text-sm md:text-base group-hover:text-blue-600 transition-colors truncate">
+                                                            {noti.athleteName || 'Atleta'}
+                                                        </h3>
+                                                        {noti.priority === 'high' && (
+                                                            <span className="bg-orange-500 text-white text-[7px] font-black uppercase px-2 py-0.5 rounded-full tracking-tighter">
+                                                                Ajuste
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <span className="text-[9px] font-bold text-slate-300 uppercase flex items-center gap-1 shrink-0">
+                                                        <Clock size={10} />
+                                                        {format(noti.createdAt, 'HH:mm', { locale: es })}
+                                                    </span>
+                                                </div>
+                                                <p className="text-xs md:text-sm font-medium text-slate-500 line-clamp-1">{noti.message}</p>
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         )}
                     </div>

@@ -32,10 +32,8 @@ const ExerciseMedia = ({
 
     // Initial image / thumbnail logic
     useEffect(() => {
-        // Debugging ImgBB loading issues
-        if (exercise?.mediaUrl && exercise.mediaUrl.includes('imgbb')) {
-            console.log('[ExerciseMedia] Attempting to load ImgBB URL:', exercise.mediaUrl, 'for:', exercise.name);
-        }
+        let activeBlobUrl = null;
+        let isMounted = true;
 
         if (shouldLazyLoad && !isHovered && !isPlaying) {
             setCurrentImage(null);
@@ -48,18 +46,16 @@ const ExerciseMedia = ({
             let initialImage = null;
 
             if (exercise?.mediaUrl) {
-                // If it's a protected RapidAPI URL or a Raw ID (Legacy/Offline) 
                 const isUrl = exercise.mediaUrl.includes('http') || exercise.mediaUrl.includes('/');
                 const isProtected = exercise.mediaUrl.includes('exercisedb.p.rapidapi.com');
                 const isLegacyId = !isUrl;
 
                 if (isProtected || (exercise.source === 'exercisedb' && !exercise.mediaUrl.includes('imgbb') && !exercise.mediaUrl.includes('ibb.co')) || isLegacyId) {
-                    // It's a protected image or a raw ID, need to fetch blob
                     try {
-                        // Pass ID or Full URL - ExerciseAPI handles stripping prefixes
                         const blob = await ExerciseAPI.fetchImageBlob(exercise.mediaUrl || exercise.id);
-                        if (blob) {
-                            initialImage = URL.createObjectURL(blob);
+                        if (blob && isMounted) {
+                            activeBlobUrl = URL.createObjectURL(blob);
+                            initialImage = activeBlobUrl;
                         }
                     } catch (e) {
                         console.error('Failed to load protected image:', e);
@@ -74,16 +70,18 @@ const ExerciseMedia = ({
                 initialImage = `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg`;
             }
 
-            setCurrentImage(initialImage);
-            setLoading(false);
+            if (isMounted) {
+                setCurrentImage(initialImage);
+                setLoading(false);
+            }
         };
 
         loadContent();
 
-        // Cleanup blob URLs
         return () => {
-            if (currentImage && currentImage.startsWith('blob:')) {
-                URL.revokeObjectURL(currentImage);
+            isMounted = false;
+            if (activeBlobUrl) {
+                URL.revokeObjectURL(activeBlobUrl);
             }
         };
     }, [exercise, youtubeId, shouldLazyLoad, isHovered, isPlaying]);

@@ -375,14 +375,33 @@ export const TrainingDB = {
                     return dateB - dateA;
                 });
         },
-        async getLastLog(userId, moduleId) {
+        async getLastLog(userId, moduleId, stableId = null) {
             try {
+                // Priority query: Using stableId if provided (more broad across sessions)
+                // Fallback query: Using moduleId 
+                const idToUse = stableId || moduleId;
+                const fieldToUse = stableId ? 'stableId' : 'moduleId';
+
                 const q = query(
                     collection(db, LOGS),
                     where('userId', '==', userId),
-                    where('moduleId', '==', moduleId)
+                    where(fieldToUse, '==', idToUse)
                 );
                 const snapshot = await getDocs(q);
+                if (snapshot.empty && stableId) {
+                    // Try with moduleId if stableId failed (legacy)
+                    const q2 = query(
+                        collection(db, LOGS),
+                        where('userId', '==', userId),
+                        where('moduleId', '==', moduleId)
+                    );
+                    const snap2 = await getDocs(q2);
+                    if (snap2.empty) return null;
+                    return snap2.docs
+                        .map(d => ({ id: d.id, ...d.data() }))
+                        .sort((a, b) => (b.date?.toDate?.() || new Date(b.date || 0)) - (a.date?.toDate?.() || new Date(a.date || 0)))[0];
+                }
+
                 if (snapshot.empty) return null;
 
                 const sorted = snapshot.docs
@@ -395,8 +414,8 @@ export const TrainingDB = {
 
                 return sorted[0];
             } catch (error) {
-                console.warn('Could not fetch last log (may need Firestore index):', error);
-                return null; // Gracefully return null if query fails
+                console.warn('Could not fetch last log:', error);
+                return null;
             }
         },
         async getBySession(userId, sessionId, dateKey) {

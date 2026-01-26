@@ -6,6 +6,7 @@ import UserManager from './admin/UserManager';
 import ProgramBuilder from './admin/ProgramBuilder';
 import ControlHub from './admin/ControlHub';
 import AdminDashboard from './admin/AdminDashboard';
+import ActivityLog from './admin/ActivityLog';
 
 // Note: ExerciseManager, ModuleBuilder, and SessionBuilder have been consolidated into GlobalCreator
 // Old paths redirect to global-creator for backward compatibility
@@ -24,6 +25,7 @@ const TrainingAdminRoutes = () => {
                 <Route path="programs" element={<ProgramBuilder />} />
                 <Route path="users" element={<UserManager />} />
                 <Route path="forms" element={<ControlHub />} />
+                <Route path="activity" element={<ActivityLog />} />
             </Route>
         </Routes>
     );

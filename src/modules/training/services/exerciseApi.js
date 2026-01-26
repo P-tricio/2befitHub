@@ -121,10 +121,15 @@ export const ExerciseAPI = {
     },
 
     async fetchImageBlob(urlOrId) {
+        if (!urlOrId) return null;
+
+        // Ensure it's a string to prevent crashes on .includes()
+        const target = String(urlOrId);
+
         // Handle RapidAPI image proxying if passed an ID
-        if (!urlOrId.includes('http')) {
+        if (!target.includes('http')) {
             // STRIP PREFIXES (edb_, yuh_, etc) BEFORE CALLING API
-            const rawId = urlOrId.replace(/^(edb_|yuh_)/, '');
+            const rawId = target.replace(/^(edb_|yuh_)/, '');
 
             const url = `https://${API_HOST}/image?exerciseId=${rawId}&resolution=360`;
             try {
@@ -132,18 +137,18 @@ export const ExerciseAPI = {
                 if (!response.ok) throw new Error(`API Error: ${response.status}`);
                 return await response.blob();
             } catch (e) {
-                console.error(e);
-                throw e;
+                console.error('Error fetching RapidAPI image:', e);
+                return null;
             }
         }
 
         // Handle normal URL
         try {
-            const response = await fetch(urlOrId);
+            const response = await fetch(target);
             if (!response.ok) throw new Error('Image fetch failed');
             return await response.blob();
         } catch (e) {
-            console.error(e);
+            console.error('Error fetching image URL:', e);
             return null;
         }
     },
