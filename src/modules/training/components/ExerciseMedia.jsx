@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Play, X, Image as ImageIcon, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ExerciseAPI } from '../services/ExerciseAPI';
+import { ExerciseAPI } from '../services/exerciseApi';
 
 /**
  * ExerciseMedia - A unified component to handle all types of exercise visualizations:
@@ -115,7 +115,7 @@ const ExerciseMedia = ({
 
     function getYoutubeVideoId(url) {
         if (!url) return null;
-        const regExp = /^.*(youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?v=|shorts\/|\&v=)([^#\&\?]*).*/;
+        const regExp = /^.*(youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?v=|shorts\/|&v=)([^#&?]*).*/;
         const match = url.match(regExp);
         return (match && match[2].length === 11) ? match[2] : null;
     }

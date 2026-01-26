@@ -187,7 +187,7 @@ export const ExerciseAPI = {
         if (!url) return null;
 
         // Updated regex to support YouTube Shorts and all common formats
-        const regExp = /^.*(youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?v=|shorts\/|\&v=)([^#\&\?]*).*/;
+        const regExp = /^.*(youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?v=|shorts\/|&v=)([^#&?]*).*/;
         const match = url.match(regExp);
 
         if (match && match[2].length === 11) {
