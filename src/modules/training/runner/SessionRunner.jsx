@@ -182,6 +182,26 @@ const SessionRunner = () => {
                 console.warn('Could not update task in schedule:', err);
             }
 
+            // Trigger Notification for Admin
+            try {
+                await TrainingDB.notifications.create('admin', {
+                    athleteId: currentUser.uid,
+                    athleteName: currentUser?.displayName || 'Atleta',
+                    type: 'task_completion',
+                    title: session.name || 'Sesión Completada',
+                    message: `${currentUser?.displayName || 'Un atleta'} ha completado la sesión: ${session.name} (${summary})`,
+                    data: {
+                        sessionId: session.id,
+                        type: 'session',
+                        summary: summary,
+                        durationMinutes: durationMin,
+                        rpe: rpe
+                    }
+                });
+            } catch (notiErr) {
+                console.warn("Failed to trigger session notification:", notiErr);
+            }
+
             navigate(-1);
             return;
         }

@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Search, MoreVertical, Calendar, Activity, Trophy, MessageCircle, Trash2 } from 'lucide-react';
+import { Search, MoreVertical, Calendar, Activity, Trophy, MessageCircle, Trash2, Bell } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { TrainingDB } from '../services/db';
 import UserTracking from './UserTracking';
 import ChatDrawer from '../components/ChatDrawer';
+import SendNotificationModal from './components/SendNotificationModal';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 const UserManager = () => {
@@ -17,6 +19,7 @@ const UserManager = () => {
     const [initialTab, setInitialTab] = useState('metrics');
     const [activeMenuId, setActiveMenuId] = useState(null);
     const [chatUser, setChatUser] = useState(null);
+    const [notificationUser, setNotificationUser] = useState(null);
 
     // Close menu when clicking outside
     useEffect(() => {
@@ -34,11 +37,12 @@ const UserManager = () => {
         if (users.length > 0) {
             const params = new URLSearchParams(location.search);
             const athleteId = params.get('athleteId');
+            const targetTab = params.get('tab');
             if (athleteId) {
                 const user = users.find(u => u.id === athleteId);
                 if (user) {
                     setSelectedUser(user);
-                    setInitialTab('planning');
+                    setInitialTab(targetTab || 'planning');
                     // Clear param to avoid re-opening on back/refresh
                     navigate(location.pathname, { replace: true });
                 }
@@ -238,6 +242,16 @@ const UserManager = () => {
                                                         </button>
                                                         <button
                                                             onClick={() => {
+                                                                setNotificationUser(user);
+                                                                setActiveMenuId(null);
+                                                            }}
+                                                            className="w-full text-left px-4 py-3 text-sm font-black text-indigo-600 hover:bg-slate-50 transition-all flex items-center gap-3 border-t border-slate-50"
+                                                        >
+                                                            <Bell size={18} />
+                                                            ENVIAR AVISO
+                                                        </button>
+                                                        <button
+                                                            onClick={() => {
                                                                 handleDeleteUser(user);
                                                                 setActiveMenuId(null);
                                                             }}
@@ -361,6 +375,16 @@ const UserManager = () => {
                                             </button>
                                             <button
                                                 onClick={() => {
+                                                    setNotificationUser(user);
+                                                    setActiveMenuId(null);
+                                                }}
+                                                className="w-full text-left px-4 py-3 text-xs font-black text-indigo-600 hover:bg-slate-50 transition-colors uppercase tracking-widest flex items-center gap-3 border-t border-slate-50"
+                                            >
+                                                <Bell size={16} />
+                                                Enviar Aviso
+                                            </button>
+                                            <button
+                                                onClick={() => {
                                                     handleDeleteUser(user);
                                                     setActiveMenuId(null);
                                                 }}
@@ -394,6 +418,15 @@ const UserManager = () => {
                     }
                 }}
             />
+
+            <AnimatePresence>
+                {notificationUser && (
+                    <SendNotificationModal
+                        user={notificationUser}
+                        onClose={() => setNotificationUser(null)}
+                    />
+                )}
+            </AnimatePresence>
         </>
     );
 };

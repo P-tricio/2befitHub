@@ -5,6 +5,7 @@ import GlobalCreator from './admin/GlobalCreator';
 import UserManager from './admin/UserManager';
 import ProgramBuilder from './admin/ProgramBuilder';
 import ControlHub from './admin/ControlHub';
+import AdminDashboard from './admin/AdminDashboard';
 
 // Note: ExerciseManager, ModuleBuilder, and SessionBuilder have been consolidated into GlobalCreator
 // Old paths redirect to global-creator for backward compatibility
@@ -13,7 +14,7 @@ const TrainingAdminRoutes = () => {
     return (
         <Routes>
             <Route element={<AdminLayout />}>
-                <Route index element={<Navigate to="users" replace />} />
+                <Route index element={<AdminDashboard />} />
                 {/* Legacy redirects - these features are now in GlobalCreator */}
                 <Route path="exercises" element={<Navigate to="/training/admin/global-creator" replace />} />
                 <Route path="modules" element={<Navigate to="/training/admin/global-creator" replace />} />

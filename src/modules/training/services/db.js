@@ -361,47 +361,60 @@ export const TrainingDB = {
             });
         },
         async getHistory(userId, moduleId) {
-            // Get last 5 logs for this specific module to show trends
             const q = query(
                 collection(db, LOGS),
                 where('userId', '==', userId),
-                where('moduleId', '==', moduleId),
-                orderBy('date', 'desc')
+                where('moduleId', '==', moduleId)
             );
             const snapshot = await getDocs(q);
-            return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+            return snapshot.docs
+                .map(d => ({ id: d.id, ...d.data() }))
+                .sort((a, b) => {
+                    const dateA = a.date?.toDate?.() || new Date(a.date || 0);
+                    const dateB = b.date?.toDate?.() || new Date(b.date || 0);
+                    return dateB - dateA;
+                });
         },
         async getLastLog(userId, moduleId) {
             try {
                 const q = query(
                     collection(db, LOGS),
                     where('userId', '==', userId),
-                    where('moduleId', '==', moduleId),
-                    orderBy('date', 'desc'),
-                    limit(1)
+                    where('moduleId', '==', moduleId)
                 );
                 const snapshot = await getDocs(q);
-                return snapshot.empty ? null : { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
+                if (snapshot.empty) return null;
+
+                const sorted = snapshot.docs
+                    .map(d => ({ id: d.id, ...d.data() }))
+                    .sort((a, b) => {
+                        const dateA = a.date?.toDate?.() || new Date(a.date || 0);
+                        const dateB = b.date?.toDate?.() || new Date(b.date || 0);
+                        return dateB - dateA;
+                    });
+
+                return sorted[0];
             } catch (error) {
                 console.warn('Could not fetch last log (may need Firestore index):', error);
                 return null; // Gracefully return null if query fails
             }
         },
         async getBySession(userId, sessionId, dateKey) {
-            // Get all logs for a specific session on a specific date
-            // dateKey format: "YYYY-MM-DD"
             try {
                 const q = query(
                     collection(db, LOGS),
                     where('userId', '==', userId),
-                    where('sessionId', '==', sessionId),
-                    orderBy('date', 'asc')
+                    where('sessionId', '==', sessionId)
                 );
                 const snapshot = await getDocs(q);
-                // Filter by date client-side (timestamp includes time)
                 return snapshot.docs
                     .map(d => ({ id: d.id, ...d.data() }))
-                    .filter(log => log.timestamp?.startsWith(dateKey));
+                    .filter(log => log.timestamp?.startsWith(dateKey))
+                    .sort((a, b) => {
+                        const dateA = a.date?.toDate?.() || new Date(a.date || 0);
+                        const dateB = b.date?.toDate?.() || new Date(b.date || 0);
+                        return dateA - dateB;
+                    });
             } catch (error) {
                 console.warn('Could not fetch session logs:', error);
                 return [];
@@ -504,6 +517,57 @@ export const TrainingDB = {
         async markConversationRead(athleteId) {
             const userRef = doc(db, 'users', athleteId);
             await updateDoc(userRef, { unreadAdmin: 0 });
+        }
+    },
+    notifications: {
+        async create(recipientId, data) {
+            return await addDoc(collection(db, 'notifications'), {
+                recipientId, // 'admin' or userId
+                ...data,
+                read: false,
+                createdAt: serverTimestamp()
+            });
+        },
+        listen(recipientId, callback) {
+            const q = query(
+                collection(db, 'notifications'),
+                where('recipientId', '==', recipientId)
+            );
+            return onSnapshot(q, (snapshot) => {
+                const notifications = snapshot.docs.map(d => ({
+                    id: d.id,
+                    ...d.data(),
+                    createdAt: d.data().createdAt?.toDate() || new Date()
+                }))
+                    .sort((a, b) => b.createdAt - a.createdAt)
+                    .slice(0, 50);
+
+                callback(notifications);
+            });
+        },
+        async markAsRead(notificationId) {
+            const ref = doc(db, 'notifications', notificationId);
+            await updateDoc(ref, {
+                read: true,
+                updatedAt: serverTimestamp()
+            });
+        },
+        async markAllAsRead(recipientId) {
+            // Firestore transactions or batch would be better for many docs, 
+            // but for a simple bell list, we can fetch unread and update.
+            const q = query(
+                collection(db, 'notifications'),
+                where('recipientId', '==', recipientId),
+                where('read', '==', false)
+            );
+            const snapshot = await getDocs(q);
+            const promises = snapshot.docs.map(d =>
+                updateDoc(doc(db, 'notifications', d.id), {
+                    read: true,
+                    updatedAt: serverTimestamp()
+                })
+            );
+            await Promise.all(promises);
         }
     }
 };

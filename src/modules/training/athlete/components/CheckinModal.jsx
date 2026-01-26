@@ -4,10 +4,12 @@ import { format, subDays } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Camera, Trash2, X, Check, Footprints, Clock, Flame, Zap, Scale, Ruler, Utensils, FileText, Dumbbell, History } from 'lucide-react';
 import { TrainingDB } from '../../services/db';
+import { useAuth } from '../../../../context/AuthContext';
 import { uploadToImgBB } from '../../services/imageService';
 import RPESelector from '../../components/RPESelector';
 
 const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] }) => {
+    const { currentUser } = useAuth();
     // Shared State
     const [saving, setSaving] = useState(false);
     const [notes, setNotes] = useState('');
@@ -340,6 +342,26 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                 results: taskResults,
                 is_new: false
             });
+
+            // 3. Trigger Notification for Admin
+            try {
+                await TrainingDB.notifications.create('admin', {
+                    athleteId: userId,
+                    athleteName: currentUser?.displayName || 'Atleta',
+                    type: 'task_completion',
+                    title: task.title || 'Tarea Completada',
+                    message: `${currentUser?.displayName || 'Un atleta'} ha completado: ${task.title || 'una tarea'} (${taskSummary})`,
+                    data: {
+                        taskId: finalTaskId,
+                        type: task.type,
+                        summary: taskSummary,
+                        results: taskResults
+                    }
+                });
+            } catch (notiErr) {
+                console.warn("Failed to trigger notification:", notiErr);
+                // Don't fail the whole save if notification fails
+            }
 
             onClose(true);
         } catch (error) {

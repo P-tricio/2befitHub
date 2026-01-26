@@ -8,6 +8,7 @@ import { Play, Clock, Dumbbell, Zap, Bell, MessageCircle, User as UserIcon, Chev
 import CheckinModal from '../components/CheckinModal';
 import SessionResultsModal from '../../components/SessionResultsModal';
 import ChatDrawer from '../../components/ChatDrawer';
+import NotificationBell from '../../components/NotificationBell';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format, getDay } from 'date-fns';
 
@@ -203,9 +204,13 @@ const AthleteHome = () => {
                     <div className="flex justify-between items-center">
                         <img src="/brand-compact.png" alt="2BeFit" className="h-8 w-auto" />
                         <div className="flex gap-4">
-                            <button className="text-slate-400 hover:text-slate-600 transition-colors">
-                                <Bell size={24} />
-                            </button>
+                            <NotificationBell
+                                recipientId={currentUser?.uid}
+                                onNotificationClick={(noti) => {
+                                    console.log("Athlete notification clicked:", noti);
+                                    // Handle navigation if needed
+                                }}
+                            />
                         </div>
                     </div>
 
