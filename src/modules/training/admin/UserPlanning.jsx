@@ -12,6 +12,7 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [schedule, setSchedule] = useState({}); // { "YYYY-MM-DD": sessionId }
     const [sessions, setSessions] = useState([]);
+    const [groups, setGroups] = useState([]);
     const [programs, setPrograms] = useState([]);
 
     // Drawers State
@@ -55,9 +56,10 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
     };
 
     const loadData = async () => {
-        const [sessData, progData, userData] = await Promise.all([
+        const [sessData, progData, groupData, userData] = await Promise.all([
             TrainingDB.sessions.getAll(),
             TrainingDB.programs.getAll(),
+            TrainingDB.groups.getAll(),
             // Reload user to get latest schedule
             // In MVP we might pass schedule as prop, but let's fetch to be safe
             TrainingDB.users.getAll().then(users => users.find(u => u.id === user.id))
@@ -65,6 +67,7 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
 
         setSessions(sessData);
         setPrograms(progData);
+        setGroups(groupData);
         // Ensure schedule is compatible (migrating string -> array if needed)
         const rawSchedule = userData?.schedule || {};
         const normalized = {};
@@ -774,6 +777,7 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
                         user={user}
                         date={selectedDate}
                         sessions={sessions}
+                        groups={groups}
                         programs={programs}
                         availableForms={availableForms}
                         taskToEdit={editingTask}
@@ -1091,11 +1095,12 @@ const DayDetailModal = ({ date, tasks, onClose, onAddSession, onAddProgram, onAd
 };
 
 // Add Task Modal with Accordion
-const AddTaskModal = ({ user, date, sessions, programs, availableForms, taskToEdit, onClose, onAssignSession, onAssignProgram, onAssignGeneric, onUpdateTask, onOpenForms, getTaskName }) => {
+const AddTaskModal = ({ user, date, sessions, groups, programs, availableForms, taskToEdit, onClose, onAssignSession, onAssignProgram, onAssignGeneric, onUpdateTask, onOpenForms, getTaskName }) => {
     const [expanded, setExpanded] = useState(taskToEdit ? taskToEdit.type : null);
     const [search, setSearch] = useState('');
     const [selectedSessionForConfig, setSelectedSessionForConfig] = useState(null);
     const [overrides, setOverrides] = useState({});
+    const [expandedGroups, setExpandedGroups] = useState({});
 
     const toggle = (id) => { setSearch(''); setExpanded(expanded === id ? null : id); };
 
@@ -1157,19 +1162,69 @@ const AddTaskModal = ({ user, date, sessions, programs, availableForms, taskToEd
                                         autoFocus
                                     />
                                 </div>
-                                <div className="max-h-60 overflow-y-auto space-y-1">
-                                    {sessions.filter(s => s.name.toLowerCase().includes(search.toLowerCase())).map(s => (
-                                        <button
-                                            key={s.id}
-                                            onClick={() => s.isCardio ? setSelectedSessionForConfig(s) : onAssignSession(s.id)}
-                                            className={`w-full text-left p-3 rounded-lg hover:bg-emerald-50 hover:text-emerald-700 text-sm font-medium transition-colors ${taskToEdit?.sessionId === s.id ? 'bg-emerald-50 text-emerald-700 font-bold' : ''}`}
-                                        >
-                                            <div className="flex justify-between items-center">
-                                                <span>{s.name}</span>
-                                                {s.isCardio && <Footprints size={14} className="text-orange-500" />}
-                                            </div>
-                                        </button>
-                                    ))}
+                                <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+                                    {(() => {
+                                        const filtered = sessions.filter(s => s.name.toLowerCase().includes(search.toLowerCase()));
+                                        const grouped = filtered.reduce((acc, s) => {
+                                            const group = s.group || 'General';
+                                            if (!acc[group]) acc[group] = [];
+                                            acc[group].push(s);
+                                            return acc;
+                                        }, {});
+
+                                        // Add empty explicit groups
+                                        groups.forEach(g => {
+                                            if (!grouped[g.name]) {
+                                                grouped[g.name] = [];
+                                            }
+                                        });
+
+                                        const sortedGroups = Object.keys(grouped).sort((a, b) => {
+                                            if (a === 'General') return 1;
+                                            if (b === 'General') return -1;
+                                            return a.localeCompare(b);
+                                        });
+
+                                        return sortedGroups.map(groupName => {
+                                            const groupSessions = grouped[groupName];
+                                            const isExpanded = expandedGroups[groupName] !== false;
+
+                                            return (
+                                                <div key={groupName} className="space-y-1">
+                                                    <button
+                                                        onClick={() => setExpandedGroups(prev => ({ ...prev, [groupName]: !isExpanded }))}
+                                                        className="w-full px-2 py-1.5 flex items-center justify-between hover:bg-slate-100 rounded-lg transition-colors group/header"
+                                                    >
+                                                        <div className="flex items-center gap-2">
+                                                            <div className={`w-1 h-1 rounded-full ${groupName === 'General' ? 'bg-slate-300' : 'bg-blue-400'}`} />
+                                                            <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest transition-colors group-hover/header:text-slate-600">{groupName}</span>
+                                                        </div>
+                                                        <ChevronDown size={12} className={`text-slate-300 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                                                    </button>
+
+                                                    {isExpanded && (
+                                                        <div className="space-y-1 animate-in fade-in slide-in-from-top-1 duration-200">
+                                                            {groupSessions.map(s => (
+                                                                <button
+                                                                    key={s.id}
+                                                                    onClick={() => s.isCardio ? setSelectedSessionForConfig(s) : onAssignSession(s.id)}
+                                                                    className={`w-full text-left p-3 rounded-xl hover:bg-emerald-50 hover:text-emerald-700 text-sm font-medium transition-all group/item ${taskToEdit?.sessionId === s.id ? 'bg-emerald-50 text-emerald-700 font-bold' : 'bg-white border border-slate-100 shadow-sm'}`}
+                                                                >
+                                                                    <div className="flex justify-between items-center">
+                                                                        <span className="truncate">{s.name}</span>
+                                                                        <div className="flex items-center gap-2">
+                                                                            {s.isCardio && <Footprints size={12} className="text-orange-500" />}
+                                                                            <ChevronRight size={14} className="text-slate-300 opacity-0 group-hover/item:opacity-100 transition-opacity" />
+                                                                        </div>
+                                                                    </div>
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        });
+                                    })()}
                                 </div>
                             </div>
                         )}

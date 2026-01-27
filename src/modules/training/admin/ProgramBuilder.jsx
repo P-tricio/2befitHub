@@ -11,6 +11,7 @@ const DAYS = ['Día 1', 'Día 2', 'Día 3', 'Día 4', 'Día 5', 'Día 6', 'Día 
 const ProgramBuilder = () => {
     const [programs, setPrograms] = useState([]);
     const [sessions, setSessions] = useState([]);
+    const [groups, setGroups] = useState([]);
     const [isEditing, setIsEditing] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
 
@@ -24,6 +25,7 @@ const ProgramBuilder = () => {
     // Picker State
     const [activeSlot, setActiveSlot] = useState(null); // "w1-d1"
     const [pickerSearch, setPickerSearch] = useState('');
+    const [expandedGroups, setExpandedGroups] = useState({}); // For collapsible picker groups
 
     // Drag-drop State
     const [moveMode, setMoveMode] = useState(null); // Click-to-move mode for sessions
@@ -75,12 +77,14 @@ const ProgramBuilder = () => {
     useUnsavedChanges(hasUnsavedChanges);
 
     const loadData = async () => {
-        const [progData, sessData] = await Promise.all([
+        const [progData, sessData, groupData] = await Promise.all([
             TrainingDB.programs.getAll(),
-            TrainingDB.sessions.getAll()
+            TrainingDB.sessions.getAll(),
+            TrainingDB.groups.getAll()
         ]);
         setPrograms(progData);
         setSessions(sessData);
+        setGroups(groupData);
     };
 
     const handleCreate = () => {
@@ -882,46 +886,91 @@ const ProgramBuilder = () => {
                                 />
                             </div>
                             <div className="flex-1 overflow-y-auto p-4 space-y-2">
-                                {sessions
-                                    .filter(s => (s.name || s.title || '').toLowerCase().includes(pickerSearch.toLowerCase()))
-                                    .map(sess => (
-                                        <button
-                                            key={sess.id}
-                                            onClick={() => handleAssignSession(sess.id)}
-                                            className="w-full text-left bg-white p-4 rounded-xl border border-slate-100 hover:border-emerald-500 hover:shadow-md transition-all"
-                                        >
-                                            <div className="font-bold text-slate-900">{sess.name || sess.title}</div>
-                                            <div className="flex gap-1 mt-2">
-                                                {/* Logic for both array-based and object-based blocks */}
-                                                {(() => {
-                                                    const b = sess.blocks;
-                                                    if (Array.isArray(b)) {
-                                                        // New structure: array of blocks
-                                                        const hasBase = b.some(bl => bl.name?.toUpperCase().includes('BASE'));
-                                                        const hasBuild = b.some(bl => bl.name?.toUpperCase().includes('BUILD'));
-                                                        const hasBurn = b.some(bl => bl.name?.toUpperCase().includes('BURN'));
-                                                        return (
-                                                            <>
-                                                                {hasBase && <div className="w-2 h-2 rounded-full bg-blue-500" title="BASE"></div>}
-                                                                {hasBuild && <div className="w-2 h-2 rounded-full bg-orange-500" title="BUILD"></div>}
-                                                                {hasBurn && <div className="w-2 h-2 rounded-full bg-red-500" title="BURN"></div>}
-                                                            </>
-                                                        );
-                                                    } else if (b && typeof b === 'object') {
-                                                        // Old structure: object with blocks as keys
-                                                        return (
-                                                            <>
-                                                                {b.BASE?.length > 0 && <div className="w-2 h-2 rounded-full bg-blue-500" title="BASE"></div>}
-                                                                {b.BUILD?.length > 0 && <div className="w-2 h-2 rounded-full bg-orange-500" title="BUILD"></div>}
-                                                                {b.BURN?.length > 0 && <div className="w-2 h-2 rounded-full bg-red-500" title="BURN"></div>}
-                                                            </>
-                                                        );
-                                                    }
-                                                    return null;
-                                                })()}
+                                {(() => {
+                                    const filtered = sessions.filter(s => (s.name || s.title || '').toLowerCase().includes(pickerSearch.toLowerCase()));
+                                    const grouped = filtered.reduce((acc, s) => {
+                                        const group = s.group || 'General';
+                                        if (!acc[group]) acc[group] = [];
+                                        acc[group].push(s);
+                                        return acc;
+                                    }, {});
+
+                                    // Add empty explicit groups
+                                    groups.forEach(g => {
+                                        if (!grouped[g.name]) {
+                                            grouped[g.name] = [];
+                                        }
+                                    });
+
+                                    const sortedGroups = Object.keys(grouped).sort((a, b) => {
+                                        if (a === 'General') return 1;
+                                        if (b === 'General') return -1;
+                                        return a.localeCompare(b);
+                                    });
+
+                                    return sortedGroups.map(groupName => {
+                                        const groupSessions = grouped[groupName];
+                                        const isExpanded = expandedGroups[groupName] !== false;
+
+                                        return (
+                                            <div key={groupName} className="space-y-1">
+                                                <button
+                                                    onClick={() => setExpandedGroups(prev => ({ ...prev, [groupName]: !isExpanded }))}
+                                                    className="w-full px-2 py-1.5 flex items-center justify-between hover:bg-slate-100 rounded-lg transition-colors group/header"
+                                                >
+                                                    <div className="flex items-center gap-2">
+                                                        <div className={`w-1 h-1 rounded-full ${groupName === 'General' ? 'bg-slate-300' : 'bg-blue-400'}`} />
+                                                        <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest transition-colors group-hover/header:text-slate-600">{groupName}</span>
+                                                    </div>
+                                                    <ChevronDown size={12} className={`text-slate-300 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                                                </button>
+
+                                                {isExpanded && (
+                                                    <div className="space-y-2">
+                                                        {groupSessions.map(sess => (
+                                                            <button
+                                                                key={sess.id}
+                                                                onClick={() => handleAssignSession(sess.id)}
+                                                                className="w-full text-left bg-white p-4 rounded-xl border border-slate-100 hover:border-emerald-500 hover:shadow-md transition-all active:scale-[0.98]"
+                                                            >
+                                                                <div className="flex justify-between items-center mb-1">
+                                                                    <div className="font-bold text-slate-900">{sess.name || sess.title}</div>
+                                                                    <ChevronRight size={14} className="text-slate-300" />
+                                                                </div>
+                                                                <div className="flex gap-1">
+                                                                    {(() => {
+                                                                        const b = sess.blocks;
+                                                                        if (Array.isArray(b)) {
+                                                                            const hasBase = b.some(bl => bl.name?.toUpperCase().includes('BASE'));
+                                                                            const hasBuild = b.some(bl => bl.name?.toUpperCase().includes('BUILD'));
+                                                                            const hasBurn = b.some(bl => bl.name?.toUpperCase().includes('BURN'));
+                                                                            return (
+                                                                                <>
+                                                                                    {hasBase && <div className="w-2 h-2 rounded-full bg-blue-500" title="BASE"></div>}
+                                                                                    {hasBuild && <div className="w-2 h-2 rounded-full bg-orange-500" title="BUILD"></div>}
+                                                                                    {hasBurn && <div className="w-2 h-2 rounded-full bg-red-500" title="BURN"></div>}
+                                                                                </>
+                                                                            );
+                                                                        } else if (b && typeof b === 'object') {
+                                                                            return (
+                                                                                <>
+                                                                                    {b.BASE?.length > 0 && <div className="w-2 h-2 rounded-full bg-blue-500" title="BASE"></div>}
+                                                                                    {b.BUILD?.length > 0 && <div className="w-2 h-2 rounded-full bg-orange-500" title="BUILD"></div>}
+                                                                                    {b.BURN?.length > 0 && <div className="w-2 h-2 rounded-full bg-red-500" title="BURN"></div>}
+                                                                                </>
+                                                                            );
+                                                                        }
+                                                                        return null;
+                                                                    })()}
+                                                                </div>
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                )}
                                             </div>
-                                        </button>
-                                    ))}
+                                        );
+                                    });
+                                })()}
                             </div>
                         </motion.div>
                     </>

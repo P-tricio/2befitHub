@@ -8,25 +8,7 @@ const getApiKey = () => {
     return key ? String(key).trim() : null;
 };
 
-// Diagnostic log (masking the key for security)
-const logStatus = () => {
-    const key = getApiKey();
-    const isProduction = import.meta.env.PROD;
-
-    if (key) {
-        console.log(`[imageService] API Key detected: ${key.slice(0, 4)}...${key.slice(-4)}`);
-    } else {
-        if (isProduction) {
-            console.error("[imageService] CRITICAL: API Key NOT detected in production build.");
-            console.error("Please add VITE_IMGBB_API_KEY to your Vercel/Hosting Provider Environment Variables and RE-DEPLOY.");
-        } else {
-            console.warn("[imageService] API Key NOT detected. Check your local .env file.");
-        }
-    }
-};
-
-logStatus();
-
+// Remove diagnostic log for security
 /**
  * Uploads an image to ImgBB and returns the URL.
  * Handles both File objects and Base64 strings.

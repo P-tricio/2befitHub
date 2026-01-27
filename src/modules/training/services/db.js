@@ -52,8 +52,29 @@ const PROGRAMS = 'training_programs';
 const LOGS = 'training_logs';
 const FORMS = 'training_forms';
 const HABIT_PACKS = 'training_habit_packs';
+const GROUPS = 'training_groups';
 
 export const TrainingDB = {
+    groups: {
+        async getAll() {
+            const q = query(collection(db, GROUPS), orderBy('name'));
+            const snapshot = await getDocs(q);
+            return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        },
+        async create(data) {
+            return await addDoc(collection(db, GROUPS), {
+                ...data,
+                createdAt: serverTimestamp()
+            });
+        },
+        async update(id, data) {
+            const ref = doc(db, GROUPS, id);
+            await updateDoc(ref, { ...data, updatedAt: serverTimestamp() });
+        },
+        async delete(id) {
+            await deleteDoc(doc(db, GROUPS, id));
+        }
+    },
     forms: {
         async create(data) {
             return await addDoc(collection(db, FORMS), {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-    MoreVertical, Plus, Copy, Trash2, ChevronDown, ChevronUp,
+    MoreVertical, Plus, Copy, Trash2, ChevronDown, ChevronUp, ChevronRight,
     Link, Link2, Move, Clock, Repeat, Flame, Dumbbell, Footprints, Edit2,
     Settings, Eye, Check, X, Search, Lock, Unlock, Save, Download, Coffee, Filter, UploadCloud, Loader2, Zap, Library, List, ClipboardList
 } from 'lucide-react';
@@ -627,6 +627,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
 
     // Session State
     const [sessionTitle, setSessionTitle] = useState(initialSession?.name || initialSession?.title || 'Día 1 SESIÓN');
+    const [sessionGroup, setSessionGroup] = useState(initialSession?.group || '');
     const [sessionDescription, setSessionDescription] = useState(initialSession?.description || '');
     const [descriptionExpanded, setDescriptionExpanded] = useState(false);
     const [blocks, setBlocks] = useState(initialSession?.blocks || [
@@ -647,6 +648,11 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
     const [allExercises, setAllExercises] = useState([]);
     const [allModules, setAllModules] = useState([]);
     const [allSessions, setAllSessions] = useState([]); // For sessions list view
+    const [allGroups, setAllGroups] = useState([]); // Explicit groups from DB
+    const [newGroupName, setNewGroupName] = useState(''); // State for new group input
+    const [isCreatingGroup, setIsCreatingGroup] = useState(false);
+    const [movingSession, setMovingSession] = useState(null); // Session being quickly moved
+    const [isMoving, setIsMoving] = useState(false);
     const [exercisePickerOpen, setExercisePickerOpen] = useState(false);
     const [activeBlockIdxForPicker, setActiveBlockIdxForPicker] = useState(null);
     const [modulePickerOpen, setModulePickerOpen] = useState(false);
@@ -680,6 +686,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
     const [libraryEditDrawerOpen, setLibraryEditDrawerOpen] = useState(false);
     const [libraryEditExercise, setLibraryEditExercise] = useState(null);
     const [libraryFilterDrawerOpen, setLibraryFilterDrawerOpen] = useState(false);
+    const [expandedGroups, setExpandedGroups] = useState({}); // For grouped session view
 
     // Filter Exercise List Helper Function
     const filterExerciseList = (exercises, searchTerm, filters) => {
@@ -772,6 +779,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
 
         const currentState = JSON.stringify({
             name: sessionTitle,
+            group: sessionGroup,
             description: sessionDescription,
             blocks: blocks
         });
@@ -798,6 +806,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
         TrainingDB.exercises.getAll().then(setAllExercises);
         TrainingDB.modules.getAll().then(setAllModules);
         TrainingDB.sessions.getAll().then(setAllSessions);
+        TrainingDB.groups.getAll().then(setAllGroups);
     }, []);
 
     // --- Search & Discovery Logic ---
@@ -1251,6 +1260,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
             }
 
             setSessionTitle(session.name);
+            setSessionGroup(session.group || '');
             setSessionDescription(session.description || '');
             setSessionType(session.type || 'LIBRE');
             setIsCardio(session.isCardio || false);
@@ -1271,10 +1281,26 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
         }
     };
 
+    const handleQuickMove = async (sessionId, newGroupName) => {
+        try {
+            setIsMoving(true);
+            await TrainingDB.sessions.update(sessionId, { group: newGroupName });
+            // Update local state
+            setAllSessions(prev => prev.map(s => s.id === sessionId ? { ...s, group: newGroupName } : s));
+            setMovingSession(null);
+        } catch (error) {
+            console.error('Error moving session:', error);
+            alert('Error al mover la sesión');
+        } finally {
+            setIsMoving(false);
+        }
+    };
+
     const handleClearSession = () => {
         if (window.confirm('¿Estás seguro de querer borrar toda la sesión actual?')) {
             setBlocks([{ id: crypto.randomUUID(), name: 'Bloque 1', exercises: [] }]);
             setSessionTitle('Nueva Sesión');
+            setSessionGroup('');
             setSessionDescription('');
             setSessionType('LIBRE');
         }
@@ -1724,6 +1750,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
 
             const sessionData = sanitizeData({
                 name: sessionTitle,
+                group: sessionGroup,
                 description: sessionDescription,
                 type: sessionType,
                 isCardio: isCardio,
@@ -1780,6 +1807,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
             // Reset dirty state after successful save
             setInitialState(JSON.stringify({
                 name: sessionTitle,
+                group: sessionGroup,
                 description: sessionDescription,
                 isCardio: isCardio,
                 blocks: blocks
@@ -1791,6 +1819,48 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
             alert('❌ Error al guardar la sesión: ' + error.message);
         } finally {
             setIsSaving(false);
+        }
+    };
+
+    const fetchGroups = async () => {
+        try {
+            const data = await TrainingDB.groups.getAll();
+            setAllGroups(data);
+        } catch (error) {
+            console.error('Error fetching groups:', error);
+        }
+    };
+
+    const handleCreateGroup = async () => {
+        if (!newGroupName.trim()) return;
+        try {
+            setIsCreatingGroup(true);
+            await TrainingDB.groups.create({ name: newGroupName.trim() });
+            setNewGroupName('');
+            await fetchGroups();
+        } catch (error) {
+            console.error('Error creating group:', error);
+            alert('Error al crear grupo');
+        } finally {
+            setIsCreatingGroup(false);
+        }
+    };
+
+    const handleDeleteGroup = async (groupId, groupName) => {
+        const hasSessions = allSessions.some(s => s.group === groupName);
+        if (hasSessions) {
+            alert('No se puede eliminar un grupo que contiene sesiones. Primero mueve o elimina las sesiones.');
+            return;
+        }
+
+        if (window.confirm(`¿Seguro que quieres eliminar el grupo "${groupName}"?`)) {
+            try {
+                await TrainingDB.groups.delete(groupId);
+                await fetchGroups();
+            } catch (error) {
+                console.error('Error deleting group:', error);
+                alert('Error al eliminar grupo');
+            }
         }
     };
 
@@ -1946,13 +2016,30 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
             {/* Session Title - Only show in editor mode and not in extreme landscape mobile unless we compact it */}
             {mainView === 'editor' && (
                 <div className={`bg-white border-b border-slate-100 px-2 md:px-6 flex items-center gap-2 sticky top-0 md:relative z-10 shadow-sm md:shadow-none transition-all ${isMobileLandscape ? 'py-0.5' : 'py-2 md:py-3'}`}>
-                    {/* Title */}
-                    <input
-                        value={sessionTitle}
-                        onChange={e => setSessionTitle(e.target.value)}
-                        className={`bg-transparent font-black outline-none placeholder:text-slate-300 flex-1 min-w-0 text-slate-900 border-none focus:ring-0 p-1 transition-all ${isMobileLandscape ? 'text-xs' : 'text-base md:text-xl'}`}
-                        placeholder="Nombre de la Sesión"
-                    />
+                    {/* Title & Group */}
+                    <div className="flex-1 min-w-0 flex flex-col md:flex-row md:items-center gap-1">
+                        <input
+                            value={sessionTitle}
+                            onChange={e => setSessionTitle(e.target.value)}
+                            className={`bg-transparent font-black outline-none placeholder:text-slate-300 min-w-0 text-slate-900 border-none focus:ring-0 p-1 transition-all ${isMobileLandscape ? 'text-xs' : 'text-base md:text-xl'}`}
+                            placeholder="Nombre de la Sesión"
+                        />
+                        <div className="flex items-center gap-1 md:ml-2">
+                            <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest hidden md:block">Grupo:</span>
+                            <input
+                                value={sessionGroup}
+                                onChange={e => setSessionGroup(e.target.value)}
+                                list="existing-groups"
+                                className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-0.5 text-[10px] font-bold text-slate-600 outline-none focus:border-blue-400 placeholder:text-slate-300"
+                                placeholder="Carpeta / Grupo..."
+                            />
+                            <datalist id="existing-groups">
+                                {allGroups.map(g => (
+                                    <option key={g.id} value={g.name} />
+                                ))}
+                            </datalist>
+                        </div>
+                    </div>
 
                     {/* Compact Action Bar */}
                     <div className="flex gap-1.5 shrink-0 items-center">
@@ -3077,48 +3164,158 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
             {/* Sessions View */}
             {
                 mainView === 'sessions' && (
-                    <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">{allSessions.length} Sesiones Guardadas</p>
-                        {allSessions.length === 0 ? (
-                            <div className="text-center py-10">
-                                <Dumbbell className="mx-auto text-slate-200 mb-3" size={48} />
-                                <p className="text-sm text-slate-400 font-medium">No hay sesiones guardadas</p>
-                                <p className="text-xs text-slate-300 mt-1">Crea una en el Editor y guárdala</p>
+                    <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                        {/* Actions Header */}
+                        <div className="flex items-center justify-between gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                            <div className="flex-1 relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                <input
+                                    type="text"
+                                    placeholder="Buscar por nombre o descripción..."
+                                    className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-400 transition-all"
+                                    value={pickerSearch}
+                                    onChange={e => setPickerSearch(e.target.value)}
+                                />
                             </div>
-                        ) : (
-                            allSessions.map(session => (
-                                <div key={session.id} className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm">
-                                    <div className="flex justify-between items-start mb-2">
-                                        <div>
-                                            <div className="flex items-center gap-2 mb-1">
-                                                <h3 className="font-bold text-slate-800">{session.name}</h3>
-                                                {session.type && (
-                                                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-wider ${session.type === 'PDP-T' ? 'bg-purple-100 text-purple-600' :
-                                                        session.type === 'PDP-R' ? 'bg-blue-100 text-blue-600' :
-                                                            session.type === 'PDP-E' ? 'bg-emerald-100 text-emerald-600' :
-                                                                'bg-slate-100 text-slate-500'
-                                                        }`}>
-                                                        {session.type}
-                                                    </span>
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="text"
+                                    placeholder="Nuevo grupo..."
+                                    className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-400 transition-all w-32 md:w-48"
+                                    value={newGroupName}
+                                    onChange={e => setNewGroupName(e.target.value)}
+                                    onKeyDown={e => e.key === 'Enter' && handleCreateGroup()}
+                                />
+                                <button
+                                    onClick={handleCreateGroup}
+                                    disabled={isCreatingGroup || !newGroupName.trim()}
+                                    className="p-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    title="Crear Grupo"
+                                >
+                                    {isCreatingGroup ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />}
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="space-y-4">
+                            {(() => {
+                                const filtered = allSessions.filter(s =>
+                                    s.name.toLowerCase().includes(pickerSearch.toLowerCase()) ||
+                                    (s.description || '').toLowerCase().includes(pickerSearch.toLowerCase())
+                                );
+
+                                // Create a map of groups and their sessions
+                                const grouped = filtered.reduce((acc, s) => {
+                                    const group = s.group || 'Sin agrupar';
+                                    if (!acc[group]) acc[group] = [];
+                                    acc[group].push(s);
+                                    return acc;
+                                }, {});
+
+                                // Add empty explicit groups
+                                allGroups.forEach(g => {
+                                    if (!grouped[g.name]) {
+                                        grouped[g.name] = [];
+                                    }
+                                });
+
+                                // Sort groups (General first, others alphabetical)
+                                const sortedGroups = Object.keys(grouped).sort((a, b) => {
+                                    if (a === 'Sin agrupar') return 1;
+                                    if (b === 'Sin agrupar') return -1;
+                                    return a.localeCompare(b);
+                                });
+
+                                if (sortedGroups.length === 0) {
+                                    return (
+                                        <div className="py-20 text-center text-slate-400">
+                                            <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                                                <Search size={32} className="opacity-20" />
+                                            </div>
+                                            <p className="text-xs font-black uppercase tracking-widest italic">No se encontraron sesiones</p>
+                                        </div>
+                                    );
+                                }
+
+                                return sortedGroups.map(groupName => {
+                                    const sessions = grouped[groupName];
+                                    const groupDoc = allGroups.find(g => g.name === groupName);
+                                    const isExpanded = expandedGroups[groupName] !== false; // Default to expanded
+
+                                    return (
+                                        <div key={groupName} className="space-y-2">
+                                            <div className="flex items-center gap-2 group/header-container">
+                                                <button
+                                                    onClick={() => setExpandedGroups(prev => ({ ...prev, [groupName]: !isExpanded }))}
+                                                    className="flex-1 flex items-center justify-between p-2 hover:bg-slate-50 rounded-xl transition-colors group/header"
+                                                >
+                                                    <div className="flex items-center gap-2">
+                                                        <div className={`w-1.5 h-1.5 rounded-full ${groupName === 'Sin agrupar' ? 'bg-slate-300' : 'bg-blue-500'}`} />
+                                                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 group-hover/header:text-slate-900 transition-colors">
+                                                            {groupName} <span className="ml-1 text-slate-300">({sessions.length})</span>
+                                                        </span>
+                                                    </div>
+                                                    <ChevronDown size={14} className={`text-slate-300 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                                                </button>
+                                                {groupDoc && sessions.length === 0 && (
+                                                    <button
+                                                        onClick={() => handleDeleteGroup(groupDoc.id, groupName)}
+                                                        className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover/header-container:opacity-100"
+                                                        title="Eliminar Grupo Vacío"
+                                                    >
+                                                        <Trash2 size={14} />
+                                                    </button>
                                                 )}
                                             </div>
-                                            <p className="text-[10px] text-slate-400">{(session.blocks || []).length} bloques</p>
+
+                                            {isExpanded && (
+                                                <div className="space-y-3 animate-in fade-in slide-in-from-top-1 duration-200">
+                                                    {sessions.length === 0 ? (
+                                                        <div className="p-4 bg-slate-50/50 rounded-2xl border border-slate-100 border-dashed text-center">
+                                                            <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest italic">Grupo vacío</p>
+                                                        </div>
+                                                    ) : (
+                                                        sessions.map(session => (
+                                                            <div key={session.id} className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm hover:border-blue-400 transition-colors">
+                                                                <div className="flex justify-between items-start mb-2">
+                                                                    <div>
+                                                                        <div className="flex items-center gap-2 mb-1">
+                                                                            <h3 className="font-bold text-slate-800">{session.name}</h3>
+                                                                            {session.type && (
+                                                                                <span className={`text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-wider ${session.type === 'PDP-T' ? 'bg-purple-100 text-purple-600' :
+                                                                                    session.type === 'PDP-R' ? 'bg-blue-100 text-blue-600' :
+                                                                                        session.type === 'PDP-E' ? 'bg-emerald-100 text-emerald-600' :
+                                                                                            'bg-slate-100 text-slate-500'
+                                                                                    }`}>
+                                                                                    {session.type}
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                        <p className="text-[10px] text-slate-400">{(session.blocks || []).length} bloques</p>
+                                                                    </div>
+                                                                    <div className="flex gap-1 shrink-0">
+                                                                        <ActionMenu
+                                                                            actions={[
+                                                                                { label: 'Cargar Sesión', icon: <Download size={16} />, onClick: () => handleLoadSession(session) },
+                                                                                { label: 'Mover a Grupo', icon: <Move size={16} />, onClick: () => setMovingSession(session) },
+                                                                                { label: 'Eliminar', icon: <Trash2 size={16} />, onClick: () => handleDeleteSession(session.id), variant: 'danger' }
+                                                                            ]}
+                                                                        />
+                                                                    </div>
+                                                                </div>
+                                                                {session.description && (
+                                                                    <p className="text-xs text-slate-500 line-clamp-2">{session.description}</p>
+                                                                )}
+                                                            </div>
+                                                        ))
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
-                                        <div className="flex gap-1 shrink-0">
-                                            <ActionMenu
-                                                actions={[
-                                                    { label: 'Cargar Sesión', icon: <Download size={16} />, onClick: () => handleLoadSession(session) },
-                                                    { label: 'Eliminar', icon: <Trash2 size={16} />, onClick: () => handleDeleteSession(session.id), variant: 'danger' }
-                                                ]}
-                                            />
-                                        </div>
-                                    </div>
-                                    {session.description && (
-                                        <p className="text-xs text-slate-500 line-clamp-2">{session.description}</p>
-                                    )}
-                                </div>
-                            ))
-                        )}
+                                    );
+                                });
+                            })()}
+                        </div>
                     </div>
                 )
             }
@@ -3130,6 +3327,66 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                 onSave={handleLibrarySave}
                 onClose={() => { setLibraryEditDrawerOpen(false); setLibraryEditExercise(null); }}
             />
+
+            {/* Move Session Modal */}
+            <AnimatePresence>
+                {movingSession && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm"
+                            onClick={() => setMovingSession(null)}
+                        />
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.9, opacity: 0 }}
+                            className="bg-white w-full max-w-sm rounded-3xl shadow-2xl z-[110] overflow-hidden flex flex-col max-h-[70vh]"
+                        >
+                            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-white sticky top-0 z-10">
+                                <div>
+                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mover Sesión</p>
+                                    <h3 className="text-xl font-black text-slate-900 truncate">{movingSession.name}</h3>
+                                </div>
+                                <button onClick={() => setMovingSession(null)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors">
+                                    <X size={20} className="text-slate-600" />
+                                </button>
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto p-4 space-y-1">
+                                {allGroups.length === 0 && (
+                                    <p className="text-center py-8 text-xs text-slate-400 italic font-medium">No hay grupos creados</p>
+                                )}
+                                <button
+                                    onClick={() => handleQuickMove(movingSession.id, '')}
+                                    className="w-full text-left p-4 rounded-2xl hover:bg-slate-50 text-sm font-bold text-slate-600 flex items-center justify-between border border-transparent hover:border-slate-200 transition-all group"
+                                >
+                                    <span>Sin agrupar</span>
+                                    <ChevronRight size={16} className="text-slate-300 opacity-0 group-hover:opacity-100 transition-all" />
+                                </button>
+                                {allGroups.map(group => (
+                                    <button
+                                        key={group.id}
+                                        onClick={() => handleQuickMove(movingSession.id, group.name)}
+                                        className="w-full text-left p-4 rounded-2xl hover:bg-blue-50 text-sm font-bold text-slate-700 flex items-center justify-between border border-transparent hover:border-blue-100 transition-all group"
+                                    >
+                                        <span>{group.name}</span>
+                                        <ChevronRight size={16} className="text-blue-300 opacity-0 group-hover:opacity-100 transition-all" />
+                                    </button>
+                                ))}
+                            </div>
+
+                            {isMoving && (
+                                <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] z-20 flex items-center justify-center">
+                                    <Loader2 className="animate-spin text-blue-600" size={32} />
+                                </div>
+                            )}
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
         </div>
     );
 };

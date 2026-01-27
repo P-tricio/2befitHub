@@ -36,7 +36,16 @@ const AthleteTracking = () => {
         try {
             // Fetch tracking history ordered by date
             const data = await TrainingDB.tracking.getHistory(currentUser.uid, 50);
-            setHistory(data || []);
+
+            // Filter out empty records (no weight, no steps, and no measurements)
+            const filteredData = (data || []).filter(entry => {
+                const hasWeight = entry.weight !== null && entry.weight !== undefined && entry.weight !== '';
+                const hasSteps = entry.steps !== null && entry.steps !== undefined && entry.steps !== '';
+                const hasMeasurements = entry.measurements && Object.values(entry.measurements).some(v => v !== null && v !== undefined && v !== '');
+                return hasWeight || hasSteps || hasMeasurements;
+            });
+
+            setHistory(filteredData);
         } catch (err) {
             console.error("Error loading tracking history", err);
         } finally {

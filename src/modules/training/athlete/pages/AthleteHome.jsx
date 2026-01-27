@@ -318,7 +318,7 @@ const AthleteHome = () => {
                                                     ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20'
                                                     : expandedSessionId === task.id
                                                         ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/30'
-                                                        : sessionMetadata.isCardio ? 'bg-orange-50 text-orange-600' : 'bg-orange-50 text-orange-600'
+                                                        : sessionMetadata.isCardio ? 'bg-blue-50 text-blue-600' : 'bg-orange-50 text-orange-600'
                                                     }`}>
                                                     {isCompleted ? <Check size={24} strokeWidth={3} /> : (sessionMetadata.isCardio ? <Footprints size={22} /> : <Dumbbell size={22} />)}
                                                 </div>
