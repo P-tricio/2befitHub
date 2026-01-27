@@ -652,6 +652,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
     const [newGroupName, setNewGroupName] = useState(''); // State for new group input
     const [isCreatingGroup, setIsCreatingGroup] = useState(false);
     const [movingSession, setMovingSession] = useState(null); // Session being quickly moved
+    const [movingExercise, setMovingExercise] = useState(null); // Exercise being quickly moved
     const [isMoving, setIsMoving] = useState(false);
     const [exercisePickerOpen, setExercisePickerOpen] = useState(false);
     const [activeBlockIdxForPicker, setActiveBlockIdxForPicker] = useState(null);
@@ -745,6 +746,11 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
     const [isMobilePortrait, setIsMobilePortrait] = useState(false);
     const [isLibraryDragging, setIsLibraryDragging] = useState(false);
     const [sidebarFilterOpen, setSidebarFilterOpen] = useState(false);
+
+    // Derived Group Lists
+    // existing groups might lack 'type', assume 'SESSION' if missing
+    const sessionGroups = allGroups.filter(g => !g.type || g.type === 'SESSION');
+    const exerciseGroups = allGroups.filter(g => g.type === 'EXERCISE');
 
     useEffect(() => {
         const checkOrientation = () => {
@@ -1831,11 +1837,15 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
         }
     };
 
-    const handleCreateGroup = async () => {
+    const handleCreateGroup = async (type = 'SESSION') => {
         if (!newGroupName.trim()) return;
         try {
             setIsCreatingGroup(true);
-            await TrainingDB.groups.create({ name: newGroupName.trim() });
+            // Polymorphic group creation: defaults to SESSION if not specified
+            await TrainingDB.groups.create({
+                name: newGroupName.trim(),
+                type: type
+            });
             setNewGroupName('');
             await fetchGroups();
         } catch (error) {
@@ -1846,10 +1856,17 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
         }
     };
 
-    const handleDeleteGroup = async (groupId, groupName) => {
-        const hasSessions = allSessions.some(s => s.group === groupName);
-        if (hasSessions) {
-            alert('No se puede eliminar un grupo que contiene sesiones. Primero mueve o elimina las sesiones.');
+    const handleDeleteGroup = async (groupId, groupName, type = 'SESSION') => {
+        let hasDependencies = false;
+
+        if (type === 'SESSION') {
+            hasDependencies = allSessions.some(s => s.group === groupName);
+        } else {
+            hasDependencies = allExercises.some(ex => ex.group === groupName);
+        }
+
+        if (hasDependencies) {
+            alert(`No se puede eliminar un grupo que contiene ${type === 'SESSION' ? 'sesiones' : 'ejercicios'}. Primero mueve o elimina los elementos.`);
             return;
         }
 
@@ -1861,6 +1878,25 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                 console.error('Error deleting group:', error);
                 alert('Error al eliminar grupo');
             }
+        }
+    };
+
+    const handleQuickMoveExercise = async (exerciseId, newGroupName) => {
+        try {
+            setIsMoving(true);
+            await TrainingDB.exercises.update(exerciseId, { group: newGroupName });
+
+            // Optimistic update
+            setAllExercises(prev => prev.map(ex =>
+                ex.id === exerciseId ? { ...ex, group: newGroupName } : ex
+            ));
+
+            setMovingExercise(null); // Close modal
+        } catch (error) {
+            console.error('Error moving exercise:', error);
+            alert('Error al mover el ejercicio');
+        } finally {
+            setIsMoving(false);
         }
     };
 
@@ -3011,23 +3047,44 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                             />
                             {isSearchingOnline && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-500 animate-spin" size={18} />}
                         </div>
-                        <div className="flex items-center justify-between mt-2">
-                            <p className="text-[10px] text-slate-400 font-bold">
+                        <div className="flex flex-col md:flex-row md:items-center justify-between mt-2 gap-2">
+                            <p className="text-[10px] text-slate-400 font-bold order-2 md:order-1">
                                 {pickerTab === 'library' ? `${filteredLibraryExercises.length} ejercicios` : `${onlineResults.length} resultados`}
                                 {pickerTab === 'library' && (pickerFilter.pattern.length + pickerFilter.equipment.length + pickerFilter.level.length + pickerFilter.quality.length) > 0 &&
                                     ` • Filtros activos`
                                 }
                             </p>
                             {pickerTab === 'library' && (
-                                <button
-                                    onClick={() => setLibraryFilterDrawerOpen(!libraryFilterDrawerOpen)}
-                                    className={`p-2 rounded-lg flex items-center gap-2 text-xs font-bold transition-colors ${(pickerFilter.pattern.length + pickerFilter.equipment.length + pickerFilter.level.length + pickerFilter.quality.length) > 0
-                                        ? 'bg-slate-900 text-white'
-                                        : 'bg-white text-slate-500 border border-slate-200'
-                                        }`}
-                                >
-                                    <Filter size={14} /> Filtros
-                                </button>
+                                <div className="flex items-center gap-2 order-1 md:order-2 ml-auto md:ml-0 w-full md:w-auto justify-end">
+                                    <div className="flex items-center gap-1">
+                                        <input
+                                            type="text"
+                                            placeholder="Grupo..."
+                                            className="w-24 md:w-32 px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-bold outline-none focus:border-blue-400"
+                                            value={newGroupName}
+                                            onChange={e => setNewGroupName(e.target.value)}
+                                            onKeyDown={e => e.key === 'Enter' && handleCreateGroup('EXERCISE')}
+                                        />
+                                        <button
+                                            onClick={() => handleCreateGroup('EXERCISE')}
+                                            disabled={isCreatingGroup || !newGroupName.trim()}
+                                            className="p-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                                            title="Crear Grupo de Ejercicios"
+                                        >
+                                            <Plus size={14} />
+                                        </button>
+                                    </div>
+                                    <div className="w-px h-6 bg-slate-200 mx-1"></div>
+                                    <button
+                                        onClick={() => setLibraryFilterDrawerOpen(!libraryFilterDrawerOpen)}
+                                        className={`p-1.5 md:p-2 rounded-lg flex items-center gap-2 text-xs font-bold transition-colors ${(pickerFilter.pattern.length + pickerFilter.equipment.length + pickerFilter.level.length + pickerFilter.quality.length) > 0
+                                            ? 'bg-slate-900 text-white'
+                                            : 'bg-white text-slate-500 border border-slate-200'
+                                            }`}
+                                    >
+                                        <Filter size={14} /> <span className="hidden md:inline">Filtros</span>
+                                    </button>
+                                </div>
                             )}
                         </div>
 
@@ -3091,23 +3148,94 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                     <div className="flex-1 overflow-y-auto p-4">
                         <div className="grid grid-cols-1 gap-3">
                             {pickerTab === 'library' ? (
-                                filteredLibraryExercises.length > 0 ? (
-                                    filteredLibraryExercises.map(ex => (
-                                        <ExerciseCard
-                                            key={ex.id}
-                                            ex={ex}
-                                            showCheckbox={false}
-                                            onEdit={() => handleLibraryEdit(ex)}
-                                            onDelete={() => handleLibraryDelete(ex.id)}
-                                            onDuplicate={() => handleLibraryDuplicate(ex)}
-                                        />
-                                    ))
-                                ) : (
-                                    <div className="text-center py-20 opacity-40">
-                                        <Search size={48} className="mx-auto mb-4" />
-                                        <p className="font-bold text-sm">No hay resultados en la biblioteca local</p>
-                                    </div>
-                                )
+                                (() => {
+                                    // Grouping Logic
+                                    const grouped = filteredLibraryExercises.reduce((acc, ex) => {
+                                        const group = ex.group || 'Sin agrupar';
+                                        if (!acc[group]) acc[group] = [];
+                                        acc[group].push(ex);
+                                        return acc;
+                                    }, {});
+
+                                    // Add explicitly created groups
+                                    exerciseGroups.forEach(g => {
+                                        if (!grouped[g.name]) grouped[g.name] = [];
+                                    });
+
+                                    const sortedGroups = Object.keys(grouped).sort((a, b) => {
+                                        if (a === 'Sin agrupar') return 1;
+                                        if (b === 'Sin agrupar') return -1;
+                                        return a.localeCompare(b);
+                                    });
+
+                                    if (sortedGroups.length === 0 || (sortedGroups.length === 1 && sortedGroups[0] === 'Sin agrupar' && grouped['Sin agrupar'].length === 0)) {
+                                        return (
+                                            <div className="text-center py-20 opacity-40">
+                                                <Search size={48} className="mx-auto mb-4" />
+                                                <p className="font-bold text-sm">No hay resultados en la biblioteca local</p>
+                                            </div>
+                                        );
+                                    }
+
+                                    return sortedGroups.map(groupName => {
+                                        const exercises = grouped[groupName];
+                                        const groupDoc = exerciseGroups.find(g => g.name === groupName);
+                                        const isExpanded = expandedGroups[`ex_${groupName}`] !== false; // Default expanded
+
+                                        // Skip empty "Sin agrupar" if we have other groups, or show it? 
+                                        // Usually we want to show it if there are exercises.
+                                        if (groupName === 'Sin agrupar' && exercises.length === 0) return null;
+
+                                        return (
+                                            <div key={groupName} className="space-y-2 mb-2">
+                                                <div className="flex items-center gap-2 group/header-container">
+                                                    <button
+                                                        onClick={() => setExpandedGroups(prev => ({ ...prev, [`ex_${groupName}`]: !isExpanded }))}
+                                                        className="flex-1 flex items-center justify-between p-2 hover:bg-slate-50 rounded-xl transition-colors group/header"
+                                                    >
+                                                        <div className="flex items-center gap-2">
+                                                            <div className={`w-1.5 h-1.5 rounded-full ${groupName === 'Sin agrupar' ? 'bg-slate-300' : 'bg-emerald-500'}`} />
+                                                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 group-hover/header:text-slate-900 transition-colors">
+                                                                {groupName} <span className="ml-1 text-slate-300">({exercises.length})</span>
+                                                            </span>
+                                                        </div>
+                                                        <ChevronDown size={14} className={`text-slate-300 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                                                    </button>
+                                                    {groupDoc && exercises.length === 0 && (
+                                                        <button
+                                                            onClick={() => handleDeleteGroup(groupDoc.id, groupName, 'EXERCISE')}
+                                                            className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover/header-container:opacity-100"
+                                                            title="Eliminar Grupo Vacío"
+                                                        >
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    )}
+                                                </div>
+
+                                                {isExpanded && (
+                                                    <div className="space-y-3">
+                                                        {exercises.length === 0 && groupName !== 'Sin agrupar' && (
+                                                            <div className="p-4 bg-slate-50/50 rounded-2xl border border-slate-100 border-dashed text-center">
+                                                                <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest italic">Carpeta vacía</p>
+                                                            </div>
+                                                        )}
+                                                        {exercises.map(ex => (
+                                                            <ExerciseCard
+                                                                key={ex.id}
+                                                                ex={ex}
+                                                                showCheckbox={false}
+                                                                onEdit={() => handleLibraryEdit(ex)}
+                                                                onDelete={() => handleLibraryDelete(ex.id)}
+                                                                onDuplicate={() => handleLibraryDuplicate(ex)}
+                                                                onMove={() => setMovingExercise(ex)}
+                                                            />
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    });
+                                })()
                             ) : (
                                 <>
                                     {pickerTab === 'online' && (
@@ -3212,8 +3340,8 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                                     return acc;
                                 }, {});
 
-                                // Add empty explicit groups
-                                allGroups.forEach(g => {
+                                // Add empty explicit groups (only Session groups)
+                                sessionGroups.forEach(g => {
                                     if (!grouped[g.name]) {
                                         grouped[g.name] = [];
                                     }
@@ -3239,7 +3367,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
 
                                 return sortedGroups.map(groupName => {
                                     const sessions = grouped[groupName];
-                                    const groupDoc = allGroups.find(g => g.name === groupName);
+                                    const groupDoc = sessionGroups.find(g => g.name === groupName);
                                     const isExpanded = expandedGroups[groupName] !== false; // Default to expanded
 
                                     return (
@@ -3381,6 +3509,66 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                             {isMoving && (
                                 <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] z-20 flex items-center justify-center">
                                     <Loader2 className="animate-spin text-blue-600" size={32} />
+                                </div>
+                            )}
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* Move Exercise Modal */}
+            <AnimatePresence>
+                {movingExercise && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm"
+                            onClick={() => setMovingExercise(null)}
+                        />
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.9, opacity: 0 }}
+                            className="bg-white w-full max-w-sm rounded-3xl shadow-2xl z-[110] overflow-hidden flex flex-col max-h-[70vh]"
+                        >
+                            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-white sticky top-0 z-10">
+                                <div>
+                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mover Ejercicio</p>
+                                    <h3 className="text-xl font-black text-slate-900 truncate max-w-[200px]">{movingExercise.name}</h3>
+                                </div>
+                                <button onClick={() => setMovingExercise(null)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors">
+                                    <X size={20} className="text-slate-600" />
+                                </button>
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto p-4 space-y-1">
+                                {exerciseGroups.length === 0 && (
+                                    <p className="text-center py-8 text-xs text-slate-400 italic font-medium">No hay grupos de ejercicios creados</p>
+                                )}
+                                <button
+                                    onClick={() => handleQuickMoveExercise(movingExercise.id, '')}
+                                    className="w-full text-left p-4 rounded-2xl hover:bg-slate-50 text-sm font-bold text-slate-600 flex items-center justify-between border border-transparent hover:border-slate-200 transition-all group"
+                                >
+                                    <span>Sin agrupar</span>
+                                    <ChevronRight size={16} className="text-slate-300 opacity-0 group-hover:opacity-100 transition-all" />
+                                </button>
+                                {exerciseGroups.map(group => (
+                                    <button
+                                        key={group.id}
+                                        onClick={() => handleQuickMoveExercise(movingExercise.id, group.name)}
+                                        className="w-full text-left p-4 rounded-2xl hover:bg-emerald-50 text-sm font-bold text-slate-700 flex items-center justify-between border border-transparent hover:border-emerald-100 transition-all group"
+                                    >
+                                        <span>{group.name}</span>
+                                        <ChevronRight size={16} className="text-emerald-300 opacity-0 group-hover:opacity-100 transition-all" />
+                                    </button>
+                                ))}
+                            </div>
+
+                            {isMoving && (
+                                <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] z-20 flex items-center justify-center">
+                                    <Loader2 className="animate-spin text-emerald-600" size={32} />
                                 </div>
                             )}
                         </motion.div>

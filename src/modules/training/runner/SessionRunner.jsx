@@ -139,11 +139,12 @@ const SessionRunner = () => {
         // If Finishing Session (from SUMMARY)
         if (currentStep.type === 'SUMMARY') {
             // Unify analysis generation
-            const { insights, metrics } = generateSessionAnalysis(sessionState.results, timeline);
+            const results = sessionState.results || {};
+            const { insights, metrics } = generateSessionAnalysis(results, timeline);
             let totalElapsed = 0;
 
-            Object.values(sessionState.results).forEach(res => {
-                if (res.elapsed) totalElapsed += res.elapsed;
+            Object.values(results).forEach(res => {
+                if (res && res.elapsed) totalElapsed += res.elapsed;
             });
 
             // Determine the target date for markers and logs
@@ -151,6 +152,9 @@ const SessionRunner = () => {
             const targetDate = scheduledDate || new Date().toISOString().split('T')[0];
 
             setIsGlobalActive(false);
+
+            // Confirm all pending logs for this session as valid
+            await TrainingDB.logs.confirmSessionLogs(currentUser.uid, session.id);
 
             // Save feedback AND analysis
             await TrainingDB.logs.create(currentUser.uid, {
@@ -206,8 +210,8 @@ const SessionRunner = () => {
                     athleteId: currentUser.uid,
                     athleteName: currentUser?.displayName || 'Atleta',
                     type: 'session',
-                    title: session.name || 'Sesión Completada',
-                    message: `${currentUser?.displayName || 'Un atleta'} ha completado la sesión: ${session.name} (${summary})${technicalInsights ? '\n\nSugerencias técnicas:\n' + technicalInsights : ''}`,
+                    title: session?.name || 'Sesión Completada',
+                    message: `${currentUser?.displayName || 'Un atleta'} ha completado la sesión: ${session?.name || 'Sesión'} (${summary})${technicalInsights ? '\n\nSugerencias técnicas:\n' + technicalInsights : ''}`,
                     priority: technicalInsights ? 'high' : 'normal',
                     data: {
                         sessionId: session.id,
@@ -270,7 +274,15 @@ const SessionRunner = () => {
         }));
 
         // Sync to Firestore including Feedback
-        // feedbackData: { rpe: number, notes: string }
+        // feedbackData: { rpe: number, notes: string, exerciseNotes: {} }
+
+        // Merge exerciseNotes into results so they appear in summaries
+        const finalResults = {
+            ...pendingResults,
+            weights: sanitizedWeights,
+            exerciseNotes: feedbackData.exerciseNotes || pendingResults.exerciseNotes
+        };
+
         const logEntry = {
             userId: currentUser.uid,
             sessionId: session.id,
@@ -280,8 +292,9 @@ const SessionRunner = () => {
             protocol: currentStep.module.protocol,
             timestamp: new Date().toISOString(),
             scheduledDate: location.state?.scheduledDate || new Date().toISOString().split('T')[0],
-            results: { ...pendingResults, weights: sanitizedWeights },
-            feedback: feedbackData // { rpe, notes }
+            results: finalResults,
+            feedback: feedbackData, // { rpe, notes }
+            status: 'pending' // Mark as pending until session is finished
         };
 
         await TrainingDB.logs.create(currentUser.uid, logEntry);
@@ -527,7 +540,7 @@ const SessionRunner = () => {
             </div>
 
             {/* Main Content Info */}
-            <main className="flex-1 relative overflow-y-auto overflow-x-hidden">
+            <main className={`flex-1 relative overflow-y-auto overflow-x-hidden ${currentStep.type === 'SUMMARY' ? 'bg-white' : ''}`}>
                 <AnimatePresence mode='wait'>
                     <motion.div
                         key={currentIndex}
@@ -535,7 +548,7 @@ const SessionRunner = () => {
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, x: -20 }}
                         transition={{ duration: 0.2 }}
-                        className="max-w-md mx-auto h-full flex flex-col p-6 min-h-full"
+                        className={`${currentStep.type === 'SUMMARY' ? 'w-full' : 'max-w-md mx-auto p-6'} h-full flex flex-col min-h-full`}
                     >
 
                         {/* WARMUP UI */}
@@ -586,6 +599,8 @@ const SessionRunner = () => {
                 {showFeedbackModal && (
                     <BlockFeedbackModal
                         onConfirm={handleBlockFeedbackConfirm}
+                        onBack={() => setShowFeedbackModal(false)}
+                        initialExNotes={pendingResults?.exerciseNotes || {}}
                         blockType={currentStep?.blockType}
                         exercises={currentStep?.module?.exercises}
                     />
@@ -736,7 +751,7 @@ const CollapsiblePlanningBlock = ({ module, onSelectExercise }) => {
                                 >
                                     {/* Image */}
                                     <div className="w-20 h-20 bg-slate-900 rounded-xl overflow-hidden shrink-0 border border-slate-700/50">
-                                        <ExerciseMedia exercise={ex} thumbnailMode={true} />
+                                        <ExerciseMedia exercise={ex} thumbnailMode={true} lazyLoad={false} />
                                     </div>
 
                                     <div className="flex-1 min-w-0 py-1 flex flex-col justify-between">
@@ -784,13 +799,14 @@ const CollapsiblePlanningBlock = ({ module, onSelectExercise }) => {
 };
 
 const SummaryBlock = ({ sessionState, timeline, history, setSessionState, onFinish, globalTime }) => {
-    const { insights, metrics } = generateSessionAnalysis(sessionState.results, timeline, history);
+    const { insights, metrics } = generateSessionAnalysis(sessionState.results || {}, timeline, history);
     const [expandedAdjustments, setExpandedAdjustments] = useState(true);
     const [expandedWork, setExpandedWork] = useState(true);
+    const [expandedBlockIndex, setExpandedBlockIndex] = useState({}); // Tracking individual block expansion
     const totalMinutes = Math.floor(globalTime / 60);
 
     return (
-        <div className="flex-1 flex flex-col pt-4 pb-32 max-w-lg mx-auto w-full bg-slate-50/50 min-h-full">
+        <div className="flex-1 flex flex-col pt-4 max-w-xl mx-auto w-full bg-white min-h-screen">
             {/* Celebration Header - Premium Light */}
             <div className="text-center mb-6 px-4 pt-4">
                 <motion.div
@@ -799,13 +815,13 @@ const SummaryBlock = ({ sessionState, timeline, history, setSessionState, onFini
                 >
                     <CheckCircle size={32} strokeWidth={3} />
                 </motion.div>
-                <h2 className="text-2xl font-black text-slate-900 mb-0.5 tracking-tight">¡Sesión Fuckin' Lista!</h2>
+                <h2 className="text-2xl font-black text-slate-900 mb-0.5 tracking-tight">¡Sesión Completada!</h2>
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Rendimiento guardado con éxito</p>
             </div>
 
             {/* Premium Metrics Grid - Light Theme */}
-            <div className="grid grid-cols-3 gap-3 px-4 mb-6">
-                <div className="bg-white p-4 rounded-3xl shadow-sm border border-slate-100 text-center">
+            <div className="grid grid-cols-3 gap-2 sm:gap-3 px-4 mb-6">
+                <div className="bg-slate-50 p-3 sm:p-4 rounded-3xl border border-slate-100 text-center">
                     <Clock size={16} className="text-emerald-500 mx-auto mb-1.5" />
                     <p className="text-xl font-black text-slate-900 leading-none mb-1">{totalMinutes || '--'}</p>
                     <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Minutos</p>
@@ -905,75 +921,124 @@ const SummaryBlock = ({ sessionState, timeline, history, setSessionState, onFini
                                         if (!result) return null;
 
                                         const protocol = step.module.protocol;
+                                        const isBlockExpanded = expandedBlockIndex[idx] !== false; // Default expanded
 
                                         return (
-                                            <div key={idx} className="bg-slate-50/50 rounded-2xl p-4 border border-slate-100">
-                                                <div className="flex justify-between items-center mb-3">
-                                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">{step.blockType || step.module.name}</span>
-                                                    <div className="flex items-center gap-2 text-slate-900 font-black text-xs">
-                                                        <Clock size={12} className="text-slate-300" />
-                                                        <span>
-                                                            {protocol === 'R'
-                                                                ? (result.elapsed > 0
-                                                                    ? `${Math.floor(result.elapsed / 60)}:${(result.elapsed % 60).toString().padStart(2, '0')}`
-                                                                    : 'Completado')
-                                                                : protocol === 'T'
-                                                                    ? `${Math.floor((step.module.targeting?.[0]?.timeCap || 0) / 60)} min`
-                                                                    : `${step.module.emomParams?.durationMinutes || '--'} min`}
-                                                        </span>
+                                            <div key={idx} className="bg-slate-50/50 rounded-2xl border border-slate-100 overflow-hidden">
+                                                <button
+                                                    onClick={() => setExpandedBlockIndex(prev => ({ ...prev, [idx]: !isBlockExpanded }))}
+                                                    className="w-full p-4 flex justify-between items-center hover:bg-slate-100/50 transition-colors"
+                                                >
+                                                    <div className="flex flex-col items-start">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">{step.blockType || step.module.name}</span>
+                                                            {result.feedback?.rpe && (
+                                                                <span className="text-[9px] font-black bg-slate-900 text-white px-1.5 py-0.5 rounded ml-1">RPE {result.feedback.rpe}</span>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex items-center gap-2 text-slate-900 font-black text-[10px] mt-0.5">
+                                                            <Clock size={10} className="text-slate-300" />
+                                                            <span>
+                                                                {result.skipped
+                                                                    ? <span className="text-slate-400 capitalize">Saltado</span>
+                                                                    : protocol === 'R'
+                                                                        ? (result.elapsed > 0
+                                                                            ? `${Math.floor(result.elapsed / 60)}:${(result.elapsed % 60).toString().padStart(2, '0')}`
+                                                                            : ((result.reps && Object.values(result.reps).some(r => r > 0)) ? 'Completado' : '--'))
+                                                                        : protocol === 'T'
+                                                                            ? `${Math.floor((step.module.targeting?.[0]?.timeCap || 0) / 60)} min`
+                                                                            : `${step.module.emomParams?.durationMinutes || '--'} min`}
+                                                            </span>
+                                                        </div>
                                                     </div>
-                                                </div>
+                                                    <div className="text-slate-300">
+                                                        {isBlockExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                                                    </div>
+                                                </button>
 
-                                                <div className="space-y-2">
-                                                    {protocol === 'E' && result.emomResults ? (
-                                                        <div className="flex flex-col gap-3">
-                                                            <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-                                                                {Object.entries(result.emomResults).map(([round, status]) => (
-                                                                    <div key={round} className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 text-[10px] font-black ${status === 'success' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/10' : status === 'fail' ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/10' : 'bg-slate-200 text-slate-400'}`}>
-                                                                        {round}
+                                                <AnimatePresence>
+                                                    {isBlockExpanded && (
+                                                        <motion.div
+                                                            initial={{ height: 0, opacity: 0 }}
+                                                            animate={{ height: 'auto', opacity: 1 }}
+                                                            exit={{ height: 0, opacity: 0 }}
+                                                            className="overflow-hidden"
+                                                        >
+                                                            <div className="px-4 pb-4 space-y-2">
+                                                                {protocol === 'E' && result.emomResults ? (
+                                                                    <div className="flex flex-col gap-3">
+                                                                        <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                                                                            {Object.entries(result.emomResults).map(([round, status]) => (
+                                                                                <div key={round} className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 text-[10px] font-black ${status === 'success' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/10' : status === 'fail' ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/10' : 'bg-slate-200 text-slate-400'}`}>
+                                                                                    {round}
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                        <div className="grid gap-1.5">
+                                                                            {step.module.exercises?.map((ex, exIdx) => (
+                                                                                <div key={exIdx} className="flex justify-between items-center bg-white p-2.5 rounded-xl border border-slate-100">
+                                                                                    <span className="text-xs font-bold text-slate-700 truncate max-w-[60%]">{ex.nameEs || ex.name}</span>
+                                                                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">
+                                                                                        {result.actualWeights?.[exIdx] || result.weights?.[exIdx] || 0}kg
+                                                                                    </span>
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
                                                                     </div>
-                                                                ))}
-                                                            </div>
-                                                            <div className="grid gap-1.5">
-                                                                {step.module.exercises?.map((ex, exIdx) => (
-                                                                    <div key={exIdx} className="flex justify-between items-center bg-white p-2.5 rounded-xl border border-slate-100">
-                                                                        <span className="text-xs font-bold text-slate-700 truncate max-w-[60%]">{ex.nameEs || ex.name}</span>
-                                                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">
-                                                                            {ex.targetReps || step.module.targeting?.[0]?.volume} reps • {result.actualWeights?.[exIdx] || result.weights?.[exIdx] || 0}kg
-                                                                        </span>
+                                                                ) : (
+                                                                    <div className="grid gap-1.5">
+                                                                        {step.module.exercises?.map((ex, exIdx) => (
+                                                                            <div key={exIdx} className="flex flex-col gap-1.5 bg-white p-3 rounded-2xl border border-slate-100 shadow-sm">
+                                                                                <div className="flex justify-between items-start bg-white gap-2">
+                                                                                    <div className="flex items-start gap-2 min-w-0 flex-1">
+                                                                                        <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full shrink-0 mt-1" />
+                                                                                        <span className="text-xs font-bold text-slate-700 leading-tight break-words">{ex.nameEs || ex.name}</span>
+                                                                                    </div>
+                                                                                    <div className="flex items-center gap-2 shrink-0">
+                                                                                        <span className="text-xs font-black text-slate-900">{result.reps?.[exIdx] || 0} <span className="text-[8px] opacity-40 uppercase">reps</span></span>
+                                                                                        {(result.actualWeights?.[exIdx] || result.weights?.[exIdx]) > 0 && (
+                                                                                            <span className="bg-slate-900 text-white px-2 py-0.5 rounded-lg text-[9px] font-black font-mono">
+                                                                                                {result.actualWeights?.[exIdx] || result.weights?.[exIdx]}kg
+                                                                                            </span>
+                                                                                        )}
+                                                                                    </div>
+                                                                                </div>
+                                                                                <div className="flex flex-wrap items-center gap-2 ml-3.5">
+                                                                                    {protocol === 'T' && (
+                                                                                        <div className="bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1">
+                                                                                            <Clock size={8} />
+                                                                                            Objetivo: {(step.module.targeting?.[0]?.timeCap || 240) / 60}'
+                                                                                        </div>
+                                                                                    )}
+                                                                                    {protocol === 'R' && result.elapsed > 0 && (
+                                                                                        <div className="bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1">
+                                                                                            <Clock size={8} />
+                                                                                            Logrado: {Math.floor(result.elapsed / 60)}:{(result.elapsed % 60).toString().padStart(2, '0')}
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
+                                                                                {result.exerciseNotes?.[exIdx] && (
+                                                                                    <div className="mt-1 flex items-start gap-2 bg-slate-50/50 p-2 rounded-lg border border-slate-100/50">
+                                                                                        <MessageSquare size={10} className="text-slate-300 mt-0.5" />
+                                                                                        <p className="text-[10px] text-slate-500 italic leading-tight">"{result.exerciseNotes[exIdx]}"</p>
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        ))}
                                                                     </div>
-                                                                ))}
-                                                            </div>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="grid gap-1.5">
-                                                            {step.module.exercises?.map((ex, exIdx) => (
-                                                                <div key={exIdx} className="flex justify-between items-center bg-white p-2.5 rounded-xl border border-slate-100 shadow-sm">
-                                                                    <div className="flex items-center gap-2 min-w-0">
-                                                                        <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full shrink-0" />
-                                                                        <span className="text-xs font-bold text-slate-700 truncate">{ex.nameEs || ex.name}</span>
-                                                                    </div>
-                                                                    <div className="flex items-center gap-2">
-                                                                        <span className="text-xs font-black text-slate-900">{result.reps?.[exIdx] || 0} <span className="text-[8px] opacity-40 uppercase">reps</span></span>
-                                                                        {(result.actualWeights?.[exIdx] || result.weights?.[exIdx]) > 0 && (
-                                                                            <span className="bg-slate-900 text-white px-2 py-0.5 rounded-lg text-[9px] font-black font-mono">
-                                                                                {result.actualWeights?.[exIdx] || result.weights?.[exIdx]}kg
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    )}
+                                                                )}
 
-                                                    {/* Block Feedback Notes */}
-                                                    {result.feedback?.notes && (
-                                                        <div className="bg-amber-50/50 p-3 rounded-2xl border border-amber-100 flex gap-3 mt-1 shadow-sm">
-                                                            <MessageSquare size={14} className="text-amber-500 shrink-0 mt-0.5" />
-                                                            <p className="text-[11px] font-medium text-amber-900/70 italic leading-relaxed">"{result.feedback.notes}"</p>
-                                                        </div>
+                                                                {/* Block Feedback Notes */}
+                                                                {result.feedback?.notes && (
+                                                                    <div className="bg-amber-50/50 p-3 rounded-2xl border border-amber-100 flex gap-3 mt-1 shadow-sm">
+                                                                        <MessageSquare size={14} className="text-amber-500 shrink-0 mt-0.5" />
+                                                                        <p className="text-[11px] font-medium text-amber-900/70 italic leading-relaxed">"{result.feedback.notes}"</p>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </motion.div>
                                                     )}
-                                                </div>
+                                                </AnimatePresence>
                                             </div>
                                         );
                                     })}
@@ -1004,15 +1069,15 @@ const SummaryBlock = ({ sessionState, timeline, history, setSessionState, onFini
                 </div>
             </div>
 
-            <div className="mt-8 px-4">
+            <div className="mt-4 px-6 pb-20">
                 <button
                     onClick={() => onFinish({ metrics, analysis: insights })}
-                    className="w-full bg-slate-900 text-white font-black text-sm py-5 rounded-[2rem] shadow-xl hover:bg-slate-800 transition-all active:scale-[0.98] uppercase tracking-[0.2em]"
+                    className="w-full bg-emerald-600 text-white font-black text-sm py-5 rounded-[2rem] shadow-xl shadow-emerald-900/20 hover:bg-emerald-500 transition-all active:scale-[0.98] uppercase tracking-[0.2em]"
                 >
                     Finalizar Entrenamiento
                 </button>
             </div>
-        </div>
+        </div >
     );
 };
 
@@ -1241,6 +1306,8 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
         } else if (protocol === 'T' || protocol === 'E') {
             const cap = protocol === 'T' ? (module.targeting?.[0]?.timeCap || 240) : ((module.emomParams?.durationMinutes || 4) * 60);
             hasTime = timeLeft < cap; // Timer has ticked down
+        } else if (protocol === 'R' && module.targeting?.[0]?.timeCap > 0) {
+            hasTime = elapsed >= module.targeting?.[0]?.timeCap;
         }
 
         // Allow proceeding if all targets are met for 'R' even if time is 0 (though unlikely)
@@ -1347,6 +1414,25 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                         }
                         return prev - 1;
                     });
+                } else if (protocol === 'R') {
+                    // Time Cap Logic for R - STRICT DEFAULTS
+                    const PDP_R_CAPS = { 'BASE': 300, 'BUILD': 360, 'BURN': 420, 'BOOST': 300 };
+
+                    // Robust Category Detection (e.g., handles "BUILD A", "BUILD B - Focus")
+                    let category = 'BASE';
+                    const typeUpper = (blockType || '').toUpperCase();
+                    if (typeUpper.includes('BUILD')) category = 'BUILD';
+                    else if (typeUpper.includes('BURN')) category = 'BURN';
+                    else if (typeUpper.includes('BOOST')) category = 'BOOST';
+
+                    // PRIORITY FIX: Use Official Cap if known block type, otherwise fallback to module/default
+                    const effectiveCap = PDP_R_CAPS[category] || module.targeting?.[0]?.timeCap || 300;
+
+                    if (elapsed + 1 >= effectiveCap) {
+                        setIsActive(false);
+                        playCountdownFinal();
+                        setElapsed(effectiveCap); // Clamp
+                    }
                 }
             }, 1000);
         }
@@ -1397,16 +1483,18 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                 mainDisplayText = module.targeting[0].instruction;
             }
 
+            const isFinished = timeLeft === 0 && currentMinute >= totalRounds;
+
             return (
                 <div className="flex flex-col items-center">
-                    <span className="text-5xl font-black font-mono tracking-tighter text-white tabular-nums text-center leading-none mb-1">
-                        {mainDisplayText}
+                    <span className={`text-6xl font-black font-mono tracking-tighter tabular-nums text-center leading-none mb-1 ${isFinished ? 'text-emerald-500 drop-shadow-[0_0_15px_rgba(16,185,129,0.3)]' : 'text-white'}`}>
+                        {isFinished ? '0:00' : mainDisplayText}
                     </span>
-                    <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-1 opacity-80">
-                        REPS / OBJETIVO
+                    <span className={`text-[10px] font-bold uppercase tracking-widest mb-1 opacity-80 ${isFinished ? 'text-emerald-500' : 'text-emerald-500'}`}>
+                        {isFinished ? '¡BLOQUE COMPLETADO!' : 'REPS / OBJETIVO'}
                     </span>
-                    <span className="text-xs font-bold text-orange-500 uppercase tracking-widest mt-1 bg-orange-500/10 px-2 py-0.5 rounded-full border border-orange-500/20">
-                        Ronda {currentMinute} de {totalRounds}
+                    <span className={`font-bold uppercase tracking-widest mt-2 px-3 py-1 rounded-full border transition-all ${isFinished ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20 text-xs' : 'bg-orange-500/10 text-orange-400 border-orange-500/20 text-[10px]'}`}>
+                        {isFinished ? 'Todas las rondas' : `RONDA ${currentMinute} DE ${totalRounds}`}
                     </span>
                 </div>
             );
@@ -1423,6 +1511,19 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
             let mainDisplayText = "Completar";
             if (targetList.length > 0) mainDisplayText = targetList.join(' + ');
 
+            // Standard Official Caps for PDP-R
+            const PDP_R_CAPS = { 'BASE': 300, 'BUILD': 360, 'BURN': 420, 'BOOST': 300 };
+
+            // Robust Category Detection
+            let category = 'BASE';
+            const typeUpper = (blockType || '').toUpperCase();
+            if (typeUpper.includes('BUILD')) category = 'BUILD';
+            else if (typeUpper.includes('BURN')) category = 'BURN';
+            else if (typeUpper.includes('BOOST')) category = 'BOOST';
+
+            const effectiveCap = PDP_R_CAPS[category] || module.targeting?.[0]?.timeCap || 300;
+            const isCapped = elapsed >= effectiveCap;
+
             return (
                 <div className="flex flex-col items-center">
                     <span className="text-[clamp(3rem,10vw,4rem)] font-black font-mono tracking-tighter text-white tabular-nums text-center leading-none mb-1">
@@ -1431,6 +1532,16 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                     <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-1 opacity-80">
                         OBJETIVO
                     </span>
+                    <div className="flex items-center gap-2 mt-2">
+                        {previousLog?.results?.elapsed > 0 && (
+                            <span className="text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded border bg-emerald-500/10 text-emerald-500 border-emerald-500/20">
+                                RÉCORD: {formatTime(previousLog.results.elapsed)}
+                            </span>
+                        )}
+                        <span className={`text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded border ${isCapped ? 'bg-red-500/10 text-red-500 border-red-500/20 animate-pulse' : 'bg-slate-800/50 text-slate-500 border-slate-700/50'}`}>
+                            TIME CAP: {formatTime(effectiveCap)}
+                        </span>
+                    </div>
                 </div>
             );
         }
@@ -1445,13 +1556,20 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                 <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest mt-1 opacity-80">
                     TIME CAP
                 </span>
+                {previousLog?.results?.reps && (
+                    <div className="flex items-center gap-2 mt-2">
+                        <span className="text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded border bg-emerald-500/10 text-emerald-500 border-emerald-500/20">
+                            RÉCORD: {Object.values(previousLog.results.reps).reduce((a, b) => a + (Number(b) || 0), 0)} reps
+                        </span>
+                    </div>
+                )}
             </div>
         );
     };
 
     return (
         <div className="flex-1 flex flex-col items-center relative">
-            <div className="w-full mb-6">
+            <div className="w-full mb-3">
                 <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isActive ? 'max-h-0 opacity-0 mb-0' : 'max-h-96 opacity-100 mb-2'}`}>
                     <div className={`grid gap-2 ${exercises.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
                         {exercises.map((ex, idx) => (
@@ -1460,28 +1578,15 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                 onClick={() => onSelectExercise && onSelectExercise(ex)}
                                 className="relative aspect-video bg-slate-800 rounded-xl overflow-hidden border border-slate-700 cursor-pointer hover:border-emerald-500 transition-all active:scale-95"
                             >
-                                <ExerciseMedia exercise={ex} thumbnailMode={true} />
+                                <ExerciseMedia exercise={ex} thumbnailMode={true} lazyLoad={false} />
                                 <div className="absolute bottom-0 left-0 w-full bg-black/60 backdrop-blur-sm p-2 flex items-center justify-between">
-                                    <span className="text-white text-xs font-bold block truncate max-w-[60%]">{ex.nameEs || ex.name}</span>
+                                    <span className="text-white text-xs font-bold block truncate flex-1">{ex.nameEs || ex.name}</span>
                                     <div className="flex items-center gap-2">
-                                        {((ex.targetReps || ex.manifestation) && protocol !== 'T') && (
+                                        {((ex.targetReps || ex.manifestation) && protocol === 'LIBRE') && (
                                             <span className="text-emerald-400 text-[10px] font-black uppercase">
                                                 {ex.targetReps ? `${ex.targetReps} reps` : ex.manifestation}
                                             </span>
                                         )}
-                                        {/* Historical Performance Badge */}
-                                        {previousLog?.results && !loadingHistory && (() => {
-                                            const prevReps = previousLog.results.reps?.[idx];
-                                            const prevWeight = previousLog.results.actualWeights?.[idx] || previousLog.results.weights?.[idx];
-
-                                            if (prevReps || prevWeight) {
-                                                return (
-                                                    <span className="text-blue-400 text-[9px] font-black uppercase bg-blue-500/10 px-1 rounded border border-blue-500/20">
-                                                        Anterior: {prevWeight && `${parseFloat(prevWeight || 0)}kg`}{prevWeight && prevReps && ' • '}{prevReps && `${prevReps}r`}
-                                                    </span>
-                                                );
-                                            }
-                                        })()}
                                     </div>
                                 </div>
                                 {/* Hint Icon */}
@@ -1495,10 +1600,10 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
 
                 {/* Weight Input Section - Above INICIAR */}
                 {exercises.some(ex => ex.loadable) && (
-                    <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isActive ? 'max-h-0 opacity-0 mb-0' : 'max-h-96 opacity-100 mb-3'}`}>
-                        <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700/50 rounded-2xl p-4">
-                            <h3 className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-3 text-center">Peso Utilizado</h3>
-                            <div className={`grid gap-3 ${exercises.filter(ex => ex.loadable).length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                    <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isActive ? 'max-h-0 opacity-0 mb-0' : 'max-h-96 opacity-100 mb-2'}`}>
+                        <div className="bg-slate-800/40 backdrop-blur-sm border border-slate-700/30 rounded-2xl p-3">
+                            <h3 className="text-[9px] font-black uppercase tracking-wider text-slate-500 mb-2 text-center">Peso Utilizado</h3>
+                            <div className={`grid gap-2 ${exercises.filter(ex => ex.loadable).length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
                                 {exercises.map((ex, idx) => {
                                     if (!ex.loadable) return null;
 
@@ -1508,103 +1613,112 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                             (a.exerciseId === ex.id || a.exerciseIndex === idx)
                                     );
 
-                                    // Get previous weight
+                                    // Get previous stats
                                     const previousWeight = previousLog?.results?.actualWeights?.[idx];
+                                    const previousReps = previousLog?.results?.actualReps?.[idx];
+
+                                    // Only show header if multiple loaded exercises
+                                    const showHeader = exercises.filter(ex => ex.loadable).length > 1;
 
                                     return (
-                                        <div key={idx} className="bg-slate-900/40 rounded-2xl p-4 border border-slate-700/50 relative group overflow-hidden">
+                                        <div key={idx} className="bg-slate-900/40 rounded-xl p-3 border border-slate-700/30 relative group overflow-hidden">
                                             {/* Glow effect on hover */}
                                             <div className="absolute inset-0 bg-emerald-500/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
 
-                                            {/* Header */}
-                                            <div className="flex items-start justify-between mb-3 relative z-10">
-                                                <div className="flex flex-col">
-                                                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-tighter mb-0.5">Ejercicio</span>
-                                                    <span className="text-xs font-bold text-white line-clamp-1">{ex.nameEs || ex.name}</span>
-                                                </div>
-
-                                                {recommendation && (
-                                                    <div className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border shadow-sm
-                                                        ${recommendation.type === 'up' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' :
-                                                            recommendation.type === 'down' ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' :
-                                                                'bg-blue-500/10 text-blue-500 border-blue-500/20'}`}>
-                                                        {recommendation.type === 'up' ? 'Sube Peso' :
-                                                            recommendation.type === 'down' ? 'Baja Peso' :
-                                                                'Mantén'}
+                                            {/* Header - Only if multiple exercises */}
+                                            {showHeader && (
+                                                <div className="flex items-start justify-between mb-3 relative z-10">
+                                                    <div className="flex flex-col min-w-0">
+                                                        <span className="text-[10px] font-bold text-white line-clamp-1">{ex.nameEs || ex.name}</span>
                                                     </div>
-                                                )}
-                                            </div>
-
-                                            {/* Previous Stats */}
-                                            {previousWeight && (
-                                                <div className="flex items-center gap-3 mb-4 bg-slate-800/40 rounded-lg p-2 border border-slate-700/30 relative z-10">
-                                                    <div className="flex flex-col">
-                                                        <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Anterior</span>
-                                                        <span className="text-xs font-black text-slate-400 tabular-nums">{previousWeight}<span className="text-[9px] ml-0.5">kg</span></span>
-                                                    </div>
-                                                    {recommendation?.adjustment && recommendation.adjustment !== 0 && (
-                                                        <>
-                                                            <div className="h-4 w-px bg-slate-700"></div>
-                                                            <div className="flex flex-col">
-                                                                <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Recomendación</span>
-                                                                <span className={`text-xs font-black tabular-nums ${recommendation.adjustment > 0 ? 'text-emerald-500' : 'text-amber-500'}`}>
-                                                                    {recommendation.adjustment > 0 ? '+' : ''}{recommendation.adjustment}kg
-                                                                </span>
-                                                            </div>
-                                                        </>
-                                                    )}
                                                 </div>
                                             )}
 
-                                            {/* Input Wrapper with Controls */}
-                                            <div className="flex items-center gap-2 relative z-10">
-                                                <button
-                                                    onClick={() => adjustWeight(idx, -1)}
-                                                    className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-700 active:scale-95 transition-all outline-none"
-                                                >
-                                                    <Minus size={16} />
-                                                </button>
-
-                                                <div className="relative flex-1 group/input">
-                                                    <input
-                                                        type="text"
-                                                        inputMode="decimal"
-                                                        placeholder="0.0"
-                                                        value={weightsUsed[idx] || ''}
-                                                        onChange={(e) => handleWeightInput(idx, e.target.value)}
-                                                        className={`w-full bg-slate-800/80 border-2 rounded-xl py-2 pl-3 pr-8 
-                                                                   text-white font-black text-lg outline-none 
-                                                                   transition-all hover:bg-slate-800 placeholder:text-slate-600
-                                                                   ${recommendation?.type === 'up' ? 'border-emerald-500/50 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10' :
-                                                                recommendation?.type === 'down' ? 'border-amber-500/50 focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10' :
-                                                                    recommendation?.type === 'keep' ? 'border-blue-500/50 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10' :
-                                                                        'border-slate-700 focus:border-emerald-500/50 focus:ring-4 focus:ring-emerald-500/5'}`}
-                                                    />
-                                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-500 uppercase tracking-widest pointer-events-none">kg</span>
+                                            {/* Weights Row (Previous + Current) */}
+                                            <div className="grid grid-cols-2 gap-3 mb-3 relative z-10">
+                                                {/* Previous Weight */}
+                                                <div className="bg-slate-800/80 rounded-lg p-2 border border-slate-600/50 flex flex-col justify-center items-center relative overflow-hidden">
+                                                    <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">ANTERIOR</span>
+                                                    {previousWeight ? (
+                                                        <div className="flex items-baseline gap-1">
+                                                            <span className="text-xl font-black text-white leading-none tracking-tight">{previousWeight}</span>
+                                                            <span className="text-[9px] font-bold text-slate-500">kg</span>
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-xs font-bold text-slate-600">--</span>
+                                                    )}
                                                 </div>
 
-                                                <button
-                                                    onClick={() => adjustWeight(idx, 1)}
-                                                    className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-700 active:scale-95 transition-all outline-none"
-                                                >
-                                                    <Plus size={16} />
-                                                </button>
+                                                {/* Current Input */}
+                                                <div className="flex items-center gap-1 relative z-10">
+                                                    <button
+                                                        onClick={() => adjustWeight(idx, -1)}
+                                                        className="w-8 h-full rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 hover:text-white active:scale-95 transition-all outline-none"
+                                                    >
+                                                        <Minus size={14} />
+                                                    </button>
+
+                                                    <div className="relative flex-1 h-full">
+                                                        <input
+                                                            type="text"
+                                                            inputMode="decimal"
+                                                            placeholder="0.0"
+                                                            value={weightsUsed[idx] || ''}
+                                                            onChange={(e) => handleWeightInput(idx, e.target.value)}
+                                                            className={`w-full h-full bg-slate-800/80 border rounded-lg text-center
+                                                                       text-white font-black outline-none text-lg
+                                                                       transition-all hover:bg-slate-800 placeholder:text-slate-600
+                                                                       ${recommendation?.type === 'up' ? 'border-emerald-500/50 focus:border-emerald-500' :
+                                                                    recommendation?.type === 'down' ? 'border-amber-500/50 focus:border-amber-500' :
+                                                                        recommendation?.type === 'keep' ? 'border-blue-500/50 focus:border-blue-500' :
+                                                                            'border-slate-700 focus:border-emerald-500/50'}`}
+                                                        />
+                                                    </div>
+
+                                                    <button
+                                                        onClick={() => adjustWeight(idx, 1)}
+                                                        className="w-8 h-full rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 hover:text-white active:scale-95 transition-all outline-none"
+                                                    >
+                                                        <Plus size={14} />
+                                                    </button>
+                                                </div>
                                             </div>
 
-                                            {/* Per-Exercise Note Input */}
-                                            <div className="mt-3 relative z-10">
-                                                <div className="flex items-center gap-2 mb-1.5 px-1">
-                                                    <Info size={10} className="text-slate-500" />
-                                                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Anotaciones del ejercicio</span>
+                                            {/* Recommendation Row (Full Width) */}
+                                            {recommendation?.adjustment !== undefined && (
+                                                <div className={`rounded-lg p-2 border flex items-center justify-between relative z-10
+                                                            ${recommendation.adjustment > 0
+                                                        ? 'bg-emerald-900/10 border-emerald-500/20'
+                                                        : recommendation.adjustment < 0
+                                                            ? 'bg-amber-900/10 border-amber-500/20'
+                                                            : 'bg-slate-800/50 border-slate-600/30'}`}>
+
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`text-[9px] font-black uppercase tracking-widest
+                                                                ${recommendation.adjustment > 0 ? 'text-emerald-400' : recommendation.adjustment < 0 ? 'text-amber-400' : 'text-slate-400'}`}>
+                                                            SUGERENCIA
+                                                        </span>
+                                                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border shadow-sm
+                                                                ${recommendation.type === 'up' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' :
+                                                                recommendation.type === 'down' ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' :
+                                                                    'bg-blue-500/10 text-blue-500 border-blue-500/20'}`}>
+                                                            {recommendation.type === 'up' ? '↑ SUBIR' : recommendation.type === 'down' ? '↓ BAJAR' : '= MANTENER'}
+                                                        </span>
+                                                    </div>
+
+                                                    {recommendation.adjustment !== 0 ? (
+                                                        <div className="flex items-baseline gap-1">
+                                                            <span className={`text-lg font-black leading-none tracking-tight 
+                                                                    ${recommendation.adjustment > 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                                                                {recommendation.adjustment > 0 ? '+' : ''}{recommendation.adjustment}
+                                                            </span>
+                                                            <span className={`text-[9px] font-bold ${recommendation.adjustment > 0 ? 'text-emerald-600' : 'text-amber-600'}`}>kg</span>
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-xs font-bold text-slate-500">Misma Carga</span>
+                                                    )}
                                                 </div>
-                                                <input
-                                                    type="text"
-                                                    placeholder="Ej: Molestia leve, fácil..."
-                                                    value={exerciseNotes[idx] || ''}
-                                                    onChange={(e) => setExerciseNotes(prev => ({ ...prev, [idx]: e.target.value }))}
-                                                    className="w-full bg-slate-800/50 border border-slate-700/50 rounded-xl py-2 px-3 text-xs text-slate-300 outline-none focus:border-emerald-500/50 transition-all placeholder:text-slate-600"
-                                                />
-                                            </div>
+                                            )}
                                         </div>
                                     );
                                 })}
@@ -1615,58 +1729,66 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
 
                 {/* Protocol Specific Instruction Display */}
                 {/* Main Timer Display (Protocol Specific) */}
-                {/* Main Timer Display (Protocol Specific) */}
-                {(protocol === 'T' || protocol === 'E' || protocol === 'R' || protocol === 'LIBRE') && (
-                    <div className={`mb-2 bg-slate-800/30 rounded-3xl border border-slate-700/50 backdrop-blur relative overflow-hidden ${protocol === 'E' || protocol === 'LIBRE' ? 'px-4 py-2 mt-2' : 'p-4 mt-4'}`}>
-                        {getTimerDisplay()}
+                {
+                    (protocol === 'T' || protocol === 'E' || protocol === 'R' || protocol === 'LIBRE') && (
+                        <div className={`mb-2 bg-slate-800/30 rounded-3xl border border-slate-700/50 backdrop-blur relative overflow-hidden transition-all duration-500 
+                    ${isActive
+                                ? 'mt-0 p-3'
+                                : (protocol === 'E' || protocol === 'LIBRE' ? 'px-4 py-2 mt-2' : 'p-4 mt-4')
+                            }`}>
+                            {getTimerDisplay()}
 
-                        <div className="flex gap-3 mt-2">
-                            <button
-                                onClick={() => {
-                                    initAudio(); // Initialize audio context
-                                    if (!isActive && protocol === 'E' && timeLeft === 0) {
-                                        // Restart EMOM
-                                        setTimeLeft(60);
-                                        setCurrentMinute(prevMin => prevMin + 1);
-                                        setIsActive(true);
-                                    } else {
-                                        setIsActive(!isActive);
-                                    }
-                                }}
-                                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-black uppercase tracking-wider transition-all ${isActive
-                                    ? 'bg-amber-500/10 text-amber-500 border-2 border-amber-500 hover:bg-amber-500 hover:text-white'
-                                    : 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 active:scale-[0.98]'
-                                    }`}
-                            >
-                                {isActive ? 'Pausar' : (timeLeft === 0 && protocol === 'E' ? 'Siguiente Ronda' : 'Iniciar')}
-                            </button>
-                            {protocol !== 'LIBRE' && (
+                            <div className="flex gap-3 mt-2">
                                 <button
                                     onClick={() => {
-                                        if (protocol === 'E') {
-                                            setTimeLeft(60);
-                                            setCurrentMinute(1);
-                                        } else if (protocol === 'R') {
-                                            setElapsed(0);
+                                        initAudio(); // Initialize audio context
+                                        const totalRounds = module.emomParams?.durationMinutes || 4;
+                                        if (!isActive && protocol === 'E' && timeLeft === 0) {
+                                            if (currentMinute < totalRounds) {
+                                                // Restart EMOM for next round
+                                                setTimeLeft(60);
+                                                setCurrentMinute(prevMin => prevMin + 1);
+                                                setIsActive(true);
+                                            }
                                         } else {
-                                            const cap = module.targeting?.[0]?.timeCap || 240;
-                                            setTimeLeft(cap);
+                                            setIsActive(!isActive);
                                         }
-                                        setIsActive(false);
                                     }}
-                                    className="px-4 rounded-xl bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 border border-slate-700 font-bold transition-all"
+                                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-black uppercase tracking-wider transition-all ${isActive
+                                        ? 'bg-amber-500/10 text-amber-500 border-2 border-amber-500 hover:bg-amber-500 hover:text-white'
+                                        : 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 active:scale-[0.98]'
+                                        }`}
                                 >
-                                    ↺
+                                    {isActive ? 'Pausar' : (timeLeft === 0 && protocol === 'E' ? (currentMinute < (module.emomParams?.durationMinutes || 4) ? 'Siguiente Ronda' : 'Finalizado') : 'Iniciar')}
                                 </button>
-                            )}
+                                {protocol !== 'LIBRE' && (
+                                    <button
+                                        onClick={() => {
+                                            if (protocol === 'E') {
+                                                setTimeLeft(60);
+                                                setCurrentMinute(1);
+                                            } else if (protocol === 'R') {
+                                                setElapsed(0);
+                                            } else {
+                                                const cap = module.targeting?.[0]?.timeCap || 240;
+                                                setTimeLeft(cap);
+                                            }
+                                            setIsActive(false);
+                                        }}
+                                        className="px-4 rounded-xl bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 border border-slate-700 font-bold transition-all"
+                                    >
+                                        ↺
+                                    </button>
+                                )}
+                            </div>
                         </div>
-                    </div>
-                )}
-            </div>
+                    )
+                }
+            </div >
 
             <div className={`relative flex items-center justify-center transition-all duration-500 ease-in-out ${isActive
-                ? (protocol === 'E' ? 'w-48 h-48 mt-2 mb-2' : 'w-56 h-56 mt-3 mb-3')
-                : (protocol === 'E' ? 'w-36 h-36 mt-1 mb-1' : 'w-44 h-44 mt-1 mb-1')
+                ? (protocol === 'E' ? 'w-56 h-56 mt-4 mb-2' : 'w-48 h-48 mt-2 mb-2')
+                : (protocol === 'E' ? 'w-48 h-48 mt-2 mb-2' : 'w-40 h-40 mt-0 mb-0')
                 }`}>
                 <div className="absolute inset-0 bg-emerald-500/10 blur-3xl rounded-full opacity-30"></div>
                 <svg className="absolute inset-0 w-full h-full -rotate-90 drop-shadow-xl">
@@ -1676,11 +1798,11 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                         <circle
                             cx="50%" cy="50%" r="45%"
                             stroke={protocol === 'R' ? '#10b981' : (isActive ? '#10b981' : '#64748b')}
-                            strokeWidth="8"
+                            strokeWidth="10"
                             fill="none"
-                            strokeDasharray={2 * Math.PI * (isActive ? (protocol === 'E' ? 85 : 100) : (protocol === 'E' ? 65 : 80))}
+                            strokeDasharray={2 * Math.PI * (isActive ? (protocol === 'E' ? 120 : 100) : (protocol === 'E' ? 100 : 80))}
                             strokeDashoffset={(() => {
-                                const approxRadius = isActive ? (protocol === 'E' ? 85 : 100) : (protocol === 'E' ? 65 : 80);
+                                const approxRadius = isActive ? (protocol === 'E' ? 120 : 100) : (protocol === 'E' ? 100 : 80);
                                 const circumference = 2 * Math.PI * approxRadius;
 
                                 if (protocol === 'R') {
@@ -1713,31 +1835,32 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                 </button>
             </div>
 
-            <div className={`w-full px-4 mb-32 transition-all duration-500 ease-in-out flex flex-col ${isActive ? 'flex-1' : ''}`}>
+            <div className={`w-full px-4 mb-20 transition-all duration-500 ease-in-out flex flex-col ${isActive ? 'flex-1' : ''}`}>
                 {protocol === 'E' ? (
                     // EMOM SPECIFIC UI: Round Tracker + Static Exercise Info
                     <div className="space-y-4">
                         {/* Round Tracker Circles */}
-                        <div className="bg-slate-800/50 rounded-2xl p-4 border border-slate-700/50 flex flex-col items-center">
-                            <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Registro de Rondas</h3>
-                            <div className="flex flex-wrap justify-center gap-2">
+                        <div className="bg-slate-800/50 rounded-[2.5rem] p-6 border border-slate-700/50 flex flex-col items-center w-full">
+                            <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-6">Registro de Rondas</h3>
+                            <div className="flex flex-nowrap items-center justify-center gap-2 w-full">
                                 {Array.from({ length: module.emomParams?.durationMinutes || 4 }).map((_, i) => {
                                     const roundNum = i + 1;
                                     const status = emomResults[roundNum]; // 'success', 'fail', undefined
-                                    const isCurrent = currentMinute === roundNum;
+                                    // Use module.emomParams.durationMinutes to calculate current round logic more accurately if needed
+                                    const isCurrent = currentMinute === roundNum && isActive;
 
                                     return (
                                         <button
                                             key={roundNum}
                                             onClick={() => toggleEmomRound(roundNum)}
-                                            className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-xs border-2 transition-all ${status === 'success' ? 'bg-emerald-500 border-emerald-500 text-white shadow-lg shadow-emerald-900/50' :
+                                            className={`flex-1 aspect-square rounded-full flex items-center justify-center font-black text-xl border-2 transition-all max-w-[5rem] ${status === 'success' ? 'bg-emerald-500 border-emerald-500 text-white shadow-lg shadow-emerald-900/50' :
                                                 status === 'fail' ? 'bg-red-500/10 border-red-500 text-red-500' :
                                                     isCurrent ? 'bg-slate-700 border-white text-white animate-pulse' :
                                                         'bg-slate-800 border-slate-700 text-slate-500'
                                                 }`}
                                         >
-                                            {status === 'success' ? <CheckCircle size={16} /> :
-                                                status === 'fail' ? <AlertCircle size={16} /> :
+                                            {status === 'success' ? <CheckCircle size={28} /> :
+                                                status === 'fail' ? <AlertCircle size={28} /> :
                                                     roundNum}
                                         </button>
                                     );
@@ -1758,7 +1881,20 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                             const targetReps = ex.targetReps || module.targeting?.[0]?.volume || 0;
                             const cardReps = repsDone[idx] || 0;
                             const isTargetReached = protocol === 'R' && targetReps > 0 && cardReps >= targetReps;
-                            const isTimeExpired = (protocol === 'T' || protocol === 'E') && timeLeft === 0;
+
+                            // Check Cap
+                            const PDP_R_CAPS = { 'BASE': 300, 'BUILD': 360, 'BURN': 420, 'BOOST': 300 };
+
+                            let category = 'BASE';
+                            const typeUpper = (blockType || '').toUpperCase();
+                            if (typeUpper.includes('BUILD')) category = 'BUILD';
+                            else if (typeUpper.includes('BURN')) category = 'BURN';
+                            else if (typeUpper.includes('BOOST')) category = 'BOOST';
+
+                            const effectiveCap = (protocol === 'R') ? (PDP_R_CAPS[category] || module.targeting?.[0]?.timeCap || 300) : 0;
+
+                            const isTimeExpired = (protocol === 'T' || protocol === 'E') ? timeLeft === 0 :
+                                (protocol === 'R' && elapsed >= effectiveCap);
 
                             let cardClass = "bg-slate-800 border-slate-700";
                             if (isTargetReached) cardClass = "bg-emerald-500/10 border-emerald-500 shadow-lg shadow-emerald-500/20";
@@ -1772,6 +1908,19 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                     if (current > 0) {
                                         newReps[idx] = current - 1;
                                     }
+                                    return newReps;
+                                });
+                            };
+
+                            const handleRepInputChange = (idx, val) => {
+                                // Remove non-digits
+                                const digits = val.replace(/\D/g, '');
+                                // Limit to 2 digits (User Request)
+                                const truncated = digits.slice(0, 2);
+
+                                setRepsDone(prev => {
+                                    const newReps = { ...prev };
+                                    newReps[idx] = truncated === '' ? 0 : parseInt(truncated, 10);
                                     return newReps;
                                 });
                             };
@@ -1791,9 +1940,10 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                             : (isDual ? 'w-14 h-14' : 'w-16 h-16')
                                             }`}
                                     >
-                                        <ExerciseMedia exercise={ex} thumbnailMode={true} />
+                                        <ExerciseMedia exercise={ex} thumbnailMode={true} lazyLoad={false} />
                                     </button>
 
+                                    {/* Show target reps badge ONLY for LIBRE/T if explicitly set. Hidden for R/E as it's redundant. */}
                                     {protocol === 'LIBRE' && (ex.targetReps || ex.manifestation) && (
                                         <div className="mb-2 bg-blue-500/10 px-2 py-0.5 rounded text-[10px] font-black text-blue-400 border border-blue-500/10">
                                             OBJ: {ex.targetReps ? `${ex.targetReps} reps` : ex.manifestation}
@@ -1804,20 +1954,26 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                         <button
                                             onClick={() => decrementReps(idx)}
                                             disabled={!cardReps || cardReps <= 0}
-                                            className={`rounded-full flex items-center justify-center text-slate-500 hover:text-white hover:bg-slate-700/50 transition-all disabled:opacity-20 disabled:pointer-events-none ${isDual ? 'w-7 h-7' : 'w-8 h-8'}`}
+                                            className={`rounded-full flex items-center justify-center text-slate-500 hover:text-white hover:bg-slate-700/50 transition-all disabled:opacity-20 disabled:pointer-events-none ${isDual ? 'w-8 h-8' : 'w-10 h-10'}`}
                                         >
-                                            <Minus size={isDual ? 14 : 16} />
+                                            <Minus size={isDual ? 16 : 18} />
                                         </button>
 
-                                        <span className={`font-black tabular-nums text-center ${isTargetReached ? 'text-emerald-500' : isTimeExpired ? 'text-red-500' : 'text-white'} ${isDual ? 'text-[clamp(1.2rem,4vw,1.8rem)] min-w-[1.1em]' : 'text-[clamp(1.8rem,5vw,2.5rem)] min-w-[1.3em]'}`}>
-                                            {cardReps}
-                                        </span>
+                                        <input
+                                            type="text"
+                                            inputMode="numeric"
+                                            value={cardReps || ''}
+                                            onChange={(e) => handleRepInputChange(idx, e.target.value)}
+                                            onClick={(e) => e.target.select()}
+                                            className={`font-black tabular-nums text-center bg-transparent outline-none border-none p-0 m-0 w-full ${isTargetReached ? 'text-emerald-500' : isTimeExpired ? 'text-red-500' : 'text-white'} ${isDual ? 'text-[clamp(1.5rem,5vw,2.2rem)] min-w-[1.2em]' : 'text-[clamp(2.5rem,7vw,3.5rem)] min-w-[1.4em]'} placeholder:text-slate-700`}
+                                            placeholder="0"
+                                        />
 
                                         <button
                                             onClick={() => incrementReps(idx)}
-                                            className={`rounded-full flex items-center justify-center text-white shadow-lg active:scale-95 transition-all ${isTargetReached ? 'bg-emerald-600 hover:bg-emerald-500' : isTimeExpired ? 'bg-red-600 hover:bg-red-500' : 'bg-emerald-600 hover:bg-emerald-500'} ${isDual ? 'w-9 h-9' : 'w-11 h-11'}`}
+                                            className={`rounded-full flex items-center justify-center text-white shadow-lg active:scale-95 transition-all ${isTargetReached ? 'bg-emerald-600 hover:bg-emerald-500' : isTimeExpired ? 'bg-red-600 hover:bg-red-500' : 'bg-emerald-600 hover:bg-emerald-500'} ${isDual ? 'w-12 h-12' : 'w-16 h-16'}`}
                                         >
-                                            <Plus size={isDual ? 18 : 22} />
+                                            <Plus size={isDual ? 24 : 32} />
                                         </button>
                                     </div>
                                 </div>
@@ -1827,12 +1983,12 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                 )}
             </div>
 
-            <div className={`fixed bottom-4 left-4 z-20 transition-all w-[calc(100%-2rem)]`}>
+            <div className={`fixed bottom-2 left-4 z-20 transition-all w-[calc(100%-2rem)]`}>
                 <button
                     onClick={handleFinishBlock}
-                    className={`bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-2xl border border-slate-700 flex items-center justify-center gap-2 shadow-xl backdrop-blur-md w-full ${protocol === 'E' ? 'py-4 text-sm' : 'py-4 px-6'}`}
+                    className="bg-slate-800 hover:bg-slate-700 text-white font-black text-lg rounded-2xl border border-slate-700 flex items-center justify-center gap-2 shadow-xl backdrop-blur-md w-full py-4 active:scale-[0.98] transition-all"
                 >
-                    <CheckCircle size={20} />
+                    <CheckCircle size={24} />
                     Siguiente Bloque
                 </button>
             </div>
@@ -1841,10 +1997,10 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
 };
 
 
-const BlockFeedbackModal = ({ onConfirm, blockType, exercises }) => {
+const BlockFeedbackModal = ({ onConfirm, onBack, initialExNotes = {}, blockType, exercises }) => {
     const [rpe, setRpe] = useState(null);
     const [notes, setNotes] = useState('');
-    const [exNotes, setExNotes] = useState({});
+    const [exNotes, setExNotes] = useState(initialExNotes);
 
     const handleConfirm = (isSkip = false) => {
         if (!isSkip && rpe === null) return;
@@ -1872,13 +2028,21 @@ const BlockFeedbackModal = ({ onConfirm, blockType, exercises }) => {
                 exit={{ scale: 0.9, opacity: 0, y: 20 }}
                 className="bg-slate-800 w-full max-w-sm rounded-[2rem] border border-slate-700 shadow-2xl relative z-10 overflow-hidden"
             >
-                <div className="p-6 text-center">
-                    <div className="flex justify-between items-center mb-6">
-                        <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 bg-emerald-500/10 rounded-full flex items-center justify-center border border-emerald-500/20">
-                                <CheckCircle size={18} className="text-emerald-500" />
+                <div className="p-4 sm:p-6">
+                    <div className="flex items-center justify-between mb-8">
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={onBack}
+                                className="w-8 h-8 rounded-full bg-slate-700/50 flex items-center justify-center text-slate-400 hover:text-white transition-all"
+                            >
+                                <ChevronLeft size={20} />
+                            </button>
+                            <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 bg-emerald-500/10 rounded-full flex items-center justify-center border border-emerald-500/20">
+                                    <CheckCircle size={18} className="text-emerald-500" />
+                                </div>
+                                <h2 className="text-base font-black text-white">Bloque {blockType}</h2>
                             </div>
-                            <h2 className="text-lg font-black text-white">Bloque {blockType}</h2>
                         </div>
                         <button
                             onClick={() => {
@@ -1886,16 +2050,17 @@ const BlockFeedbackModal = ({ onConfirm, blockType, exercises }) => {
                                     onConfirm({ rpe: null, notes: '', skipped: true });
                                 }
                             }}
-                            className="text-[10px] font-bold text-slate-500 hover:text-white uppercase tracking-widest px-2 py-1"
+                            className="bg-slate-700/50 hover:bg-slate-700 text-[8px] font-black text-slate-400 hover:text-white uppercase tracking-widest px-2.5 py-1 rounded-full transition-all border border-slate-600/50 mr-1"
                         >
                             Saltar
                         </button>
                     </div>
 
-                    <div className="space-y-6 max-h-[60vh] overflow-y-auto px-1">
+                    <div className="space-y-6 max-h-[60vh] overflow-y-auto overflow-x-hidden px-1">
                         <RPESelector
                             value={rpe}
                             onChange={setRpe}
+                            isLight={false}
                             label="Esfuerzo del Bloque (RPE)"
                         />
 
@@ -1940,8 +2105,8 @@ const BlockFeedbackModal = ({ onConfirm, blockType, exercises }) => {
                         Continuar
                     </button>
                 </div>
-            </motion.div>
-        </div>
+            </motion.div >
+        </div >
     );
 };
 
@@ -2077,6 +2242,7 @@ const CardioTaskView = ({ session, overrides, onFinish, onBack }) => {
                     <RPESelector
                         value={rpe}
                         onChange={setRpe}
+                        isLight={true}
                         label="Esfuerzo Percibido (RPE)"
                     />
 

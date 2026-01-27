@@ -15,14 +15,14 @@ const RPE_LEVELS = [
     { val: 10, label: 'Máximo / Fallo', color: 'bg-red-600', text: 'text-red-600' },
 ];
 
-const RPESelector = ({ value, onChange, label = "Esfuerzo (RPE)" }) => {
+const RPESelector = ({ value, onChange, label = "Esfuerzo (RPE)", isLight = false }) => {
     const currentLevel = RPE_LEVELS.find(l => l.val === value) || { label: '-', text: 'text-slate-400' };
 
     return (
         <div className="space-y-2">
             <div className="flex justify-between items-end px-1">
                 <div className="space-y-0.5">
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">{label}</span>
+                    <span className={`text-[10px] font-black uppercase tracking-widest block ${isLight ? 'text-slate-400' : 'text-slate-500'}`}>{label}</span>
                     <motion.span
                         key={currentLevel.label}
                         initial={{ opacity: 0, y: 5 }}
@@ -37,13 +37,13 @@ const RPESelector = ({ value, onChange, label = "Esfuerzo (RPE)" }) => {
                     initial={{ scale: 0.5, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     transition={{ type: "spring", stiffness: 500, damping: 20 }}
-                    className="text-4xl font-black text-slate-900 tabular-nums"
+                    className={`text-4xl font-black tabular-nums ${isLight ? 'text-slate-900' : 'text-white'}`}
                 >
                     {value !== null ? value : '-'}
                 </motion.span>
             </div>
 
-            <div className="flex justify-between gap-1 pt-1">
+            <div className="flex items-center justify-between gap-0.5 sm:gap-1 pt-1">
                 {RPE_LEVELS.map((level) => {
                     const isSelected = value === level.val;
                     return (
@@ -52,13 +52,13 @@ const RPESelector = ({ value, onChange, label = "Esfuerzo (RPE)" }) => {
                             onClick={() => onChange(level.val)}
                             whileTap={{ scale: 0.9 }}
                             animate={{
-                                scale: isSelected ? 1.2 : 1,
+                                scale: isSelected ? 1.15 : 1,
                                 zIndex: isSelected ? 20 : 1
                             }}
-                            className={`flex-1 h-12 rounded-xl font-black text-[10px] sm:text-xs transition-colors flex items-center justify-center border-2 relative
+                            className={`flex-1 min-w-[24px] h-11 sm:h-12 rounded-xl font-black text-[10px] transition-all flex items-center justify-center border-2 relative
                                 ${isSelected
                                     ? `${level.color} text-white border-transparent shadow-lg shadow-${level.color.split('-')[1]}-500/20`
-                                    : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300 hover:text-slate-600'
+                                    : `${isLight ? 'bg-white border-slate-100 hover:border-slate-200' : 'bg-slate-900/50 border-slate-700 hover:border-slate-600'} text-slate-400 hover:text-slate-600`
                                 }
                             `}
                         >
@@ -75,7 +75,7 @@ const RPESelector = ({ value, onChange, label = "Esfuerzo (RPE)" }) => {
                 })}
             </div>
 
-            <div className="flex justify-between px-1 text-[8px] font-black text-slate-300 uppercase tracking-widest">
+            <div className={`flex justify-between px-1 text-[8px] font-black uppercase tracking-widest ${isLight ? 'text-slate-300' : 'text-slate-500'}`}>
                 <span>Muy Suave</span>
                 <span>Moderado</span>
                 <span>Máximo</span>

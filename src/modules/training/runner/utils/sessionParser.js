@@ -31,12 +31,15 @@ export const parseNewStructure = async (sessionData, globalProtocol) => {
     const libraryExercises = await TrainingDB.exercises.getAll();
     const libraryMap = new Map(libraryExercises.map(e => [e.id, e]));
 
+    // Generic robust normalization for name matching
+    const normalizeName = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '').replace(/s$/, '');
+
     // Create Name Map for fallback lookup (ID is often randomized in sessions)
     const libraryNameMap = new Map();
     libraryExercises.forEach(e => {
-        if (e.name) libraryNameMap.set(e.name.toLowerCase().trim(), e);
-        if (e.nameEs) libraryNameMap.set(e.nameEs.toLowerCase().trim(), e);
-        if (e.name_es) libraryNameMap.set(e.name_es.toLowerCase().trim(), e);
+        if (e.name) libraryNameMap.set(normalizeName(e.name), e);
+        if (e.nameEs) libraryNameMap.set(normalizeName(e.nameEs), e);
+        if (e.name_es) libraryNameMap.set(normalizeName(e.name_es), e);
     });
 
     const allModules = [];
@@ -53,7 +56,7 @@ export const parseNewStructure = async (sessionData, globalProtocol) => {
 
             // 2. Try Name match (fallback)
             if (!libEx && ex.name) {
-                libEx = libraryNameMap.get(ex.name.toLowerCase().trim());
+                libEx = libraryNameMap.get(normalizeName(ex.name));
             }
 
             if (libEx) {
@@ -88,7 +91,12 @@ export const parseNewStructure = async (sessionData, globalProtocol) => {
 
         // Logic to derive EMOM params if missing (fallback for sessions created in UI)
         let finalEmomParams = block.emomParams;
-        if (!finalEmomParams && normalizedExercises.length > 0) {
+        if (!finalEmomParams && block.params?.emomMinutes) {
+            finalEmomParams = {
+                durationMinutes: block.params.emomMinutes,
+                density: 'normal'
+            };
+        } else if (!finalEmomParams && normalizedExercises.length > 0) {
             const firstExConfig = normalizedExercises[0].config;
             if (firstExConfig?.isEMOM) {
                 finalEmomParams = {
@@ -105,7 +113,13 @@ export const parseNewStructure = async (sessionData, globalProtocol) => {
             exercises: normalizedExercises,
             exerciseNames: getExerciseNames(normalizedExercises),
             blockType: blockName,
-            targeting: block.targeting || [{ volume: 0, timeCap: 240, instruction: 'Completar Tarea' }],
+            targeting: block.targeting || [
+                {
+                    volume: 0,
+                    timeCap: block.params?.timeCap || 240,
+                    instruction: block.description || 'Completar Tarea'
+                }
+            ],
             emomParams: finalEmomParams
         };
 

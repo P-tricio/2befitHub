@@ -15,7 +15,8 @@ const ExerciseMedia = ({
     className = "w-full h-full",
     thumbnailMode = false,
     autoPlay = false,
-    showControls = true
+    showControls = true,
+    lazyLoad = true
 }) => {
     const [isPlaying, setIsPlaying] = useState(autoPlay);
     const [currentImage, setCurrentImage] = useState(null);
@@ -28,7 +29,7 @@ const ExerciseMedia = ({
 
     // Lazy loading logic for online exercises in library/picker
     const isOnline = exercise?.source === 'exercisedb' || (exercise?.mediaUrl && !exercise?.mediaUrl.includes('imgbb') && !exercise?.mediaUrl.includes('ibb.co'));
-    const shouldLazyLoad = thumbnailMode && isOnline;
+    const shouldLazyLoad = lazyLoad && thumbnailMode && isOnline;
 
     // Initial image / thumbnail logic
     useEffect(() => {
@@ -45,7 +46,14 @@ const ExerciseMedia = ({
             setLoading(true);
             let initialImage = null;
 
-            if (exercise?.mediaUrl) {
+            // Check if mediaUrl is actually a YouTube link (including Shorts)
+            const mediaYoutubeId = getYoutubeVideoId(exercise?.mediaUrl);
+            const finalYoutubeId = youtubeId || mediaYoutubeId;
+
+            if (finalYoutubeId) {
+                // Priority: YouTube Thumbnail (matches standard or shorts)
+                initialImage = `https://img.youtube.com/vi/${finalYoutubeId}/hqdefault.jpg`;
+            } else if (exercise?.mediaUrl) {
                 const isUrl = exercise.mediaUrl.includes('http') || exercise.mediaUrl.includes('/');
                 const isProtected = exercise.mediaUrl.includes('exercisedb.p.rapidapi.com');
                 const isLegacyId = !isUrl;
@@ -66,8 +74,6 @@ const ExerciseMedia = ({
                 }
             } else if (exercise?.imageStart) {
                 initialImage = exercise.imageStart;
-            } else if (youtubeId) {
-                initialImage = `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg`;
             }
 
             if (isMounted) {
@@ -159,8 +165,15 @@ const ExerciseMedia = ({
                     className={`w-full h-full object-contain ${thumbnailMode ? 'object-cover' : ''} transition-opacity duration-300 ${loading ? 'opacity-0' : 'opacity-100'}`}
                     onLoad={() => setLoading(false)}
                     onError={(e) => {
-                        setLoading(false);
-                        e.target.style.display = 'none';
+                        // YouTube Fallback Logic (HQ -> MQ)
+                        if (currentImage && currentImage.includes('hqdefault.jpg')) {
+                            const mqUrl = currentImage.replace('hqdefault.jpg', 'mqdefault.jpg');
+                            setCurrentImage(mqUrl);
+                            // Don't stop loading yet, let the new src try
+                        } else {
+                            setLoading(false);
+                            e.target.style.display = 'none';
+                        }
                     }}
                 />
             ) : (

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Edit2, Trash2, ChevronDown, ChevronUp, Copy, Image as ImageIcon, X, Download } from 'lucide-react';
+import { Edit2, Trash2, ChevronDown, ChevronUp, Copy, Image as ImageIcon, X, Download, Move } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ExerciseAPI } from '../../services/exerciseApi';
 import ExerciseMedia from '../../components/ExerciseMedia';
@@ -86,6 +86,7 @@ const ExerciseCard = ({
     onDelete,
     onDuplicate,
     onImport,
+    onMove,
     showCheckbox = true,
     showActions = true,
     onClick
@@ -158,6 +159,7 @@ const ExerciseCard = ({
                         <div className="mr-2">
                             <ActionMenu actions={[
                                 ...(onEdit ? [{ label: 'Editar', icon: <Edit2 size={16} />, onClick: onEdit }] : []),
+                                ...(onMove ? [{ label: 'Mover a Grupo', icon: <Move size={16} />, onClick: onMove }] : []),
                                 ...(onDuplicate ? [{ label: 'Duplicar', icon: <Copy size={16} />, onClick: onDuplicate }] : []),
                                 ...(onDelete ? [{ label: 'Eliminar', icon: <Trash2 size={16} />, onClick: onDelete, variant: 'danger' }] : [])
                             ]} />

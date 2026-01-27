@@ -644,6 +644,7 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                             <RPESelector
                                 value={rpe}
                                 onChange={setRpe}
+                                isLight={true}
                                 label="Esfuerzo (RPE)"
                             />
                         </div>

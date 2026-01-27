@@ -398,45 +398,62 @@ export const TrainingDB = {
         },
         async getLastLog(userId, moduleId, stableId = null) {
             try {
-                // Priority query: Using stableId if provided (more broad across sessions)
-                // Fallback query: Using moduleId 
+                // Priority query: Using stableId if provided
                 const idToUse = stableId || moduleId;
                 const fieldToUse = stableId ? 'stableId' : 'moduleId';
 
                 const q = query(
                     collection(db, LOGS),
                     where('userId', '==', userId),
-                    where(fieldToUse, '==', idToUse)
+                    where(fieldToUse, '==', idToUse),
+                    orderBy('date', 'desc'), // Ensure index exists for this
+                    limit(10) // Fetch top 10 to filter out pending ones
                 );
+
                 const snapshot = await getDocs(q);
+                // Fallback for stableId/moduleId mismatch logic retained if needed, but simplified here for robustness
+
                 if (snapshot.empty && stableId) {
-                    // Try with moduleId if stableId failed (legacy)
+                    // Fallback to moduleId if stableId found nothing (legacy compat)
                     const q2 = query(
                         collection(db, LOGS),
                         where('userId', '==', userId),
-                        where('moduleId', '==', moduleId)
+                        where('moduleId', '==', moduleId),
+                        orderBy('date', 'desc'),
+                        limit(10)
                     );
                     const snap2 = await getDocs(q2);
-                    if (snap2.empty) return null;
-                    return snap2.docs
+                    const validLogs2 = snap2.docs
                         .map(d => ({ id: d.id, ...d.data() }))
-                        .sort((a, b) => (b.date?.toDate?.() || new Date(b.date || 0)) - (a.date?.toDate?.() || new Date(a.date || 0)))[0];
+                        .filter(log => log.status !== 'pending'); // Filter out pending
+                    return validLogs2[0] || null;
                 }
 
-                if (snapshot.empty) return null;
-
-                const sorted = snapshot.docs
+                const validLogs = snapshot.docs
                     .map(d => ({ id: d.id, ...d.data() }))
-                    .sort((a, b) => {
-                        const dateA = a.date?.toDate?.() || new Date(a.date || 0);
-                        const dateB = b.date?.toDate?.() || new Date(b.date || 0);
-                        return dateB - dateA;
-                    });
+                    .filter(log => log.status !== 'pending'); // Filter out pending
 
-                return sorted[0];
+                return validLogs[0] || null;
             } catch (error) {
                 console.warn('Could not fetch last log:', error);
                 return null;
+            }
+        },
+        async confirmSessionLogs(userId, sessionId) {
+            try {
+                const q = query(
+                    collection(db, LOGS),
+                    where('userId', '==', userId),
+                    where('sessionId', '==', sessionId),
+                    where('status', '==', 'pending')
+                );
+                const snapshot = await getDocs(q);
+                const promises = snapshot.docs.map(d =>
+                    updateDoc(doc(db, LOGS, d.id), { status: 'completed' })
+                );
+                await Promise.all(promises);
+            } catch (err) {
+                console.error('Error confirming session logs:', err);
             }
         },
         async getBySession(userId, sessionId, dateKey) {
@@ -444,12 +461,12 @@ export const TrainingDB = {
                 const q = query(
                     collection(db, LOGS),
                     where('userId', '==', userId),
-                    where('sessionId', '==', sessionId)
+                    where('sessionId', '==', sessionId),
+                    where('scheduledDate', '==', dateKey)
                 );
                 const snapshot = await getDocs(q);
                 return snapshot.docs
                     .map(d => ({ id: d.id, ...d.data() }))
-                    .filter(log => log.timestamp?.startsWith(dateKey))
                     .sort((a, b) => {
                         const dateA = a.date?.toDate?.() || new Date(a.date || 0);
                         const dateB = b.date?.toDate?.() || new Date(b.date || 0);

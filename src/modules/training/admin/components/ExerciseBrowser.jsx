@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Search, Filter, X, Check, Dumbbell } from 'lucide-react';
+import { Search, Filter, X, Check, Dumbbell, Plus, Trash2, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ExerciseCard from './ExerciseCard';
 import { PATTERNS, EQUIPMENT, LEVELS, QUALITIES, FORCES, MECHANICS } from '../constants';
@@ -24,6 +24,10 @@ const ExerciseBrowser = ({
     onDelete,
     onDuplicate,
     selectedIds = [],
+    groups = [], // List of group objects { name, type, id }
+    onCreateGroup, // function(name)
+    onDeleteGroup, // function(id)
+    onMoveExercise, // function(exercise)
     mode = 'manage',
     isLoading = false
 }) => {
@@ -252,11 +256,68 @@ const ExerciseBrowser = ({
         </motion.div>
     );
 
+    // Grouping Logic
+    const [expandedGroups, setExpandedGroups] = useState({});
+    const [newGroupName, setNewGroupName] = useState('');
+
+    // Sort and Group
+    const groupedExercises = useMemo(() => {
+        if (onlineMode) return null; // No grouping for online results
+
+        const grouped = filteredExercises.reduce((acc, ex) => {
+            const group = ex.group || 'Sin agrupar';
+            if (!acc[group]) acc[group] = [];
+            acc[group].push(ex);
+            return acc;
+        }, {});
+
+        // Add empty explicit groups
+        groups.forEach(g => {
+            if (!grouped[g.name]) grouped[g.name] = [];
+        });
+
+        // Sort groups
+        return Object.keys(grouped).sort((a, b) => {
+            if (a === 'Sin agrupar') return 1;
+            if (b === 'Sin agrupar') return -1;
+            return a.localeCompare(b);
+        }).map(groupName => ({
+            name: groupName,
+            exercises: grouped[groupName],
+            groupDoc: groups.find(g => g.name === groupName)
+        }));
+    }, [filteredExercises, groups, onlineMode]);
+
+    const handleCreateGroupLocal = () => {
+        if (onCreateGroup && newGroupName.trim()) {
+            onCreateGroup(newGroupName);
+            setNewGroupName('');
+        }
+    };
+
     return (
         <div className="flex flex-col h-full bg-white">
             {/* Top Bar */}
             <div className="p-4 border-b border-slate-100 flex flex-col gap-3 bg-white z-10">
-                <div className="flex gap-2">
+                {/* Mode Tabs (Local vs Online) */}
+                <div className="flex justify-between items-center bg-slate-100 p-1 rounded-xl">
+                    <div className="flex p-1 bg-slate-100 rounded-lg">
+                        <button
+                            onClick={() => setOnlineMode(false)}
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${!onlineMode ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                            Biblioteca Local
+                        </button>
+                        <button
+                            onClick={() => setOnlineMode(true)}
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${onlineMode ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                            Buscar Online
+                        </button>
+                    </div>
+                </div>
+
+                <div className="flex gap-2 items-center">
                     <div className="relative flex-1">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                         <input
@@ -267,6 +328,7 @@ const ExerciseBrowser = ({
                             placeholder={onlineMode ? "Buscar en base de datos global..." : "Buscar ejercicio..."}
                             className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-emerald-500 text-sm font-medium transition-colors"
                         />
+                        {isSearchingOnline && <div className="absolute right-3 top-1/2 -translate-y-1/2"><div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div></div>}
                     </div>
                     <button
                         onClick={() => setIsFilterOpen(!isFilterOpen)}
@@ -282,21 +344,26 @@ const ExerciseBrowser = ({
                     </button>
                 </div>
 
-                {/* Mode Tabs (Local vs Online) */}
-                <div className="flex p-1 bg-slate-100 rounded-lg self-start">
-                    <button
-                        onClick={() => setOnlineMode(false)}
-                        className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${!onlineMode ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                    >
-                        Biblioteca Local
-                    </button>
-                    <button
-                        onClick={() => setOnlineMode(true)}
-                        className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${onlineMode ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                    >
-                        Buscar Online
-                    </button>
-                </div>
+                {/* New Group Input (Local Only) */}
+                {!onlineMode && onCreateGroup && (
+                    <div className="flex items-center gap-2 justify-end pt-1">
+                        <input
+                            type="text"
+                            placeholder="Nueva carpeta..."
+                            className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold w-32 focus:w-48 transition-all outline-none focus:border-blue-400"
+                            value={newGroupName}
+                            onChange={e => setNewGroupName(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && handleCreateGroupLocal()}
+                        />
+                        <button
+                            onClick={handleCreateGroupLocal}
+                            disabled={!newGroupName.trim()}
+                            className="p-1.5 bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-600 hover:text-white transition-colors disabled:opacity-50"
+                        >
+                            <Plus size={16} />
+                        </button>
+                    </div>
+                )}
             </div>
 
             {/* Filters Drawer */}
@@ -313,40 +380,98 @@ const ExerciseBrowser = ({
                     </div>
                 ) : (
                     <div className="space-y-3">
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2 sticky top-0 bg-slate-50/95 py-2 backdrop-blur-sm z-0">
-                            Resultados ({filteredExercises.length})
-                        </p>
-
-                        {filteredExercises.length > 0 ? (
-                            filteredExercises.map(ex => (
-                                <ExerciseCard
-                                    key={ex.id}
-                                    ex={ex}
-                                    isSelected={selectedIds.includes(ex.id)}
-                                    // In 'picker' mode, clicking the whole card selects it
-                                    // In 'manage' mode, clicking the whole card expands detail
-                                    onToggleSelect={mode === 'manage' ? () => onSelect(ex) : undefined}
-                                    showCheckbox={mode === 'manage'}
-                                    showActions={mode === 'manage'}
-                                    // Picker behavior implies checking correct props for ExerciseCard
-                                    // If mode is picker, we might want the whole card click to trigger select
-                                    onClick={mode === 'picker' ? () => onSelect(ex) : undefined}
-                                    onEdit={mode === 'manage' ? () => onEdit(ex) : undefined}
-                                    onDelete={mode === 'manage' ? () => onDelete(ex.id) : undefined}
-                                    onDuplicate={mode === 'manage' ? () => onDuplicate(ex) : undefined}
-                                />
-                            ))
+                        {onlineMode ? (
+                            // Online Results (Flat List)
+                            filteredExercises.length > 0 ? (
+                                filteredExercises.map(ex => (
+                                    <ExerciseCard
+                                        key={ex.id}
+                                        ex={ex}
+                                        isSelected={selectedIds.includes(ex.id)}
+                                        onClick={mode === 'picker' ? () => onSelect(ex) : undefined}
+                                        onToggleSelect={mode === 'manage' ? () => onSelect(ex) : undefined}
+                                        onImport={mode === 'manage' ? () => {/* TODO: Import? Usually just saving adds it */ } : undefined}
+                                    />
+                                ))
+                            ) : (
+                                <div className="text-center py-10 text-slate-400">
+                                    <p className="text-sm font-medium">No se encontraron resultados online.</p>
+                                </div>
+                            )
                         ) : (
-                            <div className="text-center py-10 text-slate-400">
-                                <p className="text-sm font-medium">No se encontraron ejercicios.</p>
-                                {onlineMode && <p className="text-xs mt-1">Prueba a buscar en inglés o usa otros términos.</p>}
-                            </div>
+                            // Local Library (Grouped)
+                            groupedExercises && groupedExercises.length > 0 ? (
+                                groupedExercises.map(group => {
+                                    if (group.name === 'Sin agrupar' && group.exercises.length === 0) return null;
+
+                                    const isExpanded = expandedGroups[group.name] !== false; // Default expanded
+
+                                    return (
+                                        <div key={group.name} className="space-y-2 mb-2">
+                                            {/* Group Header */}
+                                            <div className="flex items-center gap-2 group/header-container">
+                                                <button
+                                                    onClick={() => setExpandedGroups(prev => ({ ...prev, [group.name]: !isExpanded }))}
+                                                    className="flex-1 flex items-center justify-between p-2 hover:bg-white rounded-xl transition-colors group/header sticky top-0"
+                                                >
+                                                    <div className="flex items-center gap-2">
+                                                        <div className={`w-1.5 h-1.5 rounded-full ${group.name === 'Sin agrupar' ? 'bg-slate-300' : 'bg-emerald-500'}`} />
+                                                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 group-hover/header:text-slate-900 transition-colors">
+                                                            {group.name} <span className="ml-1 text-slate-300">({group.exercises.length})</span>
+                                                        </span>
+                                                    </div>
+                                                    <ChevronDown size={14} className={`text-slate-300 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                                                </button>
+                                                {group.groupDoc && group.exercises.length === 0 && onDeleteGroup && (
+                                                    <button
+                                                        onClick={() => onDeleteGroup(group.groupDoc.id)}
+                                                        className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover/header-container:opacity-100"
+                                                        title="Eliminar Grupo Vacío"
+                                                    >
+                                                        <Trash2 size={14} />
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            {/* Group Items */}
+                                            {isExpanded && (
+                                                <div className="space-y-3 pl-2 border-l-2 border-slate-100/50">
+                                                    {group.exercises.length === 0 && group.name !== 'Sin agrupar' && (
+                                                        <div className="p-4 bg-slate-50/50 rounded-2xl border border-slate-100 border-dashed text-center">
+                                                            <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest italic">Carpeta vacía</p>
+                                                        </div>
+                                                    )}
+                                                    {group.exercises.map(ex => (
+                                                        <ExerciseCard
+                                                            key={ex.id}
+                                                            ex={ex}
+                                                            isSelected={selectedIds.includes(ex.id)}
+                                                            onClick={mode === 'picker' ? () => onSelect(ex) : undefined}
+                                                            onToggleSelect={mode === 'manage' ? () => onSelect(ex) : undefined}
+                                                            showCheckbox={mode === 'manage'}
+                                                            showActions={mode === 'manage'}
+                                                            onEdit={mode === 'manage' ? () => onEdit(ex) : undefined}
+                                                            onDelete={mode === 'manage' ? () => onDelete(ex.id) : undefined}
+                                                            onDuplicate={mode === 'manage' ? () => onDuplicate(ex) : undefined}
+                                                            onMove={onMoveExercise ? () => onMoveExercise(ex) : undefined}
+                                                        />
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })
+                            ) : (
+                                <div className="text-center py-10 text-slate-400">
+                                    <p className="text-sm font-medium">No se encontraron ejercicios locales.</p>
+                                </div>
+                            )
                         )}
                     </div>
                 )}
             </div>
 
-            {/* Footer Summary (Optional, mostly for Picker) */}
+            {/* Footer Summary (picker only) */}
             {mode === 'picker' && selectedIds.length > 0 && (
                 <div className="p-4 border-t border-slate-200 bg-white sticky bottom-0 z-10 shadow-lg">
                     <p className="text-xs font-bold text-slate-600 text-center">

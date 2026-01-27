@@ -21,11 +21,20 @@ export const generateSessionAnalysis = (results, timeline, history = {}) => {
         BURN: { cap: 420, efficiency: 252 }  // 7:00 and 4:12
     };
 
+    const normalizeBlockType = (name = '') => {
+        const u = name.toUpperCase();
+        if (u.includes('BOOST')) return 'BOOST';
+        if (u.includes('BASE')) return 'BASE';
+        if (u.includes('BUILD')) return 'BUILD';
+        if (u.includes('BURN')) return 'BURN';
+        return 'BASE';
+    };
+
     Object.entries(results).forEach(([stepIndex, res]) => {
         const step = timeline[stepIndex];
-        if (!step || step.type !== 'WORK') return;
+        if (!step || step.type !== 'WORK' || !step.module) return;
 
-        const blockType = step.blockType; // BASE, BUILD, BURN, BOOST
+        const blockType = normalizeBlockType(step.blockType || step.module.name || '');
         const protocol = step.module.protocol;
         const exercises = step.module.exercises || [];
         const moduleId = step.module.id;
@@ -47,6 +56,7 @@ export const generateSessionAnalysis = (results, timeline, history = {}) => {
         // --- Logic for PDP-T (Time-based "Techo y Suelo") ---
         if (protocol === 'T') {
             exercises.forEach((ex, idx) => {
+                if (!ex) return;
                 const repsDone = res.reps?.[idx] || 0;
                 const ranges = PDP_T_RANGES[blockType];
 
@@ -157,6 +167,7 @@ export const generateSessionAnalysis = (results, timeline, history = {}) => {
                 const isFailed = elapsed >= thresholds.cap;
 
                 exercises.forEach((ex, idx) => {
+                    if (!ex) return;
                     const weightUsed = parseFloat(res.actualWeights?.[idx] || res.weights?.[idx] || 0);
                     const repsDone = res.reps?.[idx] || 0;
                     totalVolume += repsDone * weightUsed;
@@ -238,6 +249,7 @@ export const generateSessionAnalysis = (results, timeline, history = {}) => {
             const totalPlannedRounds = step.module.emomParams?.durationMinutes || 4;
 
             exercises.forEach((ex, idx) => {
+                if (!ex) return;
                 const weightUsed = parseFloat(res.actualWeights?.[idx] || res.weights?.[idx] || 0);
                 const targetRepsPerRound = ex.targetReps || step.module.targeting?.[0]?.volume || 6;
                 const totalReps = success * targetRepsPerRound;
@@ -293,6 +305,17 @@ export const generateSessionAnalysis = (results, timeline, history = {}) => {
                         adjustment: 0.05,
                         isPercent: true
                     });
+                } else if (success > 0) {
+                    insights.push({
+                        type: 'keep',
+                        moduleId: moduleId,
+                        exerciseId: ex.id,
+                        exerciseIndex: idx,
+                        exerciseName: ex.nameEs || ex.name,
+                        athleteMsg: `EMOM mantenido con buena consistencia.`,
+                        coachInsight: `Mantenimiento EMOM: ${success}/${totalPlannedRounds} rondas exitosas.`,
+                        adjustment: 0
+                    });
                 }
             });
         }
@@ -311,12 +334,15 @@ export const generateSessionAnalysis = (results, timeline, history = {}) => {
     });
 
     const successCount = insights.filter(i => i.type === 'up' || i.type === 'keep').length;
+    const failureCount = insights.filter(i => i.type === 'down').length;
     let efficiency = 0;
 
     if (insights.length > 0) {
-        efficiency = Math.round((successCount / insights.length) * 100);
+        // If we have insights, calculate based on them
+        efficiency = Math.round((successCount / (successCount + failureCount)) * 100);
     } else if (completedExercises > 0) {
-        efficiency = 100; // Default to 100% if work was done but no specific notes generated
+        // If no adjustments but work was done, it's 100% efficient maintenance
+        efficiency = 100;
     }
 
     return {
@@ -324,7 +350,7 @@ export const generateSessionAnalysis = (results, timeline, history = {}) => {
         metrics: {
             totalVolume: Math.round(totalVolume),
             completedExercises,
-            efficiency
+            efficiency: isNaN(efficiency) ? 0 : efficiency
         }
     };
 };
