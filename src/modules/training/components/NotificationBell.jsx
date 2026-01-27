@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, X, Check, ExternalLink, Inbox, BellOff } from 'lucide-react';
+import { Bell, X, Check, Inbox, BellOff, Activity, Dumbbell, BarChart3, Notebook, SquareCheck, AlertCircle, UserPlus, Sparkles } from 'lucide-react';
 import { TrainingDB } from '../services/db';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -93,11 +93,6 @@ const NotificationBell = ({ recipientId, onNotificationClick }) => {
                                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Actividad reciente</p>
                             </div>
                             {unreadCount > 0 && (
-                                <span className="px-2 py-1 bg-rose-100 text-rose-600 text-[9px] font-black rounded-full uppercase tracking-widest">
-                                    {unreadCount} nuevas
-                                </span>
-                            )}
-                            {unreadCount > 0 && (
                                 <button
                                     onClick={handleMarkAllAsRead}
                                     className="ml-auto text-[10px] font-black text-indigo-600 hover:text-indigo-700 uppercase tracking-widest pl-2"
@@ -127,12 +122,39 @@ const NotificationBell = ({ recipientId, onNotificationClick }) => {
                                                 <div className="absolute left-1 top-1/2 -translate-y-1/2 w-1.5 h-1.5 bg-rose-500 rounded-full" />
                                             )}
 
-                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${noti.type === 'task_completion' ? 'bg-emerald-50 text-emerald-500' :
-                                                noti.type === 'assignment' ? 'bg-blue-50 text-blue-500' :
-                                                    'bg-slate-100 text-slate-500'
-                                                }`}>
-                                                <Inbox size={18} />
-                                            </div>
+                                            {(() => {
+                                                const actualType = noti.type === 'task_completion' ? (noti.data?.type || 'session') : noti.type;
+                                                const getStyle = (type, priority) => {
+                                                    if (priority === 'high') return { bg: 'bg-orange-50', text: 'text-orange-500', icon: <AlertCircle size={18} /> };
+                                                    switch (type) {
+                                                        case 'session':
+                                                        case 'free_training':
+                                                        case 'neat':
+                                                        case 'assignment':
+                                                        case 'task_completion':
+                                                            return { bg: 'bg-emerald-50', text: 'text-emerald-500', icon: <Dumbbell size={18} /> };
+                                                        case 'tracking':
+                                                        case 'checkin':
+                                                            return { bg: 'bg-blue-50', text: 'text-blue-500', icon: <BarChart3 size={18} /> };
+                                                        case 'form':
+                                                        case 'form_submission':
+                                                            return { bg: 'bg-purple-50', text: 'text-purple-500', icon: <Notebook size={18} /> };
+                                                        case 'habit':
+                                                        case 'nutrition':
+                                                            return { bg: 'bg-amber-50', text: 'text-amber-500', icon: <SquareCheck size={18} /> };
+                                                        case 'new_user':
+                                                        case 'registration':
+                                                            return { bg: 'bg-indigo-50', text: 'text-indigo-500', icon: <UserPlus size={18} /> };
+                                                        default: return { bg: 'bg-slate-50', text: 'text-slate-500', icon: <Activity size={18} /> };
+                                                    }
+                                                };
+                                                const style = getStyle(actualType, noti.priority);
+                                                return (
+                                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${style.bg} ${style.text}`}>
+                                                        {style.icon}
+                                                    </div>
+                                                );
+                                            })()}
 
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex justify-between items-start gap-2">

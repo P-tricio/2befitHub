@@ -1,12 +1,30 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { TrainingDB } from './services/db';
-import { Calendar, ChevronRight, Clock, Dumbbell, Play, Shield, Zap } from 'lucide-react';
+import { Calendar, ChevronRight, Clock, Dumbbell, Play, Shield, Zap, Bell, X, Check } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 import { motion } from 'framer-motion';
 
 const TrainingDashboard = () => {
     const [sessions, setSessions] = useState([]);
     const [loading, setLoading] = useState(true);
+
+    const [notifications, setNotifications] = useState([]);
+    const [showNotifications, setShowNotifications] = useState(false);
+    const { currentUser } = useAuth();
+
+    useEffect(() => {
+        if (!currentUser) return;
+
+        // Listen to notifications
+        const unsubscribe = TrainingDB.notifications.listen(currentUser.uid, (data) => {
+            setNotifications(data);
+        });
+
+        return () => unsubscribe();
+    }, [currentUser]);
+
+    const unreadCount = notifications.filter(n => !n.read).length;
 
     useEffect(() => {
         const loadSessions = async () => {
@@ -37,15 +55,86 @@ const TrainingDashboard = () => {
                     <p className="text-sm text-slate-400 font-bold capitalize mt-1">{getDateString()}</p>
                 </div>
 
-                {/* Coach Mode Button - Subtle but accessible */}
-                <Link
-                    to="/training/admin"
-                    className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-400 hover:text-emerald-600 hover:border-emerald-200 transition-all"
-                    title="Modo Entrenador"
-                >
-                    <Shield size={18} />
-                </Link>
+                {/* Actions */}
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={() => setShowNotifications(true)}
+                        className="relative w-10 h-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-900 transition-all"
+                    >
+                        <Bell size={20} />
+                        {unreadCount > 0 && (
+                            <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 rounded-full text-[10px] font-bold text-white flex items-center justify-center border-2 border-slate-50">
+                                {unreadCount}
+                            </span>
+                        )}
+                    </button>
+
+                    <Link
+                        to="/training/admin"
+                        className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-400 hover:text-emerald-600 hover:border-emerald-200 transition-all"
+                        title="Modo Entrenador"
+                    >
+                        <Shield size={18} />
+                    </Link>
+                </div>
             </div>
+
+            {/* Notification Modal */}
+            <AnimatePresence>
+                {showNotifications && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                        <motion.div
+                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                            className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm"
+                            onClick={() => setShowNotifications(false)}
+                        />
+                        <motion.div
+                            initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+                            className="bg-white w-full max-w-sm rounded-[32px] shadow-2xl z-[110] overflow-hidden flex flex-col max-h-[70vh]"
+                        >
+                            <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                                <h3 className="font-bold text-slate-900">Notificaciones</h3>
+                                <div className="flex gap-2">
+                                    {unreadCount > 0 && (
+                                        <button
+                                            onClick={() => TrainingDB.notifications.markAllAsRead(currentUser.uid)}
+                                            className="text-xs font-bold text-emerald-600 hover:text-emerald-700 px-2 py-1"
+                                        >
+                                            Leer todo
+                                        </button>
+                                    )}
+                                    <button onClick={() => setShowNotifications(false)} className="p-1 bg-slate-200 rounded-full text-slate-500">
+                                        <X size={16} />
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="overflow-y-auto p-4 space-y-3 bg-slate-50/50 flex-1">
+                                {notifications.length === 0 ? (
+                                    <div className="text-center py-8 text-slate-400 text-sm">
+                                        No tienes notificaciones
+                                    </div>
+                                ) : (
+                                    notifications.map(n => (
+                                        <div
+                                            key={n.id}
+                                            onClick={() => !n.read && TrainingDB.notifications.markAsRead(n.id)}
+                                            className={`p-4 rounded-2xl border transition-all ${n.read ? 'bg-white border-slate-100 opacity-60' : 'bg-white border-blue-100 shadow-sm ring-1 ring-blue-500/10'}`}
+                                        >
+                                            <div className="flex justify-between items-start mb-1">
+                                                <h4 className={`font-bold text-sm ${n.read ? 'text-slate-700' : 'text-slate-900'}`}>{n.title}</h4>
+                                                <span className="text-[10px] text-slate-400">
+                                                    {n.createdAt ? new Date(n.createdAt).toLocaleDateString() : ''}
+                                                </span>
+                                            </div>
+                                            <p className="text-xs text-slate-500 leading-relaxed">{n.message}</p>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
 
             {/* Content Container */}
             <div className="p-6 space-y-6 max-w-lg mx-auto">

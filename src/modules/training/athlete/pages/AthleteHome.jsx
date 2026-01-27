@@ -263,18 +263,40 @@ const AthleteHome = () => {
                                 const session = isSession ? getSessionDetails(task.sessionId) : null;
 
                                 // Calculate accurate metadata if it's a session
-                                let sessionMetadata = { blocks: 0, duration: 0 };
+                                let sessionMetadata = { blocks: 0, duration: 0, isCardio: false };
                                 if (isSession && session) {
+                                    sessionMetadata.isCardio = session.isCardio || session.type === 'CARDIO';
                                     const blocks = session.blocks || [];
                                     sessionMetadata.blocks = blocks.length;
-                                    let totalSeconds = 0;
-                                    blocks.forEach(b => {
-                                        totalSeconds += b.targeting?.[0]?.timeCap || 240;
-                                    });
-                                    // Base duration + 3 mins transition between blocks
-                                    const baseDuration = Math.ceil(totalSeconds / 60);
-                                    const transitionTime = blocks.length > 1 ? (blocks.length - 1) * 3 : 0;
-                                    sessionMetadata.duration = baseDuration + transitionTime;
+
+                                    if (sessionMetadata.isCardio) {
+                                        // Use overrides if available
+                                        if (task.config?.overrides?.duration) {
+                                            sessionMetadata.duration = parseInt(task.config.overrides.duration);
+                                        } else {
+                                            // Sum up all exercise durations if volType is TIME
+                                            let totalSeconds = 0;
+                                            blocks.forEach(b => {
+                                                b.exercises?.forEach(ex => {
+                                                    if (ex.config?.volType === 'TIME') {
+                                                        ex.config.sets?.forEach(s => {
+                                                            totalSeconds += (parseInt(s.reps) || 0);
+                                                        });
+                                                    }
+                                                });
+                                            });
+                                            sessionMetadata.duration = Math.ceil(totalSeconds / 60) || 10;
+                                        }
+                                    } else {
+                                        let totalSeconds = 0;
+                                        blocks.forEach(b => {
+                                            totalSeconds += b.targeting?.[0]?.timeCap || 240;
+                                        });
+                                        // Base duration + 3 mins transition between blocks
+                                        const baseDuration = Math.ceil(totalSeconds / 60);
+                                        const transitionTime = blocks.length > 1 ? (blocks.length - 1) * 3 : 0;
+                                        sessionMetadata.duration = baseDuration + transitionTime;
+                                    }
                                 }
 
                                 if (isSession && session) {
@@ -296,9 +318,9 @@ const AthleteHome = () => {
                                                     ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20'
                                                     : expandedSessionId === task.id
                                                         ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/30'
-                                                        : 'bg-orange-50 text-orange-600'
+                                                        : sessionMetadata.isCardio ? 'bg-orange-50 text-orange-600' : 'bg-orange-50 text-orange-600'
                                                     }`}>
-                                                    {isCompleted ? <Check size={24} strokeWidth={3} /> : <Dumbbell size={22} />}
+                                                    {isCompleted ? <Check size={24} strokeWidth={3} /> : (sessionMetadata.isCardio ? <Footprints size={22} /> : <Dumbbell size={22} />)}
                                                 </div>
                                                 <div className="flex-1 min-w-0">
                                                     <div className="flex items-center gap-2">
@@ -316,7 +338,9 @@ const AthleteHome = () => {
                                                     ) : (
                                                         <div className="flex items-center gap-3 text-[10px] text-slate-500 font-black uppercase tracking-widest mt-0.5">
                                                             <span className="flex items-center gap-1"><Clock size={12} /> {sessionMetadata.duration} min</span>
-                                                            <span className="flex items-center gap-1"><Zap size={12} /> {sessionMetadata.blocks} bloques</span>
+                                                            {!sessionMetadata.isCardio && (
+                                                                <span className="flex items-center gap-1"><Zap size={12} /> {sessionMetadata.blocks} bloques</span>
+                                                            )}
                                                         </div>
                                                     )}
                                                 </div>

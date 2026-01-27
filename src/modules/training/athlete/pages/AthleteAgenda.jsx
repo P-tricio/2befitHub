@@ -55,11 +55,37 @@ const AthleteAgenda = () => {
         loadSessions();
     }, []);
 
-    const getSessionDetails = (sessionId) => {
+    const getSessionDetails = (sessionId, task = null) => {
         const session = sessionsMap[sessionId];
-        if (!session) return { blocks: 0, duration: 60 };
+        if (!session) return { blocks: 0, duration: 60, isCardio: false };
 
+        const isCardio = session.isCardio || session.type === 'CARDIO';
         const blocks = session.blocks || [];
+
+        if (isCardio) {
+            // Priority to overrides
+            if (task?.config?.overrides?.duration) {
+                return { blocks: blocks.length, duration: parseInt(task.config.overrides.duration), isCardio: true };
+            }
+
+            // Sum up exercise durations
+            let totalSeconds = 0;
+            blocks.forEach(b => {
+                b.exercises?.forEach(ex => {
+                    if (ex.config?.volType === 'TIME') {
+                        ex.config.sets?.forEach(s => {
+                            totalSeconds += (parseInt(s.reps) || 0);
+                        });
+                    }
+                });
+            });
+            return {
+                blocks: blocks.length,
+                duration: Math.ceil(totalSeconds / 60) || 10,
+                isCardio: true
+            };
+        }
+
         let totalSeconds = 0;
         blocks.forEach(b => {
             totalSeconds += b.targeting?.[0]?.timeCap || 240;
@@ -70,7 +96,8 @@ const AthleteAgenda = () => {
 
         return {
             blocks: blocks.length,
-            duration: baseDuration + transitionTime
+            duration: baseDuration + transitionTime,
+            isCardio: false
         };
     };
 
@@ -279,7 +306,7 @@ const AthleteAgenda = () => {
                         const isCompleted = task.status === 'completed';
                         const session = isSession ? sessionsMap[task.sessionId] : null;
 
-                        const sessionMeta = isSession && session ? getSessionDetails(task.sessionId) : null;
+                        const sessionMeta = isSession && session ? getSessionDetails(task.sessionId, task) : null;
 
                         return (
                             <button
@@ -301,7 +328,7 @@ const AthleteAgenda = () => {
                                         }`}>
                                         {isCompleted ? <Check size={20} strokeWidth={3} /> : (
                                             <>
-                                                {task.type === 'session' && <Dumbbell size={20} />}
+                                                {task.type === 'session' && (sessionMeta?.isCardio ? <Footprints size={20} /> : <Dumbbell size={20} />)}
                                                 {task.type === 'neat' && <Footprints size={20} />}
                                                 {task.type === 'nutrition' && <CheckSquare size={20} />}
                                                 {(task.type === 'tracking' || task.type === 'checkin') && <ClipboardList size={20} />}
@@ -322,9 +349,12 @@ const AthleteAgenda = () => {
                                             {isCompleted ? (task.summary || 'Completado') : (
                                                 <>
                                                     {isSession ? (
-                                                        <>
-                                                            <Clock size={10} className="inline" /> {sessionMeta?.duration} min
-                                                        </>
+                                                        <div className="flex items-center gap-3 mt-0.5">
+                                                            <span className="flex items-center gap-1"><Clock size={10} className="inline" /> {sessionMeta?.duration} min</span>
+                                                            {!sessionMeta?.isCardio && (
+                                                                <span className="flex items-center gap-1"><Zap size={10} className="inline" /> {sessionMeta?.blocks} bloques</span>
+                                                            )}
+                                                        </div>
                                                     ) : 'Hacer ahora'}
                                                 </>
                                             )}

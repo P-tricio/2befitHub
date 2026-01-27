@@ -1,9 +1,9 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { TrainingDB } from '../services/db';
 import { useAuth } from '../../../context/AuthContext';
-import { ChevronLeft, Play, AlertCircle, CheckCircle, Clock, Plus, TrendingUp, TrendingDown, Minus, Info, Dumbbell, Zap, X } from 'lucide-react';
+import { ChevronLeft, ChevronUp, ChevronDown, Play, AlertCircle, CheckCircle, Clock, Plus, TrendingUp, TrendingDown, Minus, Info, Dumbbell, Zap, X, Activity, MessageSquare, Flame, Footprints } from 'lucide-react';
 import { useSessionData } from './hooks/useSessionData.js';
 import { useKeepAwake } from '../../../hooks/useKeepAwake';
 import { useAudioFeedback } from '../../../hooks/useAudioFeedback';
@@ -27,9 +27,75 @@ const SessionRunner = () => {
     const { currentUser } = useAuth();
 
     // Data State - now using the new hook
-    const { session, modules, timeline, protocol, history, loading, error } = useSessionData(sessionId, currentUser?.uid);
+    const { session, modules, timeline: originalTimeline, protocol, history, loading, error } = useSessionData(sessionId, currentUser?.uid);
 
     // Runner State
+    const [overrides, setOverrides] = useState(null);
+
+    // Fetch Overrides
+    useEffect(() => {
+        const fetchOverrides = async () => {
+            if (!currentUser?.uid || !sessionId) return;
+            try {
+                const scheduledDate = location.state?.scheduledDate || new Date().toISOString().split('T')[0];
+                const userDoc = await TrainingDB.users.getById(currentUser.uid);
+                const tasks = userDoc?.schedule?.[scheduledDate] || [];
+                // Find session task
+                const task = tasks.find(t => t.sessionId === sessionId);
+                if (task?.config?.overrides) {
+                    console.log("Applying Session Overrides:", task.config.overrides);
+                    setOverrides(task.config.overrides);
+                }
+            } catch (e) {
+                console.error("Error fetching overrides:", e);
+            }
+        };
+        fetchOverrides();
+    }, [currentUser?.uid, sessionId, location.state]);
+
+    // Compute Timeline with Overrides
+    const timeline = useMemo(() => {
+        if (!overrides || !originalTimeline) return originalTimeline;
+
+        return originalTimeline.map(step => {
+            if (step.type !== 'WORK') return step;
+
+            const newModule = { ...step.module };
+
+            if (overrides.duration) {
+                if (newModule.protocol === 'E') {
+                    newModule.emomParams = { ...(newModule.emomParams || {}), durationMinutes: parseInt(overrides.duration) };
+                } else {
+                    const newTargeting = [...(newModule.targeting || [])];
+                    if (newTargeting.length === 0) newTargeting.push({});
+                    newTargeting[0] = { ...newTargeting[0], timeCap: parseInt(overrides.duration) * 60, type: 'time' };
+                    newModule.targeting = newTargeting;
+                    // If manual duration override on non-EMOM, force Time protocol for timer
+                    if (newModule.protocol !== 'E') newModule.protocol = 'T';
+                }
+            }
+
+            // Distance override
+            if (overrides.distance) {
+                const newTargeting = [...(newModule.targeting || [])];
+                if (newTargeting.length === 0) newTargeting.push({});
+                // Use volume for distance if it's the primary metric
+                newTargeting[0] = { ...newTargeting[0], volume: parseFloat(overrides.distance), metric: 'km' };
+                newModule.targeting = newTargeting;
+            }
+
+            // Notes override
+            if (overrides.notes) {
+                const newTargeting = [...(newModule.targeting || [])];
+                if (newTargeting.length === 0) newTargeting.push({});
+                newTargeting[0] = { ...newTargeting[0], instruction: overrides.notes };
+                newModule.targeting = newTargeting;
+            }
+
+            return { ...step, module: newModule };
+        });
+    }, [originalTimeline, overrides]);
+
     const [currentIndex, setCurrentIndex] = useState(0);
 
     // Current Step Data
@@ -235,6 +301,57 @@ const SessionRunner = () => {
 
     if (loading) return <div className="fixed inset-0 z-[5000] bg-slate-900 flex items-center justify-center text-slate-400">Cargando motor de entrenamiento...</div>;
     if (error) return <div className="fixed inset-0 z-[5000] bg-slate-900 flex items-center justify-center text-red-500 font-bold">{error}</div>;
+
+    // CARDIO SPECIAL VIEW
+    if (session?.isCardio) {
+        return (
+            <CardioTaskView
+                session={session}
+                overrides={overrides}
+                onFinish={async (results) => {
+                    const scheduledDate = location.state?.scheduledDate || new Date().toISOString().split('T')[0];
+                    const durationMin = results.duration;
+                    const rpe = results.rpe;
+                    const summary = `${durationMin} min • RPE ${rpe}${results.distance ? ` • ${results.distance}km` : ''}`;
+
+                    // Update Schedule
+                    await TrainingDB.users.updateSessionTaskInSchedule(
+                        currentUser.uid,
+                        scheduledDate,
+                        session.id,
+                        {
+                            status: 'completed',
+                            completedAt: new Date().toISOString(),
+                            summary: summary,
+                            results: {
+                                ...results,
+                                durationMinutes: durationMin,
+                                totalVolume: 0 // Cardio doesn't have tonnage volume
+                            }
+                        }
+                    );
+
+                    // Trigger Notification
+                    await TrainingDB.notifications.create('admin', {
+                        athleteId: currentUser.uid,
+                        athleteName: currentUser?.displayName || 'Atleta',
+                        type: 'session',
+                        title: session.name || 'Cardio Completado',
+                        message: `${currentUser?.displayName || 'Un atleta'} ha completado cardio: ${session.name} (${summary})`,
+                        data: {
+                            sessionId: session.id,
+                            type: 'cardio',
+                            summary,
+                            results
+                        }
+                    });
+
+                    navigate(-1);
+                }}
+                onBack={() => navigate(-1)}
+            />
+        );
+    }
 
     // Render Steps
     if (currentStep?.type === 'PLANNING') {
@@ -1824,6 +1941,178 @@ const BlockFeedbackModal = ({ onConfirm, blockType, exercises }) => {
                     </button>
                 </div>
             </motion.div>
+        </div>
+    );
+};
+
+const CardioTaskView = ({ session, overrides, onFinish, onBack }) => {
+    const [duration, setDuration] = useState(parseInt(overrides?.duration) || 10);
+    const [distance, setDistance] = useState(overrides?.distance || '');
+    const [rpe, setRpe] = useState(6);
+    const [notes, setNotes] = useState('');
+    const [saving, setSaving] = useState(false);
+
+    const handleConfirm = async () => {
+        setSaving(true);
+        try {
+            await onFinish({
+                duration,
+                distance: distance ? parseFloat(distance) : null,
+                rpe,
+                notes: notes.trim(),
+                comment: notes.trim(), // For backward compatibility
+                type: 'cardio'
+            });
+        } catch (err) {
+            console.error(err);
+            alert("Error al guardar");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-[5000] bg-slate-50 flex flex-col overflow-hidden">
+            {/* Immersive Header */}
+            <div className="px-6 pt-12 pb-6 bg-white border-b border-slate-100 flex justify-between items-center shadow-sm">
+                <div className="flex flex-col">
+                    <div className="flex items-center gap-2 mb-1">
+                        <div className="bg-orange-500 p-1.5 rounded-lg text-white">
+                            <Flame size={18} fill="currentColor" />
+                        </div>
+                        <span className="text-[10px] font-black text-orange-500 uppercase tracking-[0.2em]">Sesión Cardiovascular</span>
+                    </div>
+                    <h1 className="text-2xl font-black text-slate-900 tracking-tight">{session.name}</h1>
+                </div>
+                <button
+                    onClick={onBack}
+                    className="w-10 h-10 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-900 transition-all"
+                >
+                    <X size={20} />
+                </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-8 pb-32">
+                {/* Session Description / Instructions */}
+                {session.description && (
+                    <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm relative overflow-hidden group">
+                        <div className="absolute top-0 left-0 w-1.5 h-full bg-emerald-500" />
+                        <div className="flex items-center gap-2 mb-3">
+                            <Info size={16} className="text-slate-400" />
+                            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Instrucciones de la sesión</h2>
+                        </div>
+                        <p className="text-slate-600 text-sm leading-relaxed whitespace-pre-line font-medium">
+                            {session.description}
+                        </p>
+                    </div>
+                )}
+
+                {/* Assigned Targets HUD */}
+                {(overrides?.duration || overrides?.distance || overrides?.notes) && (
+                    <div className="bg-slate-900 rounded-[2.5rem] p-6 text-white shadow-xl shadow-slate-900/20">
+                        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                            <Zap size={14} className="text-emerald-400" />
+                            Objetivos Asignados
+                        </h3>
+                        <div className="flex gap-4 mb-4">
+                            {overrides.duration && (
+                                <div className="flex-1 bg-white/5 rounded-2xl p-4 border border-white/5 backdrop-blur-md">
+                                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Tiempo</p>
+                                    <p className="text-xl font-black text-emerald-400">{overrides.duration} <span className="text-xs">min</span></p>
+                                </div>
+                            )}
+                            {overrides.distance && (
+                                <div className="flex-1 bg-white/5 rounded-2xl p-4 border border-white/5 backdrop-blur-md">
+                                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Distancia</p>
+                                    <p className="text-xl font-black text-blue-400">{overrides.distance} <span className="text-xs">km</span></p>
+                                </div>
+                            )}
+                        </div>
+                        {overrides.notes && (
+                            <div className="bg-white/5 rounded-2xl p-4 border border-white/5">
+                                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Notas Especiales</p>
+                                <p className="text-xs text-slate-300 italic">"{overrides.notes}"</p>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Tracking Form */}
+                <div className="space-y-10 py-4">
+                    {/* Duration Slider */}
+                    <div>
+                        <div className="flex justify-between items-end mb-4 px-1">
+                            <div className="flex items-center gap-2">
+                                <Clock size={16} className="text-slate-400" />
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Duración Real</span>
+                            </div>
+                            <span className="text-4xl font-black text-slate-900">{duration} <span className="text-base text-slate-400 font-bold">min</span></span>
+                        </div>
+                        <input
+                            type="range" min="5" max="180" step="5"
+                            value={duration}
+                            onChange={e => setDuration(parseInt(e.target.value))}
+                            className="w-full h-3 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                        />
+                    </div>
+
+                    {/* Distance Input */}
+                    <div>
+                        <div className="flex items-center gap-2 mb-4 px-1">
+                            <Footprints size={16} className="text-slate-400" />
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Distancia (Opcional)</label>
+                        </div>
+                        <div className="relative">
+                            <input
+                                type="number" step="0.1" placeholder="00.0"
+                                value={distance}
+                                onChange={e => setDistance(e.target.value)}
+                                className="w-full text-6xl font-black text-slate-900 bg-transparent border-b-4 border-slate-100 focus:border-slate-900 outline-none pb-4 placeholder:text-slate-100 tracking-tighter"
+                            />
+                            <span className="absolute right-0 bottom-6 text-2xl font-black text-slate-300">km</span>
+                        </div>
+                    </div>
+
+                    {/* RPE Selector */}
+                    <RPESelector
+                        value={rpe}
+                        onChange={setRpe}
+                        label="Esfuerzo Percibido (RPE)"
+                    />
+
+                    {/* Notes */}
+                    <div className="pt-4">
+                        <div className="flex items-center gap-2 mb-4 px-1">
+                            <MessageSquare size={16} className="text-slate-400" />
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Comentarios Sensaciones</label>
+                        </div>
+                        <textarea
+                            value={notes}
+                            onChange={e => setNotes(e.target.value)}
+                            placeholder="¿Cómo te has sentido? ¿Alguna molestia?"
+                            className="w-full p-6 bg-white rounded-3xl text-sm font-bold text-slate-700 outline-none h-32 border border-slate-100 shadow-sm focus:border-emerald-500/30 transition-all resize-none"
+                        />
+                    </div>
+                </div>
+            </div>
+
+            {/* Bottom Action */}
+            <div className="p-8 pt-4 bg-white border-t border-slate-100 shrink-0 shadow-2xl">
+                <button
+                    onClick={handleConfirm}
+                    disabled={saving}
+                    className="w-full py-5 bg-slate-900 hover:bg-slate-800 text-white rounded-[2rem] font-black text-lg active:scale-[0.98] transition-all disabled:opacity-50 shadow-xl shadow-slate-900/20 flex items-center justify-center gap-3"
+                >
+                    {saving ? (
+                        <div className="w-6 h-6 border-4 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                        <>
+                            <CheckCircle size={20} strokeWidth={3} />
+                            CONFIRMAR Y FINALIZAR
+                        </>
+                    )}
+                </button>
+            </div>
         </div>
     );
 };

@@ -150,14 +150,31 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
         }));
     };
 
-    const handleAssignSession = async (sessionId) => {
+    const handleAssignSession = async (sessionId, config = {}) => {
         if (!selectedDate) return;
         await appendTask(selectedDate, {
             id: crypto.randomUUID(),
             type: 'session',
             sessionId: sessionId,
-            admin_assigned: true
+            admin_assigned: true,
+            config: {
+                overrides: config // Store overrides here
+            }
         });
+
+        // Notify Athlete
+        try {
+            await TrainingDB.notifications.create(user.id, {
+                type: 'session_assigned',
+                title: 'Nueva Sesión Asignada',
+                message: `Tu entrenador te ha asignado una sesión para el ${format(selectedDate, 'd MMMM', { locale: es })}.`,
+                priority: 'normal',
+                data: { sessionId, date: format(selectedDate, 'yyyy-MM-dd') }
+            });
+        } catch (e) {
+            console.error('Error creating notification:', e);
+        }
+
         setAddTaskModalOpen(false);
     };
 
@@ -1077,6 +1094,8 @@ const DayDetailModal = ({ date, tasks, onClose, onAddSession, onAddProgram, onAd
 const AddTaskModal = ({ user, date, sessions, programs, availableForms, taskToEdit, onClose, onAssignSession, onAssignProgram, onAssignGeneric, onUpdateTask, onOpenForms, getTaskName }) => {
     const [expanded, setExpanded] = useState(taskToEdit ? taskToEdit.type : null);
     const [search, setSearch] = useState('');
+    const [selectedSessionForConfig, setSelectedSessionForConfig] = useState(null);
+    const [overrides, setOverrides] = useState({});
 
     const toggle = (id) => { setSearch(''); setExpanded(expanded === id ? null : id); };
 
@@ -1142,16 +1161,100 @@ const AddTaskModal = ({ user, date, sessions, programs, availableForms, taskToEd
                                     {sessions.filter(s => s.name.toLowerCase().includes(search.toLowerCase())).map(s => (
                                         <button
                                             key={s.id}
-                                            onClick={() => taskToEdit ? onUpdateTask(taskToEdit.id, { sessionId: s.id }) : onAssignSession(s.id)}
+                                            onClick={() => s.isCardio ? setSelectedSessionForConfig(s) : onAssignSession(s.id)}
                                             className={`w-full text-left p-3 rounded-lg hover:bg-emerald-50 hover:text-emerald-700 text-sm font-medium transition-colors ${taskToEdit?.sessionId === s.id ? 'bg-emerald-50 text-emerald-700 font-bold' : ''}`}
                                         >
-                                            {s.name}
+                                            <div className="flex justify-between items-center">
+                                                <span>{s.name}</span>
+                                                {s.isCardio && <Footprints size={14} className="text-orange-500" />}
+                                            </div>
                                         </button>
                                     ))}
                                 </div>
                             </div>
                         )}
                     </div>
+
+                    {/* SESSION CONFIG OVERLAY */}
+                    <AnimatePresence>
+                        {selectedSessionForConfig && (
+                            <motion.div
+                                initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}
+                                className="absolute inset-0 bg-white z-20 flex flex-col"
+                            >
+                                <div className="p-4 border-b border-slate-100 flex items-center gap-2 bg-slate-50">
+                                    <button
+                                        onClick={() => { setSelectedSessionForConfig(null); setOverrides({}); }}
+                                        className="p-2 hover:bg-white rounded-full transition-colors text-slate-400 hover:text-slate-900 shadow-sm"
+                                    >
+                                        <ChevronLeft size={20} />
+                                    </button>
+                                    <div>
+                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Configurar Sesión</p>
+                                        <h3 className="font-black text-slate-900 leading-none">{selectedSessionForConfig.name}</h3>
+                                    </div>
+                                </div>
+
+                                <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                                    <div className="p-4 bg-orange-50 rounded-2xl border border-orange-100">
+                                        <p className="text-[10px] font-black text-orange-600 uppercase tracking-widest mb-2">Ajustes Rápidos de Cardio</p>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Duración (min)</label>
+                                                <input
+                                                    type="number"
+                                                    className="w-full p-3 bg-white border border-orange-200 rounded-xl text-lg font-black font-mono text-orange-900 outline-none focus:ring-2 focus:ring-orange-500/20"
+                                                    placeholder="--"
+                                                    value={overrides.duration || ''}
+                                                    onChange={e => setOverrides(prev => ({ ...prev, duration: e.target.value }))}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Distancia (km)</label>
+                                                <input
+                                                    type="number"
+                                                    step="0.1"
+                                                    className="w-full p-3 bg-white border border-orange-200 rounded-xl text-lg font-black font-mono text-orange-900 outline-none focus:ring-2 focus:ring-orange-500/20"
+                                                    placeholder="--"
+                                                    value={overrides.distance || ''}
+                                                    onChange={e => setOverrides(prev => ({ ...prev, distance: e.target.value }))}
+                                                />
+                                            </div>
+                                        </div>
+                                        <p className="text-[10px] text-orange-700/60 mt-2 leading-tight">
+                                            * Estos valores sobrescribirán los objetivos predeterminados de la sesión para este atleta.
+                                        </p>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">Nota para el Atleta</label>
+                                        <textarea
+                                            placeholder="Instrucciones específicas (ej: Mantener Z2, sprints al final...)"
+                                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:border-slate-900 min-h-[100px] resize-none"
+                                            value={overrides.notes || ''}
+                                            onChange={e => setOverrides(prev => ({ ...prev, notes: e.target.value }))}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="p-4 border-t border-slate-100">
+                                    <button
+                                        onClick={() => {
+                                            if (taskToEdit) {
+                                                onUpdateTask(taskToEdit.id, { sessionId: selectedSessionForConfig.id, overrides });
+                                            } else {
+                                                onAssignSession(selectedSessionForConfig.id, overrides);
+                                            }
+                                            setSelectedSessionForConfig(null);
+                                        }}
+                                        className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-lg shadow-slate-900/20 active:scale-95 transition-all"
+                                    >
+                                        Confirmar Asignación
+                                    </button>
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
 
                     {/* PROGRAMA */}
                     <div className="border border-slate-200 rounded-2xl overflow-hidden transition-all">

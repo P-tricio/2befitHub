@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
     MoreVertical, Plus, Copy, Trash2, ChevronDown, ChevronUp,
-    Link, Link2, Move, Clock, Repeat, Flame, Dumbbell,
+    Link, Link2, Move, Clock, Repeat, Flame, Dumbbell, Footprints, Edit2,
     Settings, Eye, Check, X, Search, Lock, Unlock, Save, Download, Coffee, Filter, UploadCloud, Loader2, Zap, Library, List, ClipboardList
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -633,6 +633,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
         { id: '1', name: 'Bloque 1', exercises: [] }
     ]);
     const [sessionType, setSessionType] = useState(initialSession?.type || 'LIBRE'); // LIBRE, PDP-T, PDP-R, PDP-E
+    const [isCardio, setIsCardio] = useState(initialSession?.isCardio || false);
     const [rightSidebarView, setRightSidebarView] = useState('overview'); // 'overview' | 'library'
 
     // Config State
@@ -1252,6 +1253,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
             setSessionTitle(session.name);
             setSessionDescription(session.description || '');
             setSessionType(session.type || 'LIBRE');
+            setIsCardio(session.isCardio || false);
             setBlocks(processedBlocks);
             setMainView('editor');
         }
@@ -1450,6 +1452,40 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
         setSessionTitle(`Sesión ${protocolType}`);
     };
 
+    const applyCardioTemplate = () => {
+        setSessionDescription('Sesión de trabajo cardiovascular.');
+        setSessionType('CARDIO');
+        setIsCardio(true);
+        setDescriptionExpanded(true);
+
+        // If session already has content, JUST mark as cardio and return
+        if (blocks.length > 0 && blocks.some(b => b.exercises.length > 0)) {
+            setSessionTitle(prev => prev.includes('Nueva Sesión') ? 'Nueva Sesión Cardio' : prev);
+            return;
+        }
+
+        const newBlocks = [{
+            id: crypto.randomUUID(),
+            name: 'Bloque de Cardio',
+            exercises: [{
+                id: crypto.randomUUID(),
+                name: 'Carrera / Bici / Remo',
+                type: 'EXERCISE',
+                pattern: 'Global',
+                quality: 'Resistencia',
+                config: { volType: 'TIME', intType: 'RPE', sets: [{ reps: '600', rpe: '6', rest: '0' }] },
+                isGrouped: false,
+                mediaUrl: '', imageStart: '', imageEnd: ''
+            }],
+            description: 'Trabajo continuo u oficial de la sesión.',
+            protocol: 'LIBRE',
+            params: {}
+        }];
+
+        setBlocks(newBlocks);
+        setSessionTitle('Nueva Sesión Cardio');
+    };
+
     const saveModuleToDB = async (block) => {
         const moduleName = prompt('Nombre del Módulo a guardar:', block.name);
         if (!moduleName) return;
@@ -1489,7 +1525,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
         // If block has exercises, ask for confirmation before injecting presets
         if (block.exercises.length > 0) {
             const confirmOverwrite = window.confirm(
-                `¿Deseas aplicar el preset de ${newProtocol}? \n\nEsto sobrescribirá los ejercicios actuales de este bloque con los valores por defecto del protocolo.`
+                `¿Deseas aplicar el preset de ${newProtocol}? \n\nEsto actualizará la configuración (series/reps/rpe) de los ejercicios actuales para adaptarlos al protocolo.`
             );
             if (!confirmOverwrite) {
                 // Just update protocol without injecting exercises
@@ -1500,13 +1536,22 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
             }
         }
 
-        // Determine how many exercises to inject based on block type
-        let numExercises = 1;
-        if (blockType === 'BOOST' || blockType === 'BURN') numExercises = 2;
+        // Maintain existing exercises but update their config and grouping
+        const existingExercises = block.exercises || [];
+        let numPlaceholderExercises = 1;
+        if (blockType === 'BOOST' || blockType === 'BURN') numPlaceholderExercises = 2;
 
-        const newExercises = Array(numExercises).fill(null).map((_, i) =>
-            createPlaceholderExercise(blockType, i, newProtocol)
-        );
+        const newExercises = Array(Math.max(numPlaceholderExercises, existingExercises.length)).fill(null).map((_, i) => {
+            const placeholder = createPlaceholderExercise(blockType, i, newProtocol);
+            if (i < existingExercises.length) {
+                return {
+                    ...existingExercises[i],
+                    config: placeholder.config, // Preservar identidad, aplicar configuración protocolaria
+                    isGrouped: placeholder.isGrouped
+                };
+            }
+            return placeholder;
+        });
 
         const newBlocks = [...blocks];
         newBlocks[blockIdx] = {
@@ -1681,6 +1726,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                 name: sessionTitle,
                 description: sessionDescription,
                 type: sessionType,
+                isCardio: isCardio,
                 duration: calculatedDuration, // New Field
                 blockCount: blockCount,       // New Field
                 totalExercises: exercisesCount, // New Field
@@ -1735,6 +1781,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
             setInitialState(JSON.stringify({
                 name: sessionTitle,
                 description: sessionDescription,
+                isCardio: isCardio,
                 blocks: blocks
             }));
             setIsDirty(false);
@@ -1898,7 +1945,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
 
             {/* Session Title - Only show in editor mode and not in extreme landscape mobile unless we compact it */}
             {mainView === 'editor' && (
-                <div className={`bg-white border-b border-slate-100 px-2 md:px-6 flex items-center gap-2 sticky top-0 md:relative z-20 shadow-sm md:shadow-none transition-all ${isMobileLandscape ? 'py-0.5' : 'py-2 md:py-3'}`}>
+                <div className={`bg-white border-b border-slate-100 px-2 md:px-6 flex items-center gap-2 sticky top-0 md:relative z-10 shadow-sm md:shadow-none transition-all ${isMobileLandscape ? 'py-0.5' : 'py-2 md:py-3'}`}>
                     {/* Title */}
                     <input
                         value={sessionTitle}
@@ -1918,7 +1965,8 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                                     ${sessionType === 'PDP-T' ? 'bg-purple-100 text-purple-600 border-purple-200' :
                                         sessionType === 'PDP-R' ? 'bg-blue-100 text-blue-600 border-blue-200' :
                                             sessionType === 'PDP-E' ? 'bg-emerald-100 text-emerald-600 border-emerald-200' :
-                                                'bg-slate-50 text-slate-500 border-slate-200'}
+                                                sessionType === 'CARDIO' ? 'bg-orange-100 text-orange-600 border-orange-200' :
+                                                    'bg-slate-50 text-slate-500 border-slate-200'}
                                 `}
                             >
                                 {isMobileLandscape ? sessionType.replace('PDP-', '') : (sessionType === 'LIBRE' ? 'LIBRE' : sessionType)}
@@ -1928,20 +1976,24 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                                 <>
                                     <div className="fixed inset-0 z-40" onClick={() => setPdpDropdownOpen(false)} />
                                     <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-xl border border-slate-100 overflow-hidden z-50 min-w-[120px]">
-                                        {['LIBRE', 'PDP-T', 'PDP-R', 'PDP-E'].map(t => (
+                                        {['LIBRE', 'PDP-T', 'PDP-R', 'PDP-E', 'CARDIO'].map(t => (
                                             <button
                                                 key={t}
                                                 onClick={() => {
                                                     if (t === 'LIBRE') {
                                                         setSessionType(t);
+                                                        setIsCardio(false);
+                                                    } else if (t === 'CARDIO') {
+                                                        applyCardioTemplate();
                                                     } else {
                                                         applyTemplate(t);
+                                                        setIsCardio(false);
                                                     }
                                                     setPdpDropdownOpen(false);
                                                 }}
                                                 className={`w-full text-left px-3 py-1.5 text-xs font-bold hover:bg-slate-50 ${sessionType === t ? 'text-emerald-600 bg-emerald-50' : 'text-slate-700'}`}
                                             >
-                                                {t === 'LIBRE' ? 'MODO LIBRE' : t}
+                                                {t === 'LIBRE' ? 'MODO LIBRE' : t === 'CARDIO' ? 'CARDIO' : t}
                                             </button>
                                         ))}
                                     </div>
