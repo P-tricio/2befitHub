@@ -18,6 +18,7 @@ export const normalizeExercise = (ex) => {
         // Spanish fields (preserve or fallback)
         nameEs: ex.nameEs || ex.name_es || ex.name,
         descriptionEs: ex.descriptionEs || ex.description_es || ex.description || ex.instructions_es?.join('\n') || '',
+        notes: ex.notes || ex.notes_es || ex.notesEs || ex.config?.notes || '',
 
         // Media URL (prioritize animated formats)
         mediaUrl: ex.gifUrl || ex.mediaUrl || ex.videoUrl || ex.image || ex.imageStart ||

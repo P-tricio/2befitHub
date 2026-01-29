@@ -106,7 +106,7 @@ const SessionResultsModal = ({ task, session, onClose, userId }) => {
             efficiency: blocksWithEfficiency > 0 ? Math.round(totalEfficiency / blocksWithEfficiency) : 100,
             durationMinutes: task?.results?.durationMinutes || task?.results?.duration || logs.reduce((acc, l) => acc + (l.results?.durationMinutes || 0), 0) || '--'
         };
-    }, [task?.results, logs, loading, session.blocks]);
+    }, [task?.results, logs, loading, session?.blocks]);
 
     const toggleBlock = (idx) => {
         setExpandedBlocks(prev => ({

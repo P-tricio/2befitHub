@@ -57,7 +57,7 @@ const ExerciseFormDrawer = ({
                 level: exercise.level || 'Intermedio',
                 quality: exercise.quality || 'F',
                 equipment: exercise.equipment || 'Ninguno (Peso Corporal)',
-                mediaUrl: exercise.mediaUrl || '',
+                mediaUrl: exercise.mediaUrl || exercise.gifUrl || '',
                 imageStart: exercise.imageStart || '',
                 imageEnd: exercise.imageEnd || '',
                 youtubeUrl: exercise.youtubeUrl || '',

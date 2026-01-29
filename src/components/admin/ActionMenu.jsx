@@ -1,82 +1,106 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { MoreVertical } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { createPortal } from 'react-dom';
 
 const ActionMenu = ({ actions }) => {
     const [isOpen, setIsOpen] = useState(false);
-    const [menuPosition, setMenuPosition] = useState({ top: 0, right: 0 });
-    const [openUpward, setOpenUpward] = useState(false);
-    const menuRef = useRef(null);
+    const [menuStyle, setMenuStyle] = useState({});
+    const containerRef = useRef(null);
     const buttonRef = useRef(null);
+    const dropdownRef = useRef(null);
 
-    useEffect(() => {
-        const handleClickOutside = (event) => {
-            if (menuRef.current && !menuRef.current.contains(event.target)) {
-                setIsOpen(false);
-            }
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
-
+    // Calculate position when opening
     useEffect(() => {
         if (isOpen && buttonRef.current) {
             const buttonRect = buttonRef.current.getBoundingClientRect();
-            const menuHeight = 50 * actions.length; // Approximate: 50px per item
+            const menuHeight = 48 * actions.length;
+            const menuWidth = 192;
+
             const spaceBelow = window.innerHeight - buttonRect.bottom;
-            const shouldOpenUpward = spaceBelow < menuHeight + 20;
+            const openUpward = spaceBelow < menuHeight + 16;
 
-            setOpenUpward(shouldOpenUpward);
-
-            // Calculate fixed position
-            if (shouldOpenUpward) {
-                setMenuPosition({
-                    top: buttonRect.top - menuHeight - 8,
-                    right: window.innerWidth - buttonRect.right
-                });
-            } else {
-                setMenuPosition({
-                    top: buttonRect.bottom + 4,
-                    right: window.innerWidth - buttonRect.right
-                });
-            }
+            setMenuStyle({
+                position: 'fixed',
+                zIndex: 99999,
+                top: openUpward ? 'auto' : `${buttonRect.bottom + 4}px`,
+                bottom: openUpward ? `${window.innerHeight - buttonRect.top + 4}px` : 'auto',
+                left: `${Math.min(buttonRect.left, window.innerWidth - menuWidth - 16)}px`,
+            });
         }
     }, [isOpen, actions.length]);
 
+    // Close on outside click or scroll
+    useEffect(() => {
+        if (!isOpen) return;
+
+        const handleClose = (e) => {
+            // Check if click is outside both button and dropdown
+            const clickedButton = buttonRef.current?.contains(e.target);
+            const clickedDropdown = dropdownRef.current?.contains(e.target);
+
+            if (!clickedButton && !clickedDropdown) {
+                setIsOpen(false);
+            }
+        };
+
+        const handleScroll = () => setIsOpen(false);
+
+        // Delay to prevent immediate close
+        const timer = setTimeout(() => {
+            document.addEventListener('mousedown', handleClose);
+            document.addEventListener('touchstart', handleClose);
+            window.addEventListener('scroll', handleScroll, true);
+        }, 10);
+
+        return () => {
+            clearTimeout(timer);
+            document.removeEventListener('mousedown', handleClose);
+            document.removeEventListener('touchstart', handleClose);
+            window.removeEventListener('scroll', handleScroll, true);
+        };
+    }, [isOpen]);
+
+    const handleButtonClick = (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        setIsOpen(!isOpen);
+    };
+
+    const handleActionClick = (e, action) => {
+        e.stopPropagation();
+        e.preventDefault();
+        setIsOpen(false);
+        action.onClick(e);
+    };
+
     return (
-        <div className="relative" ref={menuRef}>
+        <div ref={containerRef}>
             <button
                 ref={buttonRef}
-                onClick={(e) => {
-                    e.stopPropagation();
-                    setIsOpen(!isOpen);
-                }}
+                onClick={handleButtonClick}
+                onPointerDown={(e) => e.stopPropagation()}
                 className="p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors"
             >
                 <MoreVertical size={20} />
             </button>
 
-            <AnimatePresence>
-                {isOpen && (
+            {isOpen && createPortal(
+                <AnimatePresence>
                     <motion.div
-                        initial={{ opacity: 0, scale: 0.95, y: openUpward ? 10 : -10 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.95, y: openUpward ? 10 : -10 }}
+                        ref={dropdownRef}
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.95 }}
                         transition={{ duration: 0.1 }}
-                        className="fixed w-48 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-[9999]"
-                        style={{
-                            top: `${menuPosition.top}px`,
-                            right: `${menuPosition.right}px`
-                        }}
+                        className="w-48 bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden"
+                        style={menuStyle}
                     >
                         {actions.map((action, idx) => (
                             <button
                                 key={idx}
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    setIsOpen(false);
-                                    action.onClick(e);
-                                }}
+                                onClick={(e) => handleActionClick(e, action)}
+                                onPointerDown={(e) => e.stopPropagation()}
                                 className={`w-full text-left px-4 py-3 text-sm font-bold flex items-center gap-3 hover:bg-slate-50 transition-colors ${action.variant === 'danger' ? 'text-red-500 hover:bg-red-50' : 'text-slate-700'
                                     }`}
                             >
@@ -85,8 +109,9 @@ const ActionMenu = ({ actions }) => {
                             </button>
                         ))}
                     </motion.div>
-                )}
-            </AnimatePresence>
+                </AnimatePresence>,
+                document.body
+            )}
         </div>
     );
 };

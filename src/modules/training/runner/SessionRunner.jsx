@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { TrainingDB } from '../services/db';
 import { useAuth } from '../../../context/AuthContext';
-import { ChevronLeft, ChevronUp, ChevronDown, Play, AlertCircle, CheckCircle, Clock, Plus, TrendingUp, TrendingDown, Minus, Info, Dumbbell, Zap, X, Activity, MessageSquare, Flame, Footprints } from 'lucide-react';
+import { ChevronLeft, ChevronUp, ChevronDown, Play, AlertCircle, CheckCircle, Clock, Plus, TrendingUp, TrendingDown, Minus, Info, Dumbbell, Zap, X, Activity, MessageSquare, Flame, Footprints, Trash2, Repeat, Layers } from 'lucide-react';
 import { useSessionData } from './hooks/useSessionData.js';
 import { useKeepAwake } from '../../../hooks/useKeepAwake';
 import { useAudioFeedback } from '../../../hooks/useAudioFeedback';
@@ -97,6 +97,15 @@ const SessionRunner = () => {
     }, [originalTimeline, overrides]);
 
     const [currentIndex, setCurrentIndex] = useState(0);
+    const [isProcessing, setIsProcessing] = useState(false);
+    const mainContainerRef = useRef(null);
+
+    // Auto-scroll to top when index changes
+    useEffect(() => {
+        if (mainContainerRef.current) {
+            mainContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+    }, [currentIndex]);
 
     // Current Step Data
     const currentStep = timeline[currentIndex] || null;
@@ -134,105 +143,115 @@ const SessionRunner = () => {
     };
 
     const handleNext = async () => {
+        if (isProcessing) return;
         const currentStep = timeline[currentIndex];
 
         // If Finishing Session (from SUMMARY)
         if (currentStep.type === 'SUMMARY') {
-            // Unify analysis generation
-            const results = sessionState.results || {};
-            const { insights, metrics } = generateSessionAnalysis(results, timeline);
-            let totalElapsed = 0;
-
-            Object.values(results).forEach(res => {
-                if (res && res.elapsed) totalElapsed += res.elapsed;
-            });
-
-            // Determine the target date for markers and logs
-            const scheduledDate = location.state?.scheduledDate;
-            const targetDate = scheduledDate || new Date().toISOString().split('T')[0];
-
-            setIsGlobalActive(false);
-
-            // Confirm all pending logs for this session as valid
-            await TrainingDB.logs.confirmSessionLogs(currentUser.uid, session.id);
-
-            // Save feedback AND analysis
-            await TrainingDB.logs.create(currentUser.uid, {
-                sessionId: session.id,
-                timestamp: new Date().toISOString(),
-                scheduledDate: targetDate,
-                type: 'SESSION_FEEDBACK',
-                ...sessionState.feedback,
-                analysis: insights,
-                metrics: metrics
-            });
-
-            // Mark session as completed in user's schedule
-            const durationMin = Math.round(globalTime / 60);
-            const rpe = sessionState.feedback.rpe;
-            const summary = rpe
-                ? `${durationMin || '?'} min • RPE ${rpe}`
-                : `${durationMin || '?'} min`;
-
-            // Find task with this sessionId in today's schedule and update it
+            setIsProcessing(true);
             try {
-                await TrainingDB.users.updateSessionTaskInSchedule(
-                    currentUser.uid,
-                    targetDate,
-                    session.id, // sessionId to find the task
-                    {
-                        status: 'completed',
-                        completedAt: new Date().toISOString(),
-                        summary: summary,
-                        results: {
+                // Unify analysis generation
+                const results = sessionState.results || {};
+                const { insights, metrics } = generateSessionAnalysis(results, timeline);
+                let totalElapsed = 0;
+
+                Object.values(results).forEach(res => {
+                    if (res && res.elapsed) totalElapsed += res.elapsed;
+                });
+
+                // Determine the target date for markers and logs
+                const scheduledDate = location.state?.scheduledDate;
+                const targetDate = scheduledDate || new Date().toISOString().split('T')[0];
+
+                setIsGlobalActive(false);
+
+                // Confirm all pending logs for this session as valid
+                await TrainingDB.logs.confirmSessionLogs(currentUser.uid, session.id);
+
+                // Save feedback AND analysis
+                await TrainingDB.logs.create(currentUser.uid, {
+                    sessionId: session.id,
+                    timestamp: new Date().toISOString(),
+                    scheduledDate: targetDate,
+                    type: 'SESSION_FEEDBACK',
+                    ...sessionState.feedback,
+                    analysis: insights,
+                    metrics: metrics
+                });
+
+                // Mark session as completed in user's schedule
+                const durationMin = Math.round(globalTime / 60);
+                const rpe = sessionState.feedback.rpe;
+                const summary = rpe
+                    ? `${durationMin || '?'} min • RPE ${rpe}`
+                    : `${durationMin || '?'} min`;
+
+                // Find task with this sessionId in today's schedule and update it
+                try {
+                    await TrainingDB.users.updateSessionTaskInSchedule(
+                        currentUser.uid,
+                        targetDate,
+                        session.id, // sessionId to find the task
+                        {
+                            status: 'completed',
+                            completedAt: new Date().toISOString(),
+                            summary: summary,
+                            results: {
+                                durationMinutes: durationMin,
+                                rpe: rpe,
+                                notes: sessionState.feedback.comment,
+                                analysis: insights,
+                                metrics: metrics,
+                                totalVolume: metrics.totalVolume
+                            }
+                        }
+                    );
+                } catch (err) {
+                    console.warn('Could not update task in schedule:', err);
+                }
+
+                // Trigger Notification for Admin
+                try {
+                    // Collect technical coach insights for the notification
+                    const technicalInsights = insights
+                        .filter(i => i.type === 'up' || i.type === 'down' || i.type === 'stagnation')
+                        .map(i => `${i.exerciseName || 'Ejercicio'}: ${i.coachInsight}`)
+                        .join('\n');
+
+                    await TrainingDB.notifications.create('admin', {
+                        athleteId: currentUser.uid,
+                        athleteName: currentUser?.displayName || 'Atleta',
+                        type: 'session',
+                        title: session?.name || 'Sesión Completada',
+                        message: `${currentUser?.displayName || 'Un atleta'} ha completado la sesión: ${session?.name || 'Sesión'} (${summary})${technicalInsights ? '\n\nSugerencias técnicas:\n' + technicalInsights : ''}`,
+                        priority: technicalInsights ? 'high' : 'normal',
+                        data: {
+                            sessionId: session.id,
+                            type: 'session',
+                            summary: summary,
                             durationMinutes: durationMin,
                             rpe: rpe,
-                            notes: sessionState.feedback.comment,
-                            analysis: insights,
                             metrics: metrics,
-                            totalVolume: metrics.totalVolume
+                            technicalInsights: technicalInsights
                         }
-                    }
-                );
+                    });
+                } catch (notiErr) {
+                    console.warn("Failed to trigger session notification:", notiErr);
+                }
+
+                navigate(-1);
             } catch (err) {
-                console.warn('Could not update task in schedule:', err);
+                console.error("Error finalizing session:", err);
+                setIsProcessing(false);
             }
-
-            // Trigger Notification for Admin
-            try {
-                // Collect technical coach insights for the notification
-                const technicalInsights = insights
-                    .filter(i => i.type === 'up' || i.type === 'down' || i.type === 'stagnation')
-                    .map(i => `${i.exerciseName || 'Ejercicio'}: ${i.coachInsight}`)
-                    .join('\n');
-
-                await TrainingDB.notifications.create('admin', {
-                    athleteId: currentUser.uid,
-                    athleteName: currentUser?.displayName || 'Atleta',
-                    type: 'session',
-                    title: session?.name || 'Sesión Completada',
-                    message: `${currentUser?.displayName || 'Un atleta'} ha completado la sesión: ${session?.name || 'Sesión'} (${summary})${technicalInsights ? '\n\nSugerencias técnicas:\n' + technicalInsights : ''}`,
-                    priority: technicalInsights ? 'high' : 'normal',
-                    data: {
-                        sessionId: session.id,
-                        type: 'session',
-                        summary: summary,
-                        durationMinutes: durationMin,
-                        rpe: rpe,
-                        metrics: metrics,
-                        technicalInsights: technicalInsights
-                    }
-                });
-            } catch (notiErr) {
-                console.warn("Failed to trigger session notification:", notiErr);
-            }
-
-            navigate(-1);
             return;
         }
 
         if (currentIndex < timeline.length - 1) {
+            setIsProcessing(true);
             setCurrentIndex(prev => prev + 1);
+            // Debounce to prevent multiple transitions
+            setTimeout(() => setIsProcessing(false), 500);
         }
     };
 
@@ -254,54 +273,62 @@ const SessionRunner = () => {
     };
 
     const handleBlockFeedbackConfirm = async (feedbackData) => {
-        const currentStep = timeline[currentIndex];
+        if (isProcessing) return;
+        setIsProcessing(true);
+        try {
+            const currentStep = timeline[currentIndex];
 
-        // Sanitize weights
-        const sanitizedWeights = {};
-        if (pendingResults.weights) {
-            Object.keys(pendingResults.weights).forEach(k => {
-                sanitizedWeights[k] = pendingResults.weights[k] === undefined ? null : pendingResults.weights[k];
-            });
-        }
-
-        // Save LOCALLY for Summary Analysis
-        setSessionState(prev => ({
-            ...prev,
-            results: {
-                ...prev.results,
-                [currentIndex]: { ...pendingResults, weights: sanitizedWeights }
+            // Sanitize weights
+            const sanitizedWeights = {};
+            if (pendingResults.weights) {
+                Object.keys(pendingResults.weights).forEach(k => {
+                    sanitizedWeights[k] = pendingResults.weights[k] === undefined ? null : pendingResults.weights[k];
+                });
             }
-        }));
 
-        // Sync to Firestore including Feedback
-        // feedbackData: { rpe: number, notes: string, exerciseNotes: {} }
+            // Save LOCALLY for Summary Analysis
+            setSessionState(prev => ({
+                ...prev,
+                results: {
+                    ...prev.results,
+                    [currentIndex]: { ...pendingResults, weights: sanitizedWeights }
+                }
+            }));
 
-        // Merge exerciseNotes into results so they appear in summaries
-        const finalResults = {
-            ...pendingResults,
-            weights: sanitizedWeights,
-            exerciseNotes: feedbackData.exerciseNotes || pendingResults.exerciseNotes
-        };
+            // Sync to Firestore including Feedback
+            // feedbackData: { rpe: number, notes: string, exerciseNotes: {} }
 
-        const logEntry = {
-            userId: currentUser.uid,
-            sessionId: session.id,
-            moduleId: currentStep.module.id,
-            stableId: currentStep.module.stableId || currentStep.module.id,
-            blockType: currentStep.blockType,
-            protocol: currentStep.module.protocol,
-            timestamp: new Date().toISOString(),
-            scheduledDate: location.state?.scheduledDate || new Date().toISOString().split('T')[0],
-            results: finalResults,
-            feedback: feedbackData, // { rpe, notes }
-            status: 'pending' // Mark as pending until session is finished
-        };
+            // Merge exerciseNotes into results so they appear in summaries
+            const finalResults = {
+                ...pendingResults,
+                weights: sanitizedWeights,
+                exerciseNotes: feedbackData.exerciseNotes || pendingResults.exerciseNotes
+            };
 
-        await TrainingDB.logs.create(currentUser.uid, logEntry);
+            const logEntry = {
+                userId: currentUser.uid,
+                sessionId: session.id,
+                moduleId: currentStep.module.id,
+                stableId: currentStep.module.stableId || currentStep.module.id,
+                blockType: currentStep.blockType,
+                protocol: currentStep.module.protocol,
+                timestamp: new Date().toISOString(),
+                scheduledDate: location.state?.scheduledDate || new Date().toISOString().split('T')[0],
+                results: finalResults,
+                feedback: feedbackData, // { rpe, notes }
+                status: 'pending' // Mark as pending until session is finished
+            };
 
-        setShowFeedbackModal(false);
-        setPendingResults(null);
-        handleNext();
+            await TrainingDB.logs.create(currentUser.uid, logEntry);
+
+            setShowFeedbackModal(false);
+            setPendingResults(null);
+            setIsProcessing(false);
+            handleNext();
+        } catch (err) {
+            console.error("Error saving block feedback:", err);
+            setIsProcessing(false);
+        }
     };
 
     const handlePrev = () => {
@@ -392,6 +419,7 @@ const SessionRunner = () => {
                             const isT = protocols.every(p => p === 'T');
                             const isR = protocols.every(p => p === 'R');
                             const isE = protocols.every(p => p === 'E');
+                            const isLIBRE = protocols.every(p => p === 'LIBRE');
 
                             let title = "Sesión Híbrida";
                             let desc = "Objetivo: Sesión mixta, atiende a las instrucciones de cada bloque.";
@@ -413,6 +441,11 @@ const SessionRunner = () => {
                                 desc = "Objetivo: Completar las repeticiones asignadas dentro de cada minuto.";
                                 color = "text-orange-500";
                                 bg = "bg-orange-500/10 border-orange-500/20";
+                            } else if (isLIBRE) {
+                                title = "Entreno Libre";
+                                desc = "Series tradicionales con descanso libre. Sigue las repeticiones y pesos indicados.";
+                                color = "text-cyan-500";
+                                bg = "bg-cyan-500/10 border-cyan-500/20";
                             }
 
                             return (
@@ -467,12 +500,15 @@ const SessionRunner = () => {
                     <div className="fixed bottom-0 left-0 w-full p-4 bg-gradient-to-t from-slate-900 via-slate-900 to-transparent z-20">
                         <button
                             onClick={() => {
+                                if (isProcessing) return;
                                 initAudio();
+                                setIsGlobalActive(true); // Start global timer when session begins
                                 handleNext();
                             }}
-                            className="w-full bg-emerald-500 hover:bg-emerald-400 text-white font-black text-xl py-5 rounded-2xl shadow-lg shadow-emerald-900/50 active:scale-95 transition-all"
+                            disabled={isProcessing}
+                            className={`w-full font-black text-xl py-5 rounded-2xl shadow-lg transition-all ${isProcessing ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-emerald-500 hover:bg-emerald-400 text-white shadow-emerald-900/50 active:scale-95'}`}
                         >
-                            CONFIRMAR Y EMPEZAR
+                            {isProcessing ? 'INICIANDO...' : 'CONFIRMAR Y EMPEZAR'}
                         </button>
                     </div>
 
@@ -495,7 +531,7 @@ const SessionRunner = () => {
     return (
         <div className="fixed inset-0 z-[5000] bg-slate-900 text-white flex flex-col overflow-hidden">
             {/* Header (Safe Guarded for Summary) */}
-            <div className="px-4 py-3 flex justify-between items-center z-10 sticky top-0 bg-slate-900/90 backdrop-blur-md border-b border-slate-800">
+            <div className="px-3 py-3 flex justify-between items-center z-10 sticky top-0 bg-slate-900/90 backdrop-blur-md border-b border-slate-800">
                 <button onClick={handlePrev} className="w-10 h-10 flex items-center justify-center rounded-full bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition-all">
                     <ChevronLeft size={20} />
                 </button>
@@ -540,7 +576,10 @@ const SessionRunner = () => {
             </div>
 
             {/* Main Content Info */}
-            <main className={`flex-1 relative overflow-y-auto overflow-x-hidden ${currentStep.type === 'SUMMARY' ? 'bg-white' : ''}`}>
+            <main
+                ref={mainContainerRef}
+                className={`flex-1 relative overflow-y-auto overflow-x-hidden ${currentStep.type === 'SUMMARY' ? 'bg-white' : ''}`}
+            >
                 <AnimatePresence mode='wait'>
                     <motion.div
                         key={currentIndex}
@@ -548,7 +587,7 @@ const SessionRunner = () => {
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, x: -20 }}
                         transition={{ duration: 0.2 }}
-                        className={`${currentStep.type === 'SUMMARY' ? 'w-full' : 'max-w-md mx-auto p-6'} h-full flex flex-col min-h-full`}
+                        className={`${currentStep.type === 'SUMMARY' ? 'w-full' : 'max-w-md mx-auto p-3 md:p-6'} h-full flex flex-col min-h-full`}
                     >
 
                         {/* WARMUP UI */}
@@ -557,6 +596,7 @@ const SessionRunner = () => {
                                 step={currentStep}
                                 plan={sessionState.plans[currentStep.module.id]} // Pass plan
                                 onComplete={handleNext}
+                                isProcessing={isProcessing}
                             />
                         )}
 
@@ -588,6 +628,7 @@ const SessionRunner = () => {
                                 setSessionState={setSessionState}
                                 onFinish={handleNext}
                                 globalTime={globalTime}
+                                isProcessing={isProcessing}
                             />
                         )}
 
@@ -603,6 +644,7 @@ const SessionRunner = () => {
                         initialExNotes={pendingResults?.exerciseNotes || {}}
                         blockType={currentStep?.blockType}
                         exercises={currentStep?.module?.exercises}
+                        isSaving={isProcessing}
                     />
                 )}
             </AnimatePresence>
@@ -677,6 +719,22 @@ const ExerciseDetailModal = ({ selectedExercise, onClose, protocol }) => (
                 </div>
 
                 <div className="space-y-4">
+                    {(() => {
+                        const notes = selectedExercise.notes || selectedExercise.config?.notes;
+                        if (!notes) return null;
+                        return (
+                            <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl mb-4">
+                                <h3 className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-2 flex items-center gap-2">
+                                    <MessageSquare size={14} />
+                                    Recomendación del Coach
+                                </h3>
+                                <p className="text-amber-200/90 text-[15px] font-medium leading-relaxed whitespace-pre-line italic">
+                                    "{notes}"
+                                </p>
+                            </div>
+                        );
+                    })()}
+
                     <div>
                         <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Instrucciones</h3>
                         <p className="text-slate-300 text-sm leading-relaxed whitespace-pre-line">
@@ -743,53 +801,123 @@ const CollapsiblePlanningBlock = ({ module, onSelectExercise }) => {
                         className="overflow-hidden"
                     >
                         <div className="divide-y divide-slate-800/50">
-                            {module.exercises?.map((ex, exIdx) => (
-                                <div
-                                    key={exIdx}
-                                    className="p-4 flex gap-4 hover:bg-slate-800/50 transition-colors cursor-pointer group relative"
-                                    onClick={() => onSelectExercise(ex)}
-                                >
-                                    {/* Image */}
-                                    <div className="w-20 h-20 bg-slate-900 rounded-xl overflow-hidden shrink-0 border border-slate-700/50">
-                                        <ExerciseMedia exercise={ex} thumbnailMode={true} lazyLoad={false} />
-                                    </div>
+                            {(() => {
+                                const isGrouped = module.exercises?.length > 1 && (module.protocol === 'LIBRE' || !module.protocol);
+                                const groupType = isGrouped ? (module.exercises.length === 2 ? 'SUPERSERIE' : 'CIRCUITO') : null;
 
-                                    <div className="flex-1 min-w-0 py-1 flex flex-col justify-between">
-                                        <div className="flex justify-between items-start gap-2">
-                                            <h4 className="font-bold text-white text-sm line-clamp-1 group-hover:text-emerald-400 transition-colors">{ex.nameEs || ex.name}</h4>
-                                            <Info size={16} className="text-slate-500 group-hover:text-emerald-400 transition-colors shrink-0" />
-                                        </div>
+                                return (
+                                    <>
+                                        {groupType && (
+                                            <div className="bg-slate-800/20 px-4 py-2 flex items-center gap-2 border-b border-slate-800/50">
+                                                <div className={`w-1.5 h-1.5 rounded-full ${groupType === 'SUPERSERIE' ? 'bg-indigo-500' : 'bg-amber-500'}`} />
+                                                <span className={`text-[9px] font-black uppercase tracking-[0.2em] ${groupType === 'SUPERSERIE' ? 'text-indigo-400' : 'text-amber-400'}`}>
+                                                    {groupType}
+                                                </span>
+                                            </div>
+                                        )}
+                                        {module.exercises?.map((ex, exIdx) => (
+                                            <div
+                                                key={exIdx}
+                                                className="p-4 flex gap-4 hover:bg-slate-800/50 transition-colors cursor-pointer group relative"
+                                                onClick={() => onSelectExercise(ex)}
+                                            >
+                                                {/* visual line for grouped exercises */}
+                                                {groupType && (
+                                                    <div className={`absolute left-2.5 top-0 bottom-0 w-0.5 ${exIdx === 0 ? 'top-6' : ''} ${exIdx === module.exercises.length - 1 ? 'bottom-6' : ''} ${groupType === 'SUPERSERIE' ? 'bg-indigo-500/20' : 'bg-amber-500/20'}`} />
+                                                )}
 
-                                        {/* Targeting Configuration Badge */}
-                                        <div className="flex flex-wrap gap-2 mt-2">
-                                            {/* Manifestation / Reps Target - Hidden for Protocol T */}
-                                            {((ex.targetReps > 0 || ex.manifestation) && module.protocol !== 'T') && (
-                                                <span className="inline-flex items-center px-2 py-1 bg-slate-700/50 text-slate-200 rounded text-[10px] font-black uppercase tracking-wider border border-slate-600/50">
-                                                    {ex.targetReps ? `${ex.targetReps} reps` : ex.manifestation}
-                                                </span>
-                                            )}
+                                                {/* Image */}
+                                                <div className="w-20 h-20 bg-slate-900 rounded-xl overflow-hidden shrink-0 border border-slate-700/50 relative z-10">
+                                                    <ExerciseMedia exercise={ex} thumbnailMode={true} lazyLoad={false} />
+                                                </div>
 
-                                            {/* Protocol Specific Timer/Cap */}
-                                            {module.protocol === 'T' && (
-                                                <span className="inline-flex items-center px-2 py-1 bg-emerald-500/10 text-emerald-500 rounded text-[10px] font-black uppercase tracking-wider border border-emerald-500/20">
-                                                    <Clock size={12} className="mr-1" />
-                                                    {(() => {
-                                                        const seconds = module.targeting?.[0]?.timeCap || 240;
-                                                        const m = Math.floor(seconds / 60);
-                                                        const s = seconds % 60;
-                                                        return s === 0 ? `${m}'` : `${m}:${s.toString().padStart(2, '0')}`;
-                                                    })()}
-                                                </span>
-                                            )}
-                                            {(module.protocol === 'E' || ex.config?.isEMOM) && (
-                                                <span className="inline-flex items-center px-2 py-1 bg-orange-500/10 text-orange-500 rounded text-[10px] font-black uppercase tracking-wider border border-orange-500/20">
-                                                    EMOM {ex.config?.emomTime || ex.config?.sets?.length || module.emomParams?.durationMinutes || 4}'
-                                                </span>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
+                                                <div className="flex-1 min-w-0 py-1 flex flex-col justify-between relative z-10">
+                                                    <div className="flex justify-between items-start gap-2">
+                                                        <h4 className="font-bold text-white text-sm line-clamp-1 group-hover:text-emerald-400 transition-colors">{ex.nameEs || ex.name}</h4>
+                                                        <Info size={16} className="text-slate-500 group-hover:text-emerald-400 transition-colors shrink-0" />
+                                                    </div>
+
+                                                    {/* Targeting Configuration Badges */}
+                                                    <div className="flex flex-wrap gap-1.5 mt-2">
+                                                        {/* Sets x Reps - for LIBRE protocol */}
+                                                        {(module.protocol === 'LIBRE' || !module.protocol) && (() => {
+                                                            const sets = ex.config?.sets || [];
+                                                            const numSets = sets.length || ex.sets || ex.targetSets || 3;
+                                                            const repsPerSet = sets.length > 0
+                                                                ? sets.map(s => s.reps || ex.targetReps || 8)
+                                                                : [];
+                                                            const isVariableReps = new Set(repsPerSet).size > 1;
+                                                            const repsDisplay = isVariableReps
+                                                                ? repsPerSet.join('-')
+                                                                : (ex.targetReps || sets[0]?.reps || 8);
+
+                                                            return (
+                                                                <span className="inline-flex items-center px-2 py-1 bg-cyan-500/10 text-cyan-400 rounded text-[10px] font-black border border-cyan-500/20">
+                                                                    {numSets}x{repsDisplay}
+                                                                </span>
+                                                            );
+                                                        })()}
+
+                                                        {/* Reps for other protocols */}
+                                                        {((ex.targetReps > 0 || ex.manifestation) && module.protocol !== 'T' && module.protocol !== 'LIBRE') && (
+                                                            <span className="inline-flex items-center px-2 py-1 bg-slate-700/50 text-slate-200 rounded text-[10px] font-black uppercase tracking-wider border border-slate-600/50">
+                                                                {ex.targetReps ? `${ex.targetReps} reps` : ex.manifestation}
+                                                            </span>
+                                                        )}
+
+                                                        {/* Weight if prescribed */}
+                                                        {(ex.config?.sets?.[0]?.weight || ex.weight) && (
+                                                            <span className="inline-flex items-center px-2 py-1 bg-blue-500/10 text-blue-400 rounded text-[10px] font-black border border-blue-500/20">
+                                                                {ex.config?.sets?.[0]?.weight || ex.weight}kg
+                                                            </span>
+                                                        )}
+
+                                                        {/* Intensity (RIR/RPE) */}
+                                                        {(ex.config?.sets?.[0]?.rir != null || ex.config?.sets?.[0]?.rpe != null || ex.intensity) && (
+                                                            <span className="inline-flex items-center px-2 py-1 bg-orange-500/10 text-orange-400 rounded text-[10px] font-black border border-orange-500/20">
+                                                                {ex.config?.sets?.[0]?.rir != null
+                                                                    ? `RIR ${ex.config.sets[0].rir}`
+                                                                    : ex.config?.sets?.[0]?.rpe != null
+                                                                        ? `RPE ${ex.config.sets[0].rpe}`
+                                                                        : ex.intensity}
+                                                            </span>
+                                                        )}
+
+                                                        {/* Protocol Specific Timer/Cap */}
+                                                        {module.protocol === 'T' && (
+                                                            <span className="inline-flex items-center px-2 py-1 bg-emerald-500/10 text-emerald-500 rounded text-[10px] font-black uppercase tracking-wider border border-emerald-500/20">
+                                                                <Clock size={12} className="mr-1" />
+                                                                {(() => {
+                                                                    const seconds = module.targeting?.[0]?.timeCap || 240;
+                                                                    const m = Math.floor(seconds / 60);
+                                                                    const s = seconds % 60;
+                                                                    return s === 0 ? `${m}'` : `${m}:${s.toString().padStart(2, '0')}`;
+                                                                })()}
+                                                            </span>
+                                                        )}
+                                                        {(module.protocol === 'E' || ex.config?.isEMOM) && (
+                                                            <span className="inline-flex items-center px-2 py-1 bg-orange-500/10 text-orange-500 rounded text-[10px] font-black uppercase tracking-wider border border-orange-500/20">
+                                                                EMOM {ex.config?.emomTime || ex.config?.sets?.length || module.emomParams?.durationMinutes || 4}'
+                                                            </span>
+                                                        )}
+
+                                                        {/* Notes indicator */}
+                                                        {(() => {
+                                                            const notes = ex.notes || ex.config?.notes;
+                                                            if (!notes) return null;
+                                                            return (
+                                                                <span className="inline-flex items-center px-2 py-1 bg-amber-500/10 text-amber-400 rounded text-[10px] font-black border border-amber-500/20" title={notes}>
+                                                                    📝 Notas
+                                                                </span>
+                                                            );
+                                                        })()}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </>
+                                );
+                            })()}
                         </div>
                     </motion.div>
                 )}
@@ -798,7 +926,7 @@ const CollapsiblePlanningBlock = ({ module, onSelectExercise }) => {
     );
 };
 
-const SummaryBlock = ({ sessionState, timeline, history, setSessionState, onFinish, globalTime }) => {
+const SummaryBlock = ({ sessionState, timeline, history, setSessionState, onFinish, globalTime, isProcessing }) => {
     const { insights, metrics } = generateSessionAnalysis(sessionState.results || {}, timeline, history);
     const [expandedAdjustments, setExpandedAdjustments] = useState(true);
     const [expandedWork, setExpandedWork] = useState(true);
@@ -1072,9 +1200,17 @@ const SummaryBlock = ({ sessionState, timeline, history, setSessionState, onFini
             <div className="mt-4 px-6 pb-20">
                 <button
                     onClick={() => onFinish({ metrics, analysis: insights })}
-                    className="w-full bg-emerald-600 text-white font-black text-sm py-5 rounded-[2rem] shadow-xl shadow-emerald-900/20 hover:bg-emerald-500 transition-all active:scale-[0.98] uppercase tracking-[0.2em]"
+                    disabled={isProcessing}
+                    className={`w-full font-black text-sm py-5 rounded-[2rem] shadow-xl transition-all uppercase tracking-[0.2em] flex items-center justify-center gap-2 ${isProcessing ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-emerald-600 text-white shadow-emerald-900/20 hover:bg-emerald-500 active:scale-[0.98]'}`}
                 >
-                    Finalizar Entrenamiento
+                    {isProcessing ? (
+                        <>
+                            <div className="w-5 h-5 border-2 border-slate-500/30 border-t-slate-400 rounded-full animate-spin" />
+                            <span>Guardando...</span>
+                        </>
+                    ) : (
+                        <span>Finalizar Entrenamiento</span>
+                    )}
                 </button>
             </div>
         </div >
@@ -1083,7 +1219,7 @@ const SummaryBlock = ({ sessionState, timeline, history, setSessionState, onFini
 
 
 
-const WarmupBlock = ({ step, plan, onComplete }) => {
+const WarmupBlock = ({ step, plan, onComplete, isProcessing }) => {
     const { module } = step;
     const [weights, setWeights] = useState(['', '', '']);
 
@@ -1156,8 +1292,12 @@ const WarmupBlock = ({ step, plan, onComplete }) => {
                     </div>
                 ))}
             </div>
-            <button onClick={onComplete} className="w-full bg-orange-500 hover:bg-orange-400 text-white font-black text-lg py-5 rounded-2xl shadow-lg shadow-orange-900/30 active:scale-[0.98] transition-all mt-8">
-                Listo, Comenzar Bloque
+            <button
+                onClick={onComplete}
+                disabled={isProcessing}
+                className={`w-full font-black text-lg py-5 rounded-2xl shadow-lg transition-all mt-8 ${isProcessing ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-orange-500 hover:bg-orange-400 text-white shadow-orange-900/30 active:scale-[0.98]'}`}
+            >
+                {isProcessing ? 'Iniciando...' : 'Listo, Comenzar Bloque'}
             </button>
         </div>
     );
@@ -1208,6 +1348,29 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
         const initWeights = {};
         exercises.forEach((ex, idx) => {
             initReps[idx] = 0;
+
+            // PRIORITY 0: Use LAST weight from libreSeriesWeights (per-set weights from previous session)
+            const prevSeriesWeights = previousLog?.results?.libreSeriesWeights?.[idx];
+            if (prevSeriesWeights && prevSeriesWeights.length > 0) {
+                const lastSeriesWeight = prevSeriesWeights[prevSeriesWeights.length - 1];
+                if (lastSeriesWeight) {
+                    let baseWeight = parseFloat(lastSeriesWeight);
+
+                    // Apply recommendation if available
+                    if (previousLog?.analysis) {
+                        const recommendation = previousLog.analysis.find(
+                            a => a.moduleId === module.id &&
+                                (a.exerciseId === ex.id || a.exerciseIndex === idx)
+                        );
+                        if (recommendation?.adjustment) {
+                            baseWeight += recommendation.adjustment;
+                        }
+                    }
+
+                    initWeights[idx] = baseWeight.toFixed(1);
+                    return; // Skip to next exercise
+                }
+            }
 
             // PRIORITY 1: Use actual weight from previous session + recommendation
             if (previousLog?.results?.actualWeights?.[idx]) {
@@ -1295,10 +1458,267 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
         });
     };
 
+    // ========== LIBRE Protocol Set Tracking ==========
+    const [libreSetsDone, setLibreSetsDone] = useState({}); // { exerciseIndex: setsCompleted }
+    const [libreSetReps, setLibreSetReps] = useState({}); // { exerciseIndex: [reps per set] }
+    const [libreSeriesWeights, setLibreSeriesWeights] = useState({}); // { exerciseIndex: [weight per set] }
+    const [currentSetWeight, setCurrentSetWeight] = useState({}); // { exerciseIndex: weight for next set }
+    const [currentSetReps, setCurrentSetReps] = useState({}); // { exerciseIndex: reps for next set }
+    const [isResting, setIsResting] = useState(false);
+    const [restTimeLeft, setRestTimeLeft] = useState(0);
+    const [activeExerciseIndex, setActiveExerciseIndex] = useState(0);
+    const [editingSet, setEditingSet] = useState(null); // { exIdx, setIdx }
+    const [isRoundRest, setIsRoundRest] = useState(false); // Track if current rest is a round rest
+    const [selectedExerciseForNotes, setSelectedExerciseForNotes] = useState(null); // Exercise object to show in notes modal
+
+    // Grouping Logic for LIBRE
+    const groupedExercises = useMemo(() => {
+        if (protocol !== 'LIBRE') return [];
+        const groups = [];
+        exercises.forEach((ex, idx) => {
+            // If the exercise is marked as grouped, AND there's a previous group,
+            // join the current exercise to that group.
+            if (ex.isGrouped && groups.length > 0) {
+                groups[groups.length - 1].push({ ...ex, originalIndex: idx });
+            } else {
+                // Start a new group
+                groups.push([{ ...ex, originalIndex: idx }]);
+            }
+        });
+        return groups;
+    }, [exercises, protocol]);
+
+    // Get sets/reps config for LIBRE - reads from exercise.config.sets structure
+    const getLibreConfig = (ex) => {
+        const sets = ex.config?.sets || [];
+        const firstSet = sets[0] || {};
+
+        // Number of sets is the length of the sets array
+        const targetSets = sets.length || ex.sets || ex.targetSets || 3;
+
+        // Get reps for EACH set (for variable rep schemes like 5-4-3-2-1)
+        const repsPerSet = sets.length > 0
+            ? sets.map(s => s.reps || ex.targetReps || ex.reps || 8)
+            : Array(targetSets).fill(ex.targetReps || ex.reps || 8);
+
+        // Fallback single value for display purposes
+        const targetReps = firstSet.reps || ex.targetReps || ex.reps || 8;
+
+        // Rest from first set, or module default
+        const restSeconds = firstSet.rest || ex.restSeconds || module.targeting?.[0]?.restSeconds || 90;
+
+        // Intensity can be RIR, RPE, or percentage
+        const intensity = firstSet.rir != null
+            ? `RIR ${firstSet.rir}`
+            : (firstSet.rpe != null
+                ? `RPE ${firstSet.rpe}`
+                : (ex.intensity || ex.loadPercent || null));
+
+        // Weight from first set
+        const prescribedWeight = firstSet.weight || null;
+
+        // Check if reps vary across sets
+        const isVariableReps = new Set(repsPerSet).size > 1;
+
+        return { targetSets, targetReps, repsPerSet, restSeconds, intensity, prescribedWeight, isVariableReps };
+    };
+
+    const getPreviousWeight = (idx) => {
+        // Strictly Historical: Look at previousLog (which is fetched in this WorkBlock)
+        if (previousLog?.results?.actualWeights) {
+            return previousLog.results.actualWeights[idx] || '--';
+        }
+
+        if (previousLog?.results?.weights) {
+            return previousLog.results.weights[idx] || '--';
+        }
+
+        return '--';
+    };
+
+    // Initialize LIBRE sets
+    useEffect(() => {
+        if (protocol === 'LIBRE') {
+            const initSets = {};
+            const initReps = {};
+            const initSeriesWeights = {};
+            const initCurrentWeight = {};
+            const initCurrentReps = {};
+            exercises.forEach((ex, idx) => {
+                initSets[idx] = 0;
+                initReps[idx] = [];
+                initSeriesWeights[idx] = [];
+                // Initialize current weight from weightsUsed or prescribedWeight
+                const { prescribedWeight, targetReps, repsPerSet } = getLibreConfig(ex);
+                initCurrentWeight[idx] = weightsUsed[idx] || prescribedWeight || '';
+                initCurrentReps[idx] = repsPerSet[0] || targetReps || 10;
+            });
+            setLibreSetsDone(initSets);
+            setLibreSetReps(initReps);
+            setLibreSeriesWeights(initSeriesWeights);
+            setCurrentSetWeight(initCurrentWeight);
+            setCurrentSetReps(initCurrentReps);
+        }
+    }, [protocol, exercises, weightsUsed]);
+
+    // Rest Timer Effect for LIBRE
+    useEffect(() => {
+        if (!isResting || restTimeLeft <= 0) return;
+
+        const timer = setInterval(() => {
+            setRestTimeLeft(prev => {
+                if (prev <= 1) {
+                    setIsResting(false);
+                    playSuccess?.();
+                    return 0;
+                }
+                if (prev === 4) playCountdownShort?.();
+                return prev - 1;
+            });
+        }, 1000);
+
+        return () => clearInterval(timer);
+    }, [isResting, restTimeLeft, playSuccess, playCountdownShort]);
+
+    // Complete a set for LIBRE
+    const completeLibreSet = (exIdx, customReps = null, skipRest = false) => {
+        const ex = exercises[exIdx];
+        const { targetSets, repsPerSet, restSeconds, targetReps } = getLibreConfig(ex);
+        const currentSetsDone = libreSetsDone[exIdx] || 0;
+        const repsForSet = customReps ?? currentSetReps[exIdx] ?? repsPerSet[currentSetsDone] ?? targetReps ?? 10;
+        const weightForSet = currentSetWeight[exIdx] || weightsUsed[exIdx] || '';
+
+        setLibreSetsDone(prev => {
+            const current = prev[exIdx] || 0;
+            if (current >= targetSets) return prev;
+            const nextSetsDone = current + 1;
+
+            // Update next set's default reps if variable reps exist
+            if (nextSetsDone < targetSets) {
+                const nextReps = repsPerSet[nextSetsDone] || targetReps || 10;
+                setCurrentSetReps(rPrev => ({ ...rPrev, [exIdx]: nextReps }));
+            }
+            return { ...prev, [exIdx]: nextSetsDone };
+        });
+
+        setLibreSetReps(prev => {
+            const currentReps = prev[exIdx] || [];
+            return { ...prev, [exIdx]: [...currentReps, repsForSet] };
+        });
+
+        // Save weight for this set
+        setLibreSeriesWeights(prev => {
+            const currentWeights = prev[exIdx] || [];
+            return { ...prev, [exIdx]: [...currentWeights, weightForSet] };
+        });
+
+        // Update total repsDone for final save
+        setRepsDone(prev => {
+            const currentReps = libreSetReps[exIdx] || [];
+            const totalReps = [...currentReps, repsForSet].reduce((a, b) => a + b, 0);
+            return { ...prev, [exIdx]: totalReps };
+        });
+
+        // Start rest timer if not last set and not skipped
+        const currentSets = (libreSetsDone[exIdx] || 0) + 1;
+        if (currentSets < targetSets && !skipRest) {
+            setRestTimeLeft(restSeconds);
+            setIsRoundRest(false);
+            setIsResting(true);
+        }
+    };
+
+    // Complete a set for a whole group of exercises
+    const completeLibreGroupSet = (group) => {
+        // Find max rest seconds in the group
+        let maxRest = 0;
+        let anySetStarted = false;
+
+        group.forEach((ex, i) => {
+            const exIdx = ex.originalIndex;
+            const { targetSets, restSeconds } = getLibreConfig(ex);
+            const setsComp = libreSetsDone[exIdx] || 0;
+
+            if (setsComp < targetSets) {
+                // Complete set but skip the individual rest timer
+                // Only the last exercise in the group will trigger the group rest
+                const isLastInGroup = i === group.length - 1;
+                completeLibreSet(exIdx, null, true); // Always skip individual rest
+                maxRest = Math.max(maxRest, restSeconds);
+                anySetStarted = true;
+            }
+        });
+
+        if (anySetStarted) {
+            setRestTimeLeft(maxRest || 90);
+            setIsRoundRest(true);
+            setIsResting(true);
+        }
+    };
+
+    // Uncomplete a set for LIBRE (undo)
+    const uncompleteLibreSet = (exIdx, setIdx) => {
+        setLibreSetsDone(prev => {
+            const current = prev[exIdx] || 0;
+            if (current <= 0) return prev;
+            return { ...prev, [exIdx]: current - 1 };
+        });
+
+        setLibreSetReps(prev => {
+            const currentReps = [...(prev[exIdx] || [])];
+            currentReps.splice(setIdx, 1);
+            return { ...prev, [exIdx]: currentReps };
+        });
+
+        // Remove weight for this set
+        setLibreSeriesWeights(prev => {
+            const currentWeights = [...(prev[exIdx] || [])];
+            currentWeights.splice(setIdx, 1);
+            return { ...prev, [exIdx]: currentWeights };
+        });
+
+        // Update total repsDone
+        setRepsDone(prev => {
+            const currentReps = libreSetReps[exIdx] || [];
+            const newReps = [...currentReps];
+            newReps.splice(setIdx, 1);
+            const totalReps = newReps.reduce((a, b) => a + b, 0);
+            return { ...prev, [exIdx]: totalReps };
+        });
+
+        setEditingSet(null);
+    };
+
+    // Update reps for a specific set
+    const updateLibreSetReps = (exIdx, setIdx, newReps) => {
+        setLibreSetReps(prev => {
+            const currentReps = [...(prev[exIdx] || [])];
+            currentReps[setIdx] = newReps;
+            return { ...prev, [exIdx]: currentReps };
+        });
+
+        // Update total repsDone
+        setRepsDone(prev => {
+            const currentReps = [...(libreSetReps[exIdx] || [])];
+            currentReps[setIdx] = newReps;
+            const totalReps = currentReps.reduce((a, b) => a + b, 0);
+            return { ...prev, [exIdx]: totalReps };
+        });
+
+        setEditingSet(null);
+    };
+
+    // Skip rest for LIBRE
+    const skipRest = () => {
+        setIsResting(false);
+        setRestTimeLeft(0);
+    };
+
     const handleFinishBlock = () => {
         // Validation Guard
         const hasReps = Object.values(repsDone).some(r => r > 0);
         const hasEmomResults = protocol === 'E' && Object.values(emomResults).some(val => val !== null && val !== undefined);
+        const hasLibreSets = protocol === 'LIBRE' && Object.values(libreSetsDone).some(s => s > 0);
         let hasTime = false;
 
         if (protocol === 'R') {
@@ -1316,7 +1736,13 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
             return target > 0 && repsDone[idx] >= target;
         });
 
-        if (!hasReps && !hasTime && !hasEmomResults && !allTargetsMet) {
+        // LIBRE: Check if all exercises have all sets done
+        const allLibreComplete = protocol === 'LIBRE' && exercises.every((ex, idx) => {
+            const { targetSets } = getLibreConfig(ex);
+            return (libreSetsDone[idx] || 0) >= targetSets;
+        });
+
+        if (!hasReps && !hasTime && !hasEmomResults && !allTargetsMet && !hasLibreSets) {
             if (!window.confirm("No has iniciado el tiempo ni anotado resultados. ¿Seguro que quieres avanzar?")) {
                 return;
             }
@@ -1344,6 +1770,8 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
             actualWeights: weightsUsed, // New field for executed weights
             exerciseNotes, // Pass the per-exercise notes
             emomResults,
+            libreSetsDone, // Track completed sets for LIBRE protocol
+            libreSeriesWeights, // Track weight per set for LIBRE protocol
             elapsed: (protocol === 'R' || protocol === 'T') ? elapsed : 0
         });
     };
@@ -1557,10 +1985,20 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                     TIME CAP
                 </span>
                 {previousLog?.results?.reps && (
-                    <div className="flex items-center gap-2 mt-2">
-                        <span className="text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded border bg-emerald-500/10 text-emerald-500 border-emerald-500/20">
-                            RÉCORD: {Object.values(previousLog.results.reps).reduce((a, b) => a + (Number(b) || 0), 0)} reps
-                        </span>
+                    <div className="flex items-center gap-2 mt-2 flex-wrap justify-center">
+                        {exercises.length > 1 ? (
+                            // Multiple exercises: show individual reps
+                            Object.entries(previousLog.results.reps).map(([idx, reps]) => (
+                                <span key={idx} className="text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded border bg-emerald-500/10 text-emerald-500 border-emerald-500/20">
+                                    {exercises[idx]?.nameEs?.split(' ')[0] || `Ex${Number(idx) + 1}`}: {reps}
+                                </span>
+                            ))
+                        ) : (
+                            // Single exercise: show total reps
+                            <span className="text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded border bg-emerald-500/10 text-emerald-500 border-emerald-500/20">
+                                RÉCORD: {Object.values(previousLog.results.reps).reduce((a, b) => a + (Number(b) || 0), 0)} reps
+                            </span>
+                        )}
                     </div>
                 )}
             </div>
@@ -1570,7 +2008,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
     return (
         <div className="flex-1 flex flex-col items-center relative">
             <div className="w-full mb-3">
-                <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isActive ? 'max-h-0 opacity-0 mb-0' : 'max-h-96 opacity-100 mb-2'}`}>
+                <div className={`transition-all duration-500 ease-in-out overflow-hidden ${(isActive || protocol === 'LIBRE') ? 'max-h-0 opacity-0 mb-0' : 'max-h-96 opacity-100 mb-2'}`}>
                     <div className={`grid gap-2 ${exercises.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
                         {exercises.map((ex, idx) => (
                             <div
@@ -1582,6 +2020,11 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                 <div className="absolute bottom-0 left-0 w-full bg-black/60 backdrop-blur-sm p-2 flex items-center justify-between">
                                     <span className="text-white text-xs font-bold block truncate flex-1">{ex.nameEs || ex.name}</span>
                                     <div className="flex items-center gap-2">
+                                        {ex.notes && (
+                                            <span className="text-amber-400 text-[10px] font-black uppercase bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                                                📝 Notas
+                                            </span>
+                                        )}
                                         {((ex.targetReps || ex.manifestation) && protocol === 'LIBRE') && (
                                             <span className="text-emerald-400 text-[10px] font-black uppercase">
                                                 {ex.targetReps ? `${ex.targetReps} reps` : ex.manifestation}
@@ -1598,12 +2041,11 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                     </div>
                 </div>
 
-                {/* Weight Input Section - Above INICIAR */}
                 {exercises.some(ex => ex.loadable) && (
-                    <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isActive ? 'max-h-0 opacity-0 mb-0' : 'max-h-96 opacity-100 mb-2'}`}>
+                    <div className={`transition-all duration-500 ease-in-out overflow-hidden ${(isActive || protocol === 'LIBRE') ? 'max-h-0 opacity-0 mb-0' : 'max-h-96 opacity-100 mb-2'}`}>
                         <div className="bg-slate-800/40 backdrop-blur-sm border border-slate-700/30 rounded-2xl p-3">
                             <h3 className="text-[9px] font-black uppercase tracking-wider text-slate-500 mb-2 text-center">Peso Utilizado</h3>
-                            <div className={`grid gap-2 ${exercises.filter(ex => ex.loadable).length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                            <div className={`grid gap-2 ${exercises.filter(ex => ex.loadable).length > 1 ? 'grid-cols-2' : 'grid-cols-1 max-w-xs mx-auto'}`}>
                                 {exercises.map((ex, idx) => {
                                     if (!ex.loadable) return null;
 
@@ -1619,6 +2061,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
 
                                     // Only show header if multiple loaded exercises
                                     const showHeader = exercises.filter(ex => ex.loadable).length > 1;
+                                    const isSingleExercise = exercises.filter(ex => ex.loadable).length === 1;
 
                                     return (
                                         <div key={idx} className="bg-slate-900/40 rounded-xl p-3 border border-slate-700/30 relative group overflow-hidden">
@@ -1635,30 +2078,30 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                             )}
 
                                             {/* Weights Row (Previous + Current) */}
-                                            <div className="grid grid-cols-2 gap-3 mb-3 relative z-10">
+                                            <div className={`relative z-10 ${isSingleExercise ? 'flex items-center gap-3' : 'flex flex-col gap-2'}`}>
                                                 {/* Previous Weight */}
-                                                <div className="bg-slate-800/80 rounded-lg p-2 border border-slate-600/50 flex flex-col justify-center items-center relative overflow-hidden">
-                                                    <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">ANTERIOR</span>
+                                                <div className={`bg-slate-800/80 rounded-lg p-2 border border-slate-600/50 flex items-center justify-between relative overflow-hidden ${isSingleExercise ? 'min-w-[80px]' : ''}`}>
+                                                    <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none">ANTERIOR</span>
                                                     {previousWeight ? (
-                                                        <div className="flex items-baseline gap-1">
-                                                            <span className="text-xl font-black text-white leading-none tracking-tight">{previousWeight}</span>
+                                                        <div className="flex items-baseline gap-1 ml-2">
+                                                            <span className={`font-black text-white leading-none tracking-tight ${isSingleExercise ? 'text-xl' : 'text-lg'}`}>{previousWeight}</span>
                                                             <span className="text-[9px] font-bold text-slate-500">kg</span>
                                                         </div>
                                                     ) : (
-                                                        <span className="text-xs font-bold text-slate-600">--</span>
+                                                        <span className="text-xs font-bold text-slate-600 ml-2">--</span>
                                                     )}
                                                 </div>
 
                                                 {/* Current Input */}
-                                                <div className="flex items-center gap-1 relative z-10">
+                                                <div className={`flex items-center gap-1 relative z-10 ${isSingleExercise ? 'flex-1 h-12' : 'h-10'}`}>
                                                     <button
                                                         onClick={() => adjustWeight(idx, -1)}
-                                                        className="w-8 h-full rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 hover:text-white active:scale-95 transition-all outline-none"
+                                                        className={`${isSingleExercise ? 'w-10' : 'w-8'} h-full rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 hover:text-white active:scale-95 transition-all outline-none shrink-0`}
                                                     >
-                                                        <Minus size={14} />
+                                                        <Minus size={isSingleExercise ? 18 : 14} />
                                                     </button>
 
-                                                    <div className="relative flex-1 h-full">
+                                                    <div className="relative flex-1 h-full min-w-0">
                                                         <input
                                                             type="text"
                                                             inputMode="decimal"
@@ -1666,7 +2109,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                                             value={weightsUsed[idx] || ''}
                                                             onChange={(e) => handleWeightInput(idx, e.target.value)}
                                                             className={`w-full h-full bg-slate-800/80 border rounded-lg text-center
-                                                                       text-white font-black outline-none text-lg
+                                                                       text-white font-black outline-none ${isSingleExercise ? 'text-xl' : 'text-base'} px-1
                                                                        transition-all hover:bg-slate-800 placeholder:text-slate-600
                                                                        ${recommendation?.type === 'up' ? 'border-emerald-500/50 focus:border-emerald-500' :
                                                                     recommendation?.type === 'down' ? 'border-amber-500/50 focus:border-amber-500' :
@@ -1677,9 +2120,9 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
 
                                                     <button
                                                         onClick={() => adjustWeight(idx, 1)}
-                                                        className="w-8 h-full rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 hover:text-white active:scale-95 transition-all outline-none"
+                                                        className={`${isSingleExercise ? 'w-10' : 'w-8'} h-full rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 hover:text-white active:scale-95 transition-all outline-none shrink-0`}
                                                     >
-                                                        <Plus size={14} />
+                                                        <Plus size={isSingleExercise ? 18 : 14} />
                                                     </button>
                                                 </div>
                                             </div>
@@ -1730,7 +2173,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                 {/* Protocol Specific Instruction Display */}
                 {/* Main Timer Display (Protocol Specific) */}
                 {
-                    (protocol === 'T' || protocol === 'E' || protocol === 'R' || protocol === 'LIBRE') && (
+                    (protocol === 'T' || protocol === 'E' || protocol === 'R') && (
                         <div className={`mb-2 bg-slate-800/30 rounded-3xl border border-slate-700/50 backdrop-blur relative overflow-hidden transition-all duration-500 
                     ${isActive
                                 ? 'mt-0 p-3'
@@ -1738,7 +2181,16 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                             }`}>
                             {getTimerDisplay()}
 
-                            <div className="flex gap-3 mt-2">
+                            {/* Block Instruction / Specific Notes */}
+                            {module.targeting?.[0]?.instruction && module.targeting[0].instruction !== 'Completar Tarea' && (
+                                <div className="mt-3 px-4 py-2 bg-emerald-500/5 border-l-2 border-emerald-500/30 rounded-r-lg">
+                                    <p className="text-[11px] font-medium text-slate-400 italic leading-relaxed">
+                                        "{module.targeting[0].instruction}"
+                                    </p>
+                                </div>
+                            )}
+
+                            <div className="flex gap-3 mt-4">
                                 <button
                                     onClick={() => {
                                         initAudio(); // Initialize audio context
@@ -1786,56 +2238,59 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                 }
             </div >
 
-            <div className={`relative flex items-center justify-center transition-all duration-500 ease-in-out ${isActive
-                ? (protocol === 'E' ? 'w-56 h-56 mt-4 mb-2' : 'w-48 h-48 mt-2 mb-2')
-                : (protocol === 'E' ? 'w-48 h-48 mt-2 mb-2' : 'w-40 h-40 mt-0 mb-0')
-                }`}>
-                <div className="absolute inset-0 bg-emerald-500/10 blur-3xl rounded-full opacity-30"></div>
-                <svg className="absolute inset-0 w-full h-full -rotate-90 drop-shadow-xl">
-                    <circle cx="50%" cy="50%" r="45%" stroke="#1e293b" strokeWidth="8" fill="none" />
-                    {/* Dynamic Ring: Time (T/E) or Reps Progress (R) */}
-                    {(isActive || protocol === 'R' || timeLeft !== null) && (
-                        <circle
-                            cx="50%" cy="50%" r="45%"
-                            stroke={protocol === 'R' ? '#10b981' : (isActive ? '#10b981' : '#64748b')}
-                            strokeWidth="10"
-                            fill="none"
-                            strokeDasharray={2 * Math.PI * (isActive ? (protocol === 'E' ? 120 : 100) : (protocol === 'E' ? 100 : 80))}
-                            strokeDashoffset={(() => {
-                                const approxRadius = isActive ? (protocol === 'E' ? 120 : 100) : (protocol === 'E' ? 100 : 80);
-                                const circumference = 2 * Math.PI * approxRadius;
+            {/* Hide circular timer for LIBRE - time is less relevant */}
+            {protocol !== 'LIBRE' && (
+                <div className={`relative flex items-center justify-center transition-all duration-500 ease-in-out ${isActive
+                    ? (protocol === 'E' ? 'w-56 h-56 mt-4 mb-2' : 'w-48 h-48 mt-2 mb-2')
+                    : (protocol === 'E' ? 'w-48 h-48 mt-2 mb-2' : 'w-40 h-40 mt-0 mb-0')
+                    }`}>
+                    <div className="absolute inset-0 bg-emerald-500/10 blur-3xl rounded-full opacity-30"></div>
+                    <svg className="absolute inset-0 w-full h-full -rotate-90 drop-shadow-xl">
+                        <circle cx="50%" cy="50%" r="45%" stroke="#1e293b" strokeWidth="8" fill="none" />
+                        {/* Dynamic Ring: Time (T/E) or Reps Progress (R) */}
+                        {(isActive || protocol === 'R' || timeLeft !== null) && (
+                            <circle
+                                cx="50%" cy="50%" r="45%"
+                                stroke={protocol === 'R' ? '#10b981' : (isActive ? '#10b981' : '#64748b')}
+                                strokeWidth="10"
+                                fill="none"
+                                strokeDasharray={2 * Math.PI * (isActive ? (protocol === 'E' ? 120 : 100) : (protocol === 'E' ? 100 : 80))}
+                                strokeDashoffset={(() => {
+                                    const approxRadius = isActive ? (protocol === 'E' ? 120 : 100) : (protocol === 'E' ? 100 : 80);
+                                    const circumference = 2 * Math.PI * approxRadius;
 
-                                if (protocol === 'R') {
-                                    const totalTarget = exercises.reduce((acc, ex) => acc + (ex.targetReps || module.targeting?.[0]?.volume || 0), 0);
-                                    let totalDone = 0;
-                                    exercises.forEach((_, idx) => {
-                                        totalDone += (repsDone[idx] || 0);
-                                    });
+                                    if (protocol === 'R') {
+                                        const totalTarget = exercises.reduce((acc, ex) => acc + (ex.targetReps || module.targeting?.[0]?.volume || 0), 0);
+                                        let totalDone = 0;
+                                        exercises.forEach((_, idx) => {
+                                            totalDone += (repsDone[idx] || 0);
+                                        });
 
-                                    const progress = totalTarget > 0 ? Math.min(totalDone / totalTarget, 1) : 0;
-                                    return circumference * (1 - progress);
-                                }
+                                        const progress = totalTarget > 0 ? Math.min(totalDone / totalTarget, 1) : 0;
+                                        return circumference * (1 - progress);
+                                    }
 
-                                const totalTime = (protocol === 'T' ? module.targeting?.[0]?.timeCap : module.emomParams?.durationMinutes * 60) || 240;
-                                const timeRatio = (timeLeft || 0) / totalTime;
-                                return circumference * (1 - timeRatio);
-                            })()}
-                            strokeLinecap="round"
-                            className="transition-all duration-1000 ease-linear"
-                        />
-                    )}
-                </svg>
-                <button onClick={() => setIsActive(!isActive)} className="z-20 text-center group">
-                    <div className={`text-[clamp(2rem,12vw,4rem)] font-black tabular-nums tracking-tighter transition-all duration-500 ${isActive ? 'text-white' : 'text-slate-500'} group-hover:text-emerald-400`}>
-                        {protocol === 'R' || protocol === 'LIBRE' || protocol === 'mix' ? formatTime(elapsed) : formatTime(timeLeft || 0)}
-                    </div>
-                    <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mt-1 flex items-center justify-center gap-1">
-                        {isActive ? <span className="text-emerald-500 animate-pulse">● EN CURSO</span> : <span className="flex items-center gap-1"><Play size={10} /> INICIAR</span>}
-                    </div>
-                </button>
-            </div>
+                                    const totalTime = (protocol === 'T' ? module.targeting?.[0]?.timeCap : module.emomParams?.durationMinutes * 60) || 240;
+                                    const timeRatio = (timeLeft || 0) / totalTime;
+                                    return circumference * (1 - timeRatio);
+                                })()}
+                                strokeLinecap="round"
+                                className="transition-all duration-1000 ease-linear"
+                            />
+                        )}
+                    </svg>
+                    <button onClick={() => setIsActive(!isActive)} className="z-20 text-center group">
+                        <div className={`text-[clamp(2rem,12vw,4rem)] font-black tabular-nums tracking-tighter transition-all duration-500 ${isActive ? 'text-white' : 'text-slate-500'} group-hover:text-emerald-400`}>
+                            {protocol === 'R' || protocol === 'LIBRE' || protocol === 'mix' ? formatTime(elapsed) : formatTime(timeLeft || 0)}
+                        </div>
+                        <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mt-1 flex items-center justify-center gap-1">
+                            {isActive ? <span className="text-emerald-500 animate-pulse">● EN CURSO</span> : <span className="flex items-center gap-1"><Play size={10} /> INICIAR</span>}
+                        </div>
+                    </button>
+                </div>
+            )}
 
-            <div className={`w-full px-4 mb-20 transition-all duration-500 ease-in-out flex flex-col ${isActive ? 'flex-1' : ''}`}>
+            <div className={`w-full px-2 md:px-4 mb-20 transition-all duration-500 ease-in-out flex flex-col ${isActive ? 'flex-1' : ''}`}>
                 {protocol === 'E' ? (
                     // EMOM SPECIFIC UI: Round Tracker + Static Exercise Info
                     <div className="space-y-4">
@@ -1873,11 +2328,402 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
 
                         {/* Exercises Reference (Static) - REMOVED for compactness as requested */}
                     </div>
+                ) : protocol === 'LIBRE' ? (
+                    // LIBRE SPECIFIC UI: Set-Based Tracker
+                    <div className="space-y-4">
+                        {/* Rest Timer Overlay */}
+                        {isResting && (
+                            <div className="fixed inset-0 z-50 bg-slate-900/95 flex flex-col items-center justify-center">
+                                <div className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 mb-4">
+                                    {isRoundRest ? 'Descanso de Ronda' : 'Descanso'}
+                                </div>
+                                <div className="text-8xl font-black text-white tabular-nums mb-6">
+                                    {Math.floor(restTimeLeft / 60)}:{(restTimeLeft % 60).toString().padStart(2, '0')}
+                                </div>
+                                <button
+                                    onClick={skipRest}
+                                    className="px-8 py-3 bg-slate-800 hover:bg-slate-700 text-white font-black rounded-xl border border-slate-700 transition-all"
+                                >
+                                    Saltar Descanso →
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Exercise Groups (Supersets / Circuits) with Set Progress */}
+                        <div className="space-y-6">
+                            {groupedExercises.map((group, gIdx) => {
+                                const isGroup = group.length > 1;
+                                const groupType = group.length === 2 ? 'SÚPER SERIE' : 'CIRCUITO';
+                                const groupColor = group.length === 2 ? 'from-blue-500/20 to-blue-600/5 border-blue-500/30' : 'from-indigo-500/20 to-indigo-600/5 border-indigo-500/30';
+                                const groupLabelColor = group.length === 2 ? 'bg-blue-500 text-white' : 'bg-indigo-500 text-white';
+
+                                // Calculate group completion
+                                const minSetsCompleted = Math.min(...group.map(ex => libreSetsDone[ex.originalIndex] || 0));
+                                const isGroupComplete = group.every(ex => (libreSetsDone[ex.originalIndex] || 0) >= getLibreConfig(ex).targetSets);
+
+                                if (!isGroup) {
+                                    const ex = group[0];
+                                    const idx = ex.originalIndex;
+                                    const { targetSets, targetReps, repsPerSet, restSeconds, intensity, prescribedWeight, isVariableReps } = getLibreConfig(ex);
+                                    const setsCompleted = libreSetsDone[idx] || 0;
+                                    const isExerciseComplete = setsCompleted >= targetSets;
+                                    const weight = weightsUsed[idx] || prescribedWeight;
+                                    const isSingle = exercises.length === 1;
+
+                                    return (
+                                        <div
+                                            key={`single-${idx}`}
+                                            className={`bg-slate-800/50 rounded-2xl border transition-all overflow-hidden ${isExerciseComplete ? 'border-emerald-500/50 bg-emerald-900/20' : 'border-slate-700/50'} ${isSingle ? 'flex-1 flex flex-col mb-4' : ''}`}
+                                        >
+                                            {/* Exercise Visualisation */}
+                                            <div
+                                                className="w-full aspect-[16/10] bg-slate-900 relative overflow-hidden group/media cursor-pointer"
+                                                onClick={() => onSelectExercise(ex)}
+                                            >
+                                                <ExerciseMedia exercise={ex} staticMode={true} />
+                                                <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 via-transparent to-transparent opacity-60" />
+                                                <div className="absolute inset-0 bg-black/20 opacity-0 group-hover/media:opacity-100 transition-opacity flex items-center justify-center">
+                                                    <div className="bg-white/10 backdrop-blur-md rounded-full p-3 border border-white/20">
+                                                        <Info className="text-white" size={24} />
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Exercise Header */}
+                                            <div
+                                                className={`p-3 md:p-4 cursor-pointer hover:bg-slate-700/30 transition-colors group/header`}
+                                                onClick={() => onSelectExercise(ex)}
+                                            >
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center justify-between gap-2 mb-1">
+                                                        <div className={`font-black text-white truncate ${isSingle ? 'text-xl mb-2' : ''}`}>{ex.nameEs || ex.name}</div>
+                                                        <Info size={16} className="text-slate-500 group-hover/header:text-emerald-400 transition-colors shrink-0" />
+                                                    </div>
+
+                                                    <div className={`flex flex-wrap gap-2 ${isSingle ? 'gap-3' : ''}`}>
+                                                        <div className={`bg-emerald-500/15 border border-emerald-500/30 rounded-lg flex items-center gap-1.5 ${isSingle ? 'px-3 py-1.5' : 'px-2 py-1'}`}>
+                                                            <span className={`text-emerald-400 font-black ${isSingle ? 'text-lg' : 'text-sm'}`}>
+                                                                {isVariableReps ? repsPerSet.join('-') : targetReps}
+                                                            </span>
+                                                            <span className={`text-emerald-400/70 font-medium ${isSingle ? 'text-sm' : 'text-[10px]'}`}>REPS</span>
+                                                        </div>
+                                                        {intensity && (
+                                                            <div className={`bg-orange-500/15 border border-orange-500/30 rounded-lg flex items-center gap-1.5 ${isSingle ? 'px-3 py-1.5' : 'px-2 py-1'}`}>
+                                                                <span className={`text-orange-400 font-black ${isSingle ? 'text-lg' : 'text-sm'}`}>{intensity}</span>
+                                                            </div>
+                                                        )}
+                                                        {weight && (
+                                                            <div className={`bg-blue-500/15 border border-blue-500/30 rounded-lg flex items-center gap-1.5 ${isSingle ? 'px-3 py-1.5' : 'px-2 py-1'}`}>
+                                                                <span className={`text-blue-400 font-black ${isSingle ? 'text-lg' : 'text-sm'}`}>{weight}</span>
+                                                                <span className={`text-blue-400/70 font-medium ${isSingle ? 'text-sm' : 'text-[10px]'}`}>KG</span>
+                                                            </div>
+                                                        )}
+                                                        {ex.notes && (
+                                                            <div className={`bg-amber-500/15 border border-amber-500/30 rounded-lg flex items-center gap-1.5 ${isSingle ? 'px-3 py-1.5' : 'px-2 py-1'}`}>
+                                                                <span className={`text-amber-400 font-black ${isSingle ? 'text-xs' : 'text-[10px]'} uppercase tracking-wider`}>📝 Notas</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <div className={`text-slate-500 ${isSingle ? 'text-xs mt-2' : 'text-[10px] mt-1'}`}>
+                                                        ⏱ {restSeconds}s descanso
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Progress & Controls */}
+                                            <div className={`${isSingle ? 'px-4 md:px-6 pb-4 md:pb-6 mt-auto' : 'px-3 md:px-4 pb-3 md:pb-4'}`}>
+                                                <div className="mb-4">
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <span className={`font-bold ${isExerciseComplete ? 'text-emerald-400' : 'text-white'} ${isSingle ? 'text-base' : 'text-sm'}`}>
+                                                            {isExerciseComplete ? '✓ Completado' : `Serie ${setsCompleted + 1} de ${targetSets}`}
+                                                        </span>
+                                                        <span className="text-xs text-slate-500">{setsCompleted}/{targetSets}</span>
+                                                    </div>
+                                                    <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                                                        <div className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-500" style={{ width: `${(setsCompleted / targetSets) * 100}%` }} />
+                                                    </div>
+                                                </div>
+                                                <div className={`grid gap-3 mb-4 ${targetSets <= 3 ? 'grid-cols-3' : targetSets <= 4 ? 'grid-cols-4' : 'grid-cols-5'}`}>
+                                                    {Array.from({ length: targetSets }).map((_, setIdx) => {
+                                                        const isCompleted = setIdx < setsCompleted;
+                                                        const setReps = (libreSetReps[idx] || [])[setIdx];
+                                                        const setWeight = (libreSeriesWeights[idx] || [])[setIdx];
+                                                        const isEditing = editingSet?.exIdx === idx && editingSet?.setIdx === setIdx;
+                                                        return (
+                                                            <div key={setIdx} className="flex flex-col items-center">
+                                                                {isEditing ? (
+                                                                    <div className="flex flex-col items-center gap-1 bg-slate-700 rounded-xl p-2">
+                                                                        <input type="number" defaultValue={setReps} className="w-12 h-10 bg-slate-800 text-white text-center rounded-lg font-black text-lg border border-slate-600" autoFocus onBlur={(e) => updateLibreSetReps(idx, setIdx, parseInt(e.target.value) || setReps)} />
+                                                                        <button onClick={() => uncompleteLibreSet(idx, setIdx)} className="text-[10px] text-red-400">Eliminar</button>
+                                                                    </div>
+                                                                ) : (
+                                                                    <button onClick={() => isCompleted && setEditingSet({ exIdx: idx, setIdx })} disabled={!isCompleted} className={`w-full aspect-square rounded-xl flex flex-col items-center justify-center transition-all ${isCompleted ? 'bg-gradient-to-br from-emerald-500 to-emerald-600 text-white shadow-lg shadow-emerald-900/30' : setIdx === setsCompleted ? 'bg-slate-700/80 border-2 border-emerald-500/50 text-slate-300' : 'bg-slate-800/60 text-slate-600'}`}>
+                                                                        {isCompleted ? (
+                                                                            <>
+                                                                                <span className="text-lg font-black leading-tight">{setReps}</span>
+                                                                                {setWeight && <span className="text-[9px] font-semibold opacity-80 leading-tight">{setWeight}kg</span>}
+                                                                            </>
+                                                                        ) : (
+                                                                            <>
+                                                                                <span className="font-black text-base leading-none">{repsPerSet[setIdx] || targetReps}</span>
+                                                                                <span className="text-[8px] text-slate-500 uppercase">reps</span>
+                                                                            </>
+                                                                        )}
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                                {!isExerciseComplete ? (
+                                                    <div className="bg-slate-900/60 rounded-2xl p-3 md:p-4 border border-slate-700/50">
+                                                        {/* Previous session weight indicator */}
+                                                        <div className="flex justify-center mb-4">
+                                                            <div className="bg-slate-800/80 rounded-xl px-4 py-2 border border-slate-700 flex items-center gap-3">
+                                                                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Peso Anterior</span>
+                                                                <span className="text-sm font-black text-slate-400">{getPreviousWeight(idx)}{getPreviousWeight(idx) !== '--' ? 'kg' : ''}</span>
+                                                            </div>
+                                                        </div>
+                                                        {/* Weight & Reps Controls - Premium Vertical Stack */}
+                                                        <div className="space-y-2 mb-4">
+                                                            {/* Weight Stepper Row */}
+                                                            <div className="bg-slate-900/40 rounded-[1.5rem] p-3 border border-white/5 shadow-inner">
+                                                                <div className="flex items-center justify-between mb-3 px-1">
+                                                                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Peso Utilizado</span>
+                                                                    <span className="text-[8px] font-bold text-slate-600 bg-slate-800/30 px-2 py-0.5 rounded-full">+1kg steps</span>
+                                                                </div>
+                                                                <div className="flex items-center gap-2">
+                                                                    <button
+                                                                        onClick={() => setCurrentSetWeight(prev => ({ ...prev, [idx]: Math.max(0, (parseFloat(prev[idx] || 0) - 1)).toString() }))}
+                                                                        className="w-11 h-11 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 active:bg-slate-700 transition-all active:scale-95 shadow-md"
+                                                                    >
+                                                                        <Minus size={20} />
+                                                                    </button>
+
+                                                                    <div className="flex-1 bg-slate-900/60 rounded-xl h-11 border border-white/5 flex items-center justify-center gap-1">
+                                                                        <input
+                                                                            type="text"
+                                                                            inputMode="decimal"
+                                                                            value={currentSetWeight[idx] || ''}
+                                                                            onChange={(e) => setCurrentSetWeight(prev => ({ ...prev, [idx]: e.target.value.replace(',', '.') }))}
+                                                                            className="w-16 bg-transparent text-center text-white font-black text-xl outline-none"
+                                                                            placeholder="0.0"
+                                                                        />
+                                                                        <span className="text-[10px] font-black text-slate-500 uppercase">kg</span>
+                                                                    </div>
+
+                                                                    <button
+                                                                        onClick={() => setCurrentSetWeight(prev => ({ ...prev, [idx]: (parseFloat(prev[idx] || 0) + 1).toString() }))}
+                                                                        className="w-11 h-11 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 active:bg-slate-700 transition-all active:scale-95 shadow-md"
+                                                                    >
+                                                                        <Plus size={20} />
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Reps Stepper Row */}
+                                                            <div className="bg-slate-900/40 rounded-[1.5rem] p-3 border border-white/5 shadow-inner">
+                                                                <div className="flex items-center justify-between mb-3 px-1">
+                                                                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Repeticiones reales</span>
+                                                                    <span className="text-[8px] font-black text-emerald-500/60 bg-emerald-500/5 px-2 py-0.5 rounded-full uppercase tracking-tighter">Objetivo: {repsPerSet[setsCompleted] || targetReps} reps</span>
+                                                                </div>
+                                                                <div className="flex items-center gap-2">
+                                                                    <button
+                                                                        onClick={() => setCurrentSetReps(prev => ({ ...prev, [idx]: Math.max(1, (parseInt(prev[idx] || 0) - 1)) }))}
+                                                                        className="w-11 h-11 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 active:bg-slate-700 transition-all active:scale-95 shadow-md"
+                                                                    >
+                                                                        <Minus size={20} />
+                                                                    </button>
+
+                                                                    <div className="flex-1 bg-slate-900/60 rounded-xl h-11 border border-white/5 flex items-center justify-center gap-1">
+                                                                        <input
+                                                                            type="text"
+                                                                            inputMode="numeric"
+                                                                            value={currentSetReps[idx] || ''}
+                                                                            onChange={(e) => setCurrentSetReps(prev => ({ ...prev, [idx]: e.target.value.replace(/\D/g, '') }))}
+                                                                            className="w-16 bg-transparent text-center text-white font-black text-xl outline-none"
+                                                                            placeholder="0"
+                                                                        />
+                                                                        <span className="text-[10px] font-black text-slate-500 uppercase">reps</span>
+                                                                    </div>
+
+                                                                    <button
+                                                                        onClick={() => setCurrentSetReps(prev => ({ ...prev, [idx]: (parseInt(prev[idx] || 0) + 1) }))}
+                                                                        className="w-11 h-11 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 active:bg-slate-700 transition-all active:scale-95 shadow-md"
+                                                                    >
+                                                                        <Plus size={20} />
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        <button onClick={() => completeLibreSet(idx)} disabled={isResting} className="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-black py-4 rounded-xl flex items-center justify-center gap-3 shadow-lg">
+                                                            <CheckCircle size={24} />
+                                                            <span className="text-lg">Completar Serie {setsCompleted + 1}</span>
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-center py-4"><span className="text-emerald-400 font-bold text-lg">✓ Ejercicio Completado</span></div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                } else {
+                                    // RENDER GROUPED CONTAINER (Superset / Circuit) - REVERTED TO SEQUENTIAL CARDS
+                                    return (
+                                        <div key={`group-${gIdx}`} className="space-y-4">
+                                            {/* Group Label */}
+                                            <div className="flex items-center gap-3 px-2">
+                                                <div className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] shadow-lg flex items-center gap-2`} style={{ backgroundColor: group.length === 2 ? '#3b82f6' : '#6366f1', color: 'white' }}>
+                                                    {group.length === 2 ? <Repeat size={12} /> : <Layers size={12} />}
+                                                    {groupType}
+                                                </div>
+                                                <div className="h-[1px] flex-1 bg-slate-800" />
+                                            </div>
+
+                                            {/* Sequential Cards for Grouped Exercises */}
+                                            <div className="space-y-4">
+                                                {group.map((ex, i) => {
+                                                    const idx = ex.originalIndex;
+                                                    const { targetSets, targetReps, repsPerSet, restSeconds, intensity, prescribedWeight, isVariableReps } = getLibreConfig(ex);
+                                                    const setsCompleted = libreSetsDone[idx] || 0;
+                                                    const isExerciseComplete = setsCompleted >= targetSets;
+                                                    const weight = currentSetWeight[idx] || weightsUsed[idx] || prescribedWeight;
+                                                    const isSingle = false; // It's part of a group
+
+                                                    return (
+                                                        <div
+                                                            key={`grouped-ex-${idx}`}
+                                                            className={`bg-slate-800/50 rounded-2xl border transition-all overflow-hidden ${isExerciseComplete ? 'border-emerald-500/50 bg-emerald-900/20' : 'border-slate-700/50'}`}
+                                                        >
+                                                            {/* Exercise Visualisation */}
+                                                            <div className="w-full aspect-[16/10] bg-slate-900 relative overflow-hidden group/media cursor-pointer" onClick={() => onSelectExercise(ex)}>
+                                                                <ExerciseMedia exercise={ex} staticMode={true} />
+                                                                <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 via-transparent to-transparent opacity-60" />
+                                                                <div className="absolute bottom-3 left-4">
+                                                                    <p className="text-sm font-black text-white truncate mb-0.5 leading-tight">{ex.nameEs || ex.name}</p>
+                                                                    <p className="text-[10px] font-black text-emerald-400 tracking-wider">
+                                                                        {isVariableReps ? repsPerSet[setsCompleted] || targetReps : targetReps} REPS
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Compact Weight Controls for Grouped */}
+                                                            <div className="p-4 pt-2">
+                                                                <div className="flex items-center justify-between mb-3 px-1">
+                                                                    <span className="text-[10px] font-bold text-slate-500 uppercase">{setsCompleted}/{targetSets} Series</span>
+                                                                    {isExerciseComplete && <span className="text-emerald-400 text-[10px] font-bold">✓ Completado</span>}
+                                                                </div>
+
+                                                                {!isExerciseComplete ? (
+                                                                    <div className="bg-slate-900/60 rounded-2xl p-3 border border-white/5 shadow-inner space-y-3">
+                                                                        <div className="flex items-center justify-between gap-4">
+                                                                            {/* Previous box */}
+                                                                            <div className="flex flex-col min-w-[60px]">
+                                                                                <span className="text-[7px] font-black text-slate-500 uppercase tracking-widest mb-1">Anterior</span>
+                                                                                <span className="text-xs font-black text-slate-400 leading-none">{getPreviousWeight(idx)}{getPreviousWeight(idx) !== '--' ? 'kg' : ''}</span>
+                                                                            </div>
+
+                                                                            {/* Weight Selector */}
+                                                                            <div className="flex-1 flex items-center justify-between bg-slate-800/50 rounded-xl p-1 border border-white/5">
+                                                                                <button
+                                                                                    onClick={() => setCurrentSetWeight(prev => ({ ...prev, [idx]: Math.max(0, (parseFloat(prev[idx] || 0) - 0.5)).toString() }))}
+                                                                                    className="w-8 h-8 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-400 active:bg-slate-600 transition-colors"
+                                                                                >
+                                                                                    <Minus size={14} />
+                                                                                </button>
+                                                                                <div className="flex items-baseline gap-0.5">
+                                                                                    <input
+                                                                                        type="text"
+                                                                                        inputMode="decimal"
+                                                                                        value={currentSetWeight[idx] || ''}
+                                                                                        onChange={(e) => setCurrentSetWeight(prev => ({ ...prev, [idx]: e.target.value.replace(',', '.') }))}
+                                                                                        className="w-10 bg-transparent text-center text-white font-black text-sm outline-none"
+                                                                                        placeholder="0"
+                                                                                    />
+                                                                                    <span className="text-[10px] font-bold text-slate-500">kg</span>
+                                                                                </div>
+                                                                                <button
+                                                                                    onClick={() => setCurrentSetWeight(prev => ({ ...prev, [idx]: (parseFloat(prev[idx] || 0) + 0.5).toString() }))}
+                                                                                    className="w-8 h-8 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-400 active:bg-slate-600 transition-colors"
+                                                                                >
+                                                                                    <Plus size={14} />
+                                                                                </button>
+                                                                            </div>
+                                                                        </div>
+
+                                                                        <div className="flex items-center justify-between gap-4">
+                                                                            {/* Label filler to keep alignment */}
+                                                                            <div className="flex flex-col min-w-[60px]">
+                                                                                <span className="text-[7px] font-black text-slate-500 uppercase tracking-widest mb-1">Actual</span>
+                                                                                <span className="text-xs font-black text-white leading-none">Sets {setsCompleted + 1}</span>
+                                                                            </div>
+
+                                                                            {/* Reps Selector */}
+                                                                            <div className="flex-1 flex items-center justify-between bg-slate-800/50 rounded-xl p-1 border border-white/5">
+                                                                                <button
+                                                                                    onClick={() => setCurrentSetReps(prev => ({ ...prev, [idx]: Math.max(1, (parseInt(prev[idx] || 0) - 1)) }))}
+                                                                                    className="w-8 h-8 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-400 active:bg-slate-600 transition-colors"
+                                                                                >
+                                                                                    <Minus size={14} />
+                                                                                </button>
+                                                                                <div className="flex items-baseline gap-0.5">
+                                                                                    <input
+                                                                                        type="text"
+                                                                                        inputMode="numeric"
+                                                                                        value={currentSetReps[idx] || ''}
+                                                                                        onChange={(e) => setCurrentSetReps(prev => ({ ...prev, [idx]: e.target.value.replace(/\D/g, '') }))}
+                                                                                        className="w-10 bg-transparent text-center text-white font-black text-sm outline-none"
+                                                                                        placeholder="0"
+                                                                                    />
+                                                                                    <span className="text-[10px] font-bold text-slate-500">reps</span>
+                                                                                </div>
+                                                                                <button
+                                                                                    onClick={() => setCurrentSetReps(prev => ({ ...prev, [idx]: (parseInt(prev[idx] || 0) + 1) }))}
+                                                                                    className="w-8 h-8 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-400 active:bg-slate-600 transition-colors"
+                                                                                >
+                                                                                    <Plus size={14} />
+                                                                                </button>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="h-[2px] bg-emerald-500/20 rounded-full" />
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+
+                                            {/* Group Action Button */}
+                                            {!isGroupComplete ? (
+                                                <button
+                                                    onClick={() => completeLibreGroupSet(group)}
+                                                    disabled={isResting}
+                                                    className="w-full bg-white text-slate-900 font-black py-4 rounded-3xl flex flex-col items-center justify-center gap-1 shadow-2xl active:scale-95 transition-all disabled:opacity-50"
+                                                >
+                                                    <div className="flex items-center gap-2">
+                                                        <CheckCircle size={20} />
+                                                        <span className="text-lg">Completar Ronda {minSetsCompleted + 1}</span>
+                                                    </div>
+                                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">Siguiente Bloque</span>
+                                                </button>
+                                            ) : (
+                                                <div className="p-5 bg-emerald-500/10 border border-emerald-500/20 rounded-[2rem] text-center shadow-inner">
+                                                    <span className="text-emerald-400 font-black text-xs uppercase tracking-[0.2em]">✓ {groupType} COMPLETADO</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                }
+                            })}
+                        </div>
+                    </div>
                 ) : (
                     // STANDARD UI (R/T/Mix) - Rep Counters
                     <div className={`flex items-stretch transition-all duration-500 ${exercises.length > 1 ? 'gap-2' : 'gap-4'} ${isActive ? 'flex-1 mb-4' : ''}`}>
                         {exercises.map((ex, idx) => {
-                            // Color Feedback Logic
+                            // ... (logic from before) ...
                             const targetReps = ex.targetReps || module.targeting?.[0]?.volume || 0;
                             const cardReps = repsDone[idx] || 0;
                             const isTargetReached = protocol === 'R' && targetReps > 0 && cardReps >= targetReps;
@@ -1997,7 +2843,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
 };
 
 
-const BlockFeedbackModal = ({ onConfirm, onBack, initialExNotes = {}, blockType, exercises }) => {
+const BlockFeedbackModal = ({ onConfirm, onBack, initialExNotes = {}, blockType, exercises, isSaving }) => {
     const [rpe, setRpe] = useState(null);
     const [notes, setNotes] = useState('');
     const [exNotes, setExNotes] = useState(initialExNotes);
@@ -2099,10 +2945,17 @@ const BlockFeedbackModal = ({ onConfirm, onBack, initialExNotes = {}, blockType,
 
                     <button
                         onClick={() => handleConfirm(false)}
-                        disabled={rpe === null}
-                        className="w-full mt-8 py-4 bg-emerald-500 text-white rounded-xl font-black text-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-emerald-400 transition-colors shadow-lg shadow-emerald-900/20"
+                        disabled={rpe === null || isSaving}
+                        className="w-full mt-8 py-4 bg-emerald-500 text-white rounded-xl font-black text-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-emerald-400 transition-colors shadow-lg shadow-emerald-900/20 flex items-center justify-center gap-2"
                     >
-                        Continuar
+                        {isSaving ? (
+                            <>
+                                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                <span>Guardando...</span>
+                            </>
+                        ) : (
+                            <span>Continuar</span>
+                        )}
                     </button>
                 </div>
             </motion.div >

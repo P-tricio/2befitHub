@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
     MoreVertical, Plus, Copy, Trash2, ChevronDown, ChevronUp, ChevronRight,
     Link, Link2, Move, Clock, Repeat, Flame, Dumbbell, Footprints, Edit2,
-    Settings, Eye, Check, X, Search, Lock, Unlock, Save, Download, Coffee, Filter, UploadCloud, Loader2, Zap, Library, List, ClipboardList
+    Settings, Eye, Check, X, Search, Lock, Unlock, Save, Download, Coffee, Filter, UploadCloud, Loader2, Zap, Library, List, ClipboardList, Info
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TrainingDB } from '../services/db';
@@ -25,8 +25,10 @@ const ExerciseItem = ({ ex, idx, isGrouped, isFirstInGroup, isLastInGroup, onCon
         const [localDuration, setLocalDuration] = useState(ex.duration || 60);
 
         const handleDurationUpdate = () => {
-            if (onUpdateDuration && localDuration !== ex.duration) {
-                onUpdateDuration(localDuration);
+            const finalVal = localDuration === '' ? 0 : localDuration;
+            if (onUpdateDuration && finalVal !== ex.duration) {
+                onUpdateDuration(finalVal);
+                if (localDuration === '') setLocalDuration(0);
             }
         };
 
@@ -41,7 +43,10 @@ const ExerciseItem = ({ ex, idx, isGrouped, isFirstInGroup, isLastInGroup, onCon
                         <input
                             type="number"
                             value={localDuration}
-                            onChange={(e) => setLocalDuration(parseInt(e.target.value) || 5)}
+                            onChange={(e) => {
+                                const val = e.target.value;
+                                setLocalDuration(val === '' ? '' : parseInt(val) || 0);
+                            }}
                             onBlur={handleDurationUpdate}
                             onKeyDown={(e) => {
                                 if (e.key === 'Enter') {
@@ -51,7 +56,7 @@ const ExerciseItem = ({ ex, idx, isGrouped, isFirstInGroup, isLastInGroup, onCon
                             }}
                             onClick={(e) => e.target.select()}
                             className="w-16 px-2 py-1 text-xs font-bold bg-white border border-slate-300 rounded text-center focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                            min="5"
+                            min="0"
                             max="600"
                             step="5"
                         />
@@ -165,6 +170,13 @@ const ExerciseItem = ({ ex, idx, isGrouped, isFirstInGroup, isLastInGroup, onCon
                             </div>
                         </div>
                     )}
+                    {/* Show notes indicator if exists */}
+                    {ex.notes && (
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="text-[9px] bg-amber-100 text-amber-700 px-1 rounded font-black uppercase tracking-tighter">Nota</span>
+                            <p className="text-[10px] text-amber-600 truncate font-bold italic">{ex.notes}</p>
+                        </div>
+                    )}
                     <div className="flex items-center gap-2 mt-0.5">
                         <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider ${ex.config?.sharedTime
                             ? 'bg-orange-100 text-orange-700'
@@ -188,7 +200,7 @@ const ExerciseItem = ({ ex, idx, isGrouped, isFirstInGroup, isLastInGroup, onCon
                     ]} />
                 </div>
             </div>
-        </div>
+        </div >
     );
 };
 
@@ -288,52 +300,106 @@ const BlockCard = ({ block, idx, onUpdate, onRemove, onDuplicate, onAddExercise,
 
                         {/* Exercise List */}
                         <div className="space-y-0">
-                            {block.exercises.map((ex, exIdx) => {
-                                // Determine connectivity logic
-                                const nextEx = block.exercises[exIdx + 1];
-                                const isNextGrouped = nextEx && nextEx.isGrouped;
+                            {(() => {
+                                const groups = [];
+                                let currentGrp = [];
+                                block.exercises.forEach((ex, i) => {
+                                    if (ex.isGrouped && currentGrp.length > 0) {
+                                        currentGrp.push({ ex, i });
+                                    } else {
+                                        if (currentGrp.length > 0) groups.push(currentGrp);
+                                        currentGrp = [{ ex, i }];
+                                    }
+                                });
+                                if (currentGrp.length > 0) groups.push(currentGrp);
 
-                                return (
-                                    <React.Fragment key={ex.id || exIdx}>
-                                        <ExerciseItem
-                                            ex={ex}
-                                            idx={exIdx}
-                                            isGrouped={ex.isGrouped}
-                                            nextIsGrouped={isNextGrouped}
-                                            isLinkMode={linkMode}
-                                            onConfigure={() => onOpenConfig(idx, exIdx)}
-                                            onSwap={() => onSwapExercise(idx, exIdx)}
-                                            onUpdateDuration={(newDuration) => {
-                                                const newEx = [...block.exercises];
-                                                newEx[exIdx] = { ...ex, duration: newDuration };
-                                                onUpdate({ ...block, exercises: newEx });
-                                            }}
-                                            onDuplicate={() => {
-                                                const newEx = [...block.exercises];
-                                                const copy = { ...ex, id: crypto.randomUUID(), name: `${ex.name} (Copia)` };
-                                                newEx.splice(exIdx + 1, 0, copy);
-                                                onUpdate({ ...block, exercises: newEx });
-                                            }}
-                                            onRemove={() => {
-                                                const newEx = block.exercises.filter((_, i) => i !== exIdx);
-                                                onUpdate({ ...block, exercises: newEx });
-                                            }}
-                                        />
+                                return groups.map((grp, gIdx) => {
+                                    const isGroup = grp.length > 1;
+                                    const groupRest = isGroup ? (grp[0].ex.config?.sets?.[0]?.rest ?? 60) : null;
 
-                                        {/* Linker Button (Between Cards) */}
-                                        {linkMode && exIdx < block.exercises.length - 1 && ex.type !== 'REST' && nextEx.type !== 'REST' && (
-                                            <div className="h-4 -my-2 flex justify-center items-center z-20 relative">
-                                                <button
-                                                    onClick={() => toggleExerciseGroup(exIdx + 1)}
-                                                    className={`w-6 h-6 rounded-full flex items-center justify-center border transition-all ${isNextGrouped ? 'bg-blue-500 border-blue-600 text-white' : 'bg-white border-slate-300 text-slate-400 hover:scale-110'}`}
-                                                >
-                                                    {isNextGrouped ? <Link2 size={12} /> : <Plus size={12} />}
-                                                </button>
-                                            </div>
-                                        )}
-                                    </React.Fragment>
-                                );
-                            })}
+                                    return (
+                                        <div key={gIdx} className={isGroup ? "bg-slate-50/50 rounded-2xl border border-slate-200 border-dashed p-2 mb-4" : ""}>
+                                            {isGroup && (
+                                                <div className="flex items-center justify-between px-2 mb-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest">
+                                                            {grp.length === 2 ? 'Súper Serie' : 'Circuito'}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-2 py-1">
+                                                        <Clock size={12} className="text-slate-400" />
+                                                        <span className="text-[9px] font-bold text-slate-500 uppercase">Descanso Ronda</span>
+                                                        <input
+                                                            type="number"
+                                                            value={groupRest}
+                                                            onChange={(e) => {
+                                                                const val = parseInt(e.target.value) || 0;
+                                                                const newExercises = [...block.exercises];
+                                                                grp.forEach(item => {
+                                                                    const ex = { ...newExercises[item.i] };
+                                                                    const config = { ...(ex.config || { sets: [] }) };
+                                                                    const sets = (config.sets || []).map(s => ({ ...s, rest: val }));
+                                                                    newExercises[item.i] = { ...ex, config: { ...config, sets } };
+                                                                });
+                                                                onUpdate({ ...block, exercises: newExercises });
+                                                            }}
+                                                            className="w-12 text-center text-[11px] font-black text-slate-800 focus:outline-none"
+                                                        />
+                                                        <span className="text-[9px] font-bold text-slate-400">s</span>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {grp.map((item, grpIdx) => {
+                                                const { ex, i: exIdx } = item;
+                                                const nextEx = grp[grpIdx + 1] || block.exercises[exIdx + 1];
+                                                const isNextGrouped = grp[grpIdx + 1] ? true : (block.exercises[exIdx + 1]?.isGrouped || false);
+
+                                                return (
+                                                    <React.Fragment key={ex.id || exIdx}>
+                                                        <ExerciseItem
+                                                            ex={ex}
+                                                            idx={exIdx}
+                                                            isGrouped={ex.isGrouped}
+                                                            nextIsGrouped={grp[grpIdx + 1] ? true : false}
+                                                            isLinkMode={linkMode}
+                                                            onConfigure={() => onOpenConfig(idx, exIdx)}
+                                                            onSwap={() => onSwapExercise(idx, exIdx)}
+                                                            onUpdateDuration={(newDuration) => {
+                                                                const newEx = [...block.exercises];
+                                                                newEx[exIdx] = { ...ex, duration: newDuration };
+                                                                onUpdate({ ...block, exercises: newEx });
+                                                            }}
+                                                            onDuplicate={() => {
+                                                                const newEx = [...block.exercises];
+                                                                const copy = { ...ex, id: crypto.randomUUID(), name: `${ex.name} (Copia)` };
+                                                                newEx.splice(exIdx + 1, 0, copy);
+                                                                onUpdate({ ...block, exercises: newEx });
+                                                            }}
+                                                            onRemove={() => {
+                                                                const newEx = block.exercises.filter((_, i) => i !== exIdx);
+                                                                onUpdate({ ...block, exercises: newEx });
+                                                            }}
+                                                        />
+
+                                                        {/* Linker Button (Between Cards) */}
+                                                        {linkMode && exIdx < block.exercises.length - 1 && ex.type !== 'REST' && (block.exercises[exIdx + 1]?.type !== 'REST') && (
+                                                            <div className="h-4 -my-2 flex justify-center items-center z-20 relative">
+                                                                <button
+                                                                    onClick={() => toggleExerciseGroup(exIdx + 1)}
+                                                                    className={`w-6 h-6 rounded-full flex items-center justify-center border transition-all ${block.exercises[exIdx + 1]?.isGrouped ? 'bg-blue-500 border-blue-600 text-white' : 'bg-white border-slate-300 text-slate-400 hover:scale-110'}`}
+                                                                >
+                                                                    {block.exercises[exIdx + 1]?.isGrouped ? <Link2 size={12} /> : <Plus size={12} />}
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                    </React.Fragment>
+                                                );
+                                            })}
+                                        </div>
+                                    );
+                                });
+                            })()}
                         </div>
 
                         {/* Footer / Add Button */}
@@ -375,7 +441,7 @@ const BlockCard = ({ block, idx, onUpdate, onRemove, onDuplicate, onAddExercise,
 };
 
 // 3. Exercise Configuration Drawer (The "Load Editor")
-const ExerciseConfigDrawer = ({ isOpen, onClose, exercise, onSave }) => {
+const ExerciseConfigDrawer = ({ isOpen, onClose, exercise, onSave, isGrouped }) => {
     const [config, setConfig] = useState(exercise?.config || {
         volType: 'REPS',
         intType: 'RIR',
@@ -442,7 +508,7 @@ const ExerciseConfigDrawer = ({ isOpen, onClose, exercise, onSave }) => {
                         <button onClick={onClose} className="p-2 -ml-2 text-slate-400 hover:text-slate-600">
                             <ChevronDown className="rotate-90" size={24} />
                         </button>
-                        <h3 className="font-black text-slate-800 text-lg flex-1 truncate">{exercise?.name}</h3>
+                        <h3 className="font-black text-slate-800 text-lg flex-1 truncate">{exercise?.name_es || exercise?.name}</h3>
                         <button onClick={handleSave} className="text-emerald-600 font-bold text-sm">Guardar</button>
                     </div>
 
@@ -594,11 +660,25 @@ const ExerciseConfigDrawer = ({ isOpen, onClose, exercise, onSave }) => {
                                 ))}
                             </div>
 
+                            {/* Rest Logic Info */}
+                            <div className="mt-3 p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-start gap-2">
+                                <Info size={14} className="text-slate-400 mt-0.5 shrink-0" />
+                                {isGrouped ? (
+                                    <p className="text-[10px] text-blue-600 font-bold leading-tight">
+                                        Este ejercicio es parte de una Súper Serie/Circuito. El descanso configurado aquí actúa como el "Descanso de Ronda".
+                                    </p>
+                                ) : (
+                                    <p className="text-[10px] text-slate-500 italic leading-tight">
+                                        Tiempo de descanso después de completar la serie.
+                                    </p>
+                                )}
+                            </div>
+
                             <button
                                 onClick={handleAddSet}
-                                className="mt-3 w-full py-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-500 font-bold text-xs hover:bg-slate-100 flex items-center justify-center gap-2"
+                                className="w-full mt-3 py-2 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 text-xs font-bold hover:border-emerald-300 hover:text-emerald-500 transition-colors"
                             >
-                                <Plus size={14} /> Añadir Serie
+                                + Añadir Serie
                             </button>
                         </div>
 
@@ -1208,12 +1288,15 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
 
             // HYDRATION LOGIC: Repair legacy exercises missing data
             try {
-                // If we don't have the catalog loaded, fetch it silently to repair data
-                let catalog = bulkExercises;
-                if (catalog.length === 0) {
+                // Combine local library and global catalog for a complete search pool
+                // Library exercises come first to prioritize user's custom/perfectly-saved versions
+                let catalog = [...allExercises, ...bulkExercises];
+
+                if (bulkExercises.length === 0) {
                     console.log('Fetching catalog to hydrate legacy session...');
-                    catalog = await ExerciseAPI.fetchFullCatalog();
-                    setBulkExercises(catalog);
+                    const fetchedBulk = await ExerciseAPI.fetchFullCatalog();
+                    setBulkExercises(fetchedBulk);
+                    catalog = [...allExercises, ...fetchedBulk];
                 }
 
                 // Map through blocks and exercises
@@ -1222,30 +1305,44 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                     stableId: block.stableId || block.id, // Backfill stableId if missing
                     exercises: await Promise.all(block.exercises.map(async ex => {
                         // Attempt to find full data in catalog by ID or Name
+                        // We also check name_es for better matching
                         const fullData = catalog.find(c =>
                             c.id === ex.id ||
                             c.id === `edb_${ex.id}` ||
-                            c.name === ex.name
+                            (ex.name && c.name?.toLowerCase() === ex.name?.toLowerCase()) ||
+                            (ex.name_es && c.name_es?.toLowerCase() === ex.name_es?.toLowerCase())
                         );
 
                         // Base merged data
-                        let merged = fullData ? {
+                        // We prioritize catalog data if description or name_es is missing in the session
+                        let merged = {
                             ...ex,
-                            id: fullData.id, // Prefer catalog ID
-                            name_es: ex.name_es || fullData.name_es || '',
-                            instructions: ex.instructions || fullData.instructions || [],
-                            instructions_es: ex.instructions_es || fullData.instructions_es || [],
-                            description: ex.description || fullData.description || '',
-                            mediaUrl: ex.mediaUrl || fullData.mediaUrl || fullData.gifUrl || ''
-                        } : ex;
+                            id: fullData?.id || ex.id,
+                            name_es: ex.name_es || fullData?.name_es || '',
+                            instructions: (ex.instructions?.length > 0 ? ex.instructions : fullData?.instructions) || [],
+                            instructions_es: (ex.instructions_es?.length > 0 ? ex.instructions_es : fullData?.instructions_es) || [],
+                            description: ex.description || fullData?.description || (fullData?.instructions_es?.length > 0 ? fullData.instructions_es.join(' ') : ''),
+                            mediaUrl: ex.mediaUrl || fullData?.mediaUrl || fullData?.gifUrl || ''
+                        };
 
-                        // ON-THE-FLY TRANSLATION
-                        // If we still don't have a Spanish name, translate it now
-                        if (!merged.name_es && merged.name) {
+                        // Helper to detect if a string is likely Spanish (manual heuristic)
+                        const isLikelySpanish = (text) => {
+                            if (!text) return false;
+                            // Check for common Spanish characters
+                            if (/[áéíóúÁÉÍÓÚñÑ]/.test(text)) return true;
+                            // Check for common Spanish stop words
+                            const commonSpanishWords = ['con', 'de', 'el', 'la', 'un', 'una', 'en', 'por', 'sobre', 'para'];
+                            const words = text.toLowerCase().split(/\s+/);
+                            return words.some(w => commonSpanishWords.includes(w));
+                        };
+
+                        // ON-THE-FLY TRANSLATION - ONLY if we don't have a Spanish name AND original name doesn't look Spanish
+                        if (!merged.name_es && merged.name && !isLikelySpanish(merged.name)) {
                             try {
+                                console.log(`[Hydration] Translating name: ${merged.name}`);
                                 merged.name_es = await ExerciseAPI.translateText(merged.name);
                                 // Also translate instructions if missing
-                                if ((!merged.instructions_es || merged.instructions_es.length === 0) && merged.instructions) {
+                                if ((!merged.instructions_es || merged.instructions_es.length === 0) && merged.instructions?.length > 0) {
                                     const combinedInstr = merged.instructions.join('\n');
                                     const translatedInstr = await ExerciseAPI.translateText(combinedInstr);
                                     merged.instructions_es = translatedInstr.split('\n');
@@ -1253,6 +1350,14 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                             } catch (error) {
                                 console.warn('Translation failed for:', merged.name);
                             }
+                        } else if (!merged.name_es && merged.name) {
+                            // If it's already Spanish or we can't translate, set name_es to name
+                            merged.name_es = merged.name;
+                        }
+
+                        // Ensure description is NEVER empty if we have instructions_es
+                        if (!merged.description && merged.instructions_es?.length > 0) {
+                            merged.description = merged.instructions_es.join(' ');
                         }
 
                         return merged;
@@ -1309,6 +1414,10 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
             setSessionGroup('');
             setSessionDescription('');
             setSessionType('LIBRE');
+            // Reset active indices to prevent crash on reading deleted blocks
+            setActiveBlockIdx(null);
+            setActiveExIdx(null);
+            setActiveExerciseObj(null);
         }
     };
 
@@ -1621,7 +1730,10 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                 ...ex,
                 id: crypto.randomUUID(),
                 config: config, // Preserve original config
-                isGrouped: isGrouped // Preserve grouping
+                isGrouped: isGrouped, // Preserve grouping
+                // Explicit media mapping
+                mediaUrl: ex.mediaUrl || ex.gifUrl || '',
+                gifUrl: ex.gifUrl || ex.mediaUrl || ''
             };
             setSwapMode(false);
             setSwapTarget(null);
@@ -1630,10 +1742,16 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
             newBlocks[activeBlockIdxForPicker].exercises.push({
                 ...ex,
                 id: crypto.randomUUID(),
-                name: ex.nameEs || ex.name_es || ex.name,
-                description: ex.descriptionEs || ex.description_es || ex.description || '',
+                name: ex.name || '',
+                name_es: ex.name_es || ex.nameEs || ex.name || '',
+                description: ex.description || ex.descriptionEs || ex.description_es || (ex.instructions_es?.length > 0 ? ex.instructions_es.join(' ') : ''),
+                instructions: ex.instructions || [],
+                instructions_es: ex.instructions_es || [],
                 config: { volType: 'REPS', intType: 'RIR', sets: [] },
-                isGrouped: false
+                isGrouped: false,
+                // Explicit media mapping
+                mediaUrl: ex.mediaUrl || ex.gifUrl || '',
+                gifUrl: ex.gifUrl || ex.mediaUrl || ''
             });
         }
 
@@ -1774,6 +1892,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                         // Core identity
                         id: ex.id,
                         name: ex.name,
+                        name_es: ex.name_es || ex.name, // Ensure Spanish name is persisted
                         type: ex.type || 'EXERCISE', // Important for REST
                         duration: ex.duration || 0,   // Important for REST
 
@@ -1792,8 +1911,11 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                         imageEnd: ex.imageEnd || '',
                         youtubeUrl: ex.youtubeUrl || '',
 
-                        // Content - preserve description for detail view
+                        // Content - preserve description and instructions for detail view
                         description: ex.description || '',
+                        instructions: ex.instructions || [],
+                        instructions_es: ex.instructions_es || [],
+                        notes: ex.notes || '',
                         tags: ex.tags || []
                     }))
                 }))
@@ -3008,6 +3130,10 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                             isOpen={configDrawerOpen}
                             onClose={() => setConfigDrawerOpen(false)}
                             exercise={activeExerciseObj}
+                            isGrouped={activeBlockIdx !== null && activeExIdx !== null && blocks[activeBlockIdx] && (
+                                blocks[activeBlockIdx].exercises[activeExIdx]?.isGrouped ||
+                                blocks[activeBlockIdx].exercises[activeExIdx + 1]?.isGrouped
+                            )}
                             onSave={handleSaveConfig}
                         />
                     </>
@@ -3027,12 +3153,20 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                                 className={`flex-1 py-2 text-xs font-black uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-2 ${pickerTab === 'library' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
                             >
                                 Biblioteca
+                                <span className={`px-1.5 py-0.5 text-[10px] font-black rounded-full ${pickerTab === 'library' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-500'}`}>
+                                    {allExercises.length}
+                                </span>
                             </button>
                             <button
                                 onClick={() => setPickerTab('online')}
                                 className={`flex-1 py-2 text-xs font-black uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-2 ${pickerTab === 'online' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                             >
                                 <UploadCloud size={14} /> Online
+                                {bulkExercises.length > 0 && (
+                                    <span className={`px-1.5 py-0.5 text-[10px] font-black rounded-full ${pickerTab === 'online' ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-200 text-slate-500'}`}>
+                                        {bulkExercises.length}
+                                    </span>
+                                )}
                             </button>
                         </div>
 

@@ -15,6 +15,7 @@ const ExerciseMedia = ({
     className = "w-full h-full",
     thumbnailMode = false,
     autoPlay = false,
+    staticMode = false,
     showControls = true,
     lazyLoad = true
 }) => {
@@ -24,11 +25,11 @@ const ExerciseMedia = ({
     const [isHovered, setIsHovered] = useState(false);
 
     const youtubeId = getYoutubeVideoId(exercise?.youtubeUrl);
-    const hasMediaUrl = !!exercise?.mediaUrl;
+    const hasMediaUrl = !!(exercise?.mediaUrl || exercise?.gifUrl);
     const hasAutoGif = !!(exercise?.imageStart && exercise?.imageEnd);
 
     // Lazy loading logic for online exercises in library/picker
-    const isOnline = exercise?.source === 'exercisedb' || (exercise?.mediaUrl && !exercise?.mediaUrl.includes('imgbb') && !exercise?.mediaUrl.includes('ibb.co'));
+    const isOnline = exercise?.source === 'exercisedb' || ((exercise?.mediaUrl || exercise?.gifUrl) && !(exercise?.mediaUrl || exercise?.gifUrl).includes('imgbb') && !(exercise?.mediaUrl || exercise?.gifUrl).includes('ibb.co'));
     const shouldLazyLoad = lazyLoad && thumbnailMode && isOnline;
 
     // Initial image / thumbnail logic
@@ -53,14 +54,15 @@ const ExerciseMedia = ({
             if (finalYoutubeId) {
                 // Priority: YouTube Thumbnail (matches standard or shorts)
                 initialImage = `https://img.youtube.com/vi/${finalYoutubeId}/hqdefault.jpg`;
-            } else if (exercise?.mediaUrl) {
-                const isUrl = exercise.mediaUrl.includes('http') || exercise.mediaUrl.includes('/');
-                const isProtected = exercise.mediaUrl.includes('exercisedb.p.rapidapi.com');
+            } else if (exercise?.mediaUrl || exercise?.gifUrl) {
+                const targetUrl = exercise.mediaUrl || exercise.gifUrl;
+                const isUrl = targetUrl.includes('http') || targetUrl.includes('/');
+                const isProtected = targetUrl.includes('exercisedb.p.rapidapi.com');
                 const isLegacyId = !isUrl;
 
-                if (isProtected || (exercise.source === 'exercisedb' && !exercise.mediaUrl.includes('imgbb') && !exercise.mediaUrl.includes('ibb.co')) || isLegacyId) {
+                if (isProtected || (exercise.source === 'exercisedb' && !targetUrl.includes('imgbb') && !targetUrl.includes('ibb.co')) || isLegacyId) {
                     try {
-                        const blob = await ExerciseAPI.fetchImageBlob(exercise.mediaUrl || exercise.id);
+                        const blob = await ExerciseAPI.fetchImageBlob(targetUrl || exercise.id);
                         if (blob && isMounted) {
                             activeBlobUrl = URL.createObjectURL(blob);
                             initialImage = activeBlobUrl;
@@ -105,9 +107,9 @@ const ExerciseMedia = ({
 
         if (isRealMediaUrl) return;
 
-        // If in thumbnailMode, we want it static
-        if (thumbnailMode) {
-            setCurrentImage(exercise.imageStart);
+        // If in thumbnailMode or staticMode, we want it static
+        if (thumbnailMode || staticMode) {
+            setCurrentImage(exercise.imageStart || exercise.mediaUrl || exercise.gifUrl);
             return;
         }
 
@@ -198,8 +200,8 @@ const ExerciseMedia = ({
                 </div>
             )}
 
-            {/* Play overlay for videos */}
-            {!thumbnailMode && youtubeId && !isPlaying && (
+            {/* Play overlay for videos - Hide in staticMode */}
+            {!thumbnailMode && !staticMode && youtubeId && !isPlaying && (
                 <div className="absolute inset-0 bg-black/0 hover:bg-black/10 transition-colors flex items-center justify-center group cursor-pointer">
                     <div className="w-14 h-14 rounded-full bg-red-600/90 text-white flex items-center justify-center shadow-xl transform transition-transform group-hover:scale-110">
                         <Play size={24} fill="currentColor" className="ml-1" />

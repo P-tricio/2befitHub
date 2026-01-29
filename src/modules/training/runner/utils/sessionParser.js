@@ -27,6 +27,12 @@ export const getGlobalProtocol = (sessionType) => {
  * @returns {Object} { modules, timeline }
  */
 export const parseNewStructure = async (sessionData, globalProtocol) => {
+    // Safety check for malformed session data
+    if (!sessionData || !Array.isArray(sessionData.blocks)) {
+        console.warn('parseNewStructure: Invalid session data - missing blocks array', sessionData);
+        return { modules: [], timeline: [] };
+    }
+
     // Fetch latest exercise library to enrich session data (ensure Spanish names/gifs)
     const libraryExercises = await TrainingDB.exercises.getAll();
     const libraryMap = new Map(libraryExercises.map(e => [e.id, e]));
@@ -79,6 +85,7 @@ export const parseNewStructure = async (sessionData, globalProtocol) => {
 
                     // Keep session-specific config
                     config: ex.config,
+                    notes: ex.notes || ex.config?.notes || libEx.notes || libEx.notes_es || libEx.notesEs,
                     targetReps: ex.targetReps,
                     manifestation: ex.manifestation
                 };
@@ -218,6 +225,12 @@ export const parseLegacyStructure = async (sessionData) => {
  * @returns {Promise<Object>} { modules, timeline, protocol }
  */
 export const parseSession = async (sessionData) => {
+    // Safety check for undefined session data
+    if (!sessionData) {
+        console.warn('parseSession: Received undefined sessionData');
+        return { modules: [], timeline: [{ type: 'SUMMARY', data: {} }], protocol: 'mix' };
+    }
+
     const globalProtocol = getGlobalProtocol(sessionData.type || 'MIX');
 
     let result;
