@@ -542,7 +542,11 @@ const SessionRunner = () => {
                     ) : (
                         <div className="flex flex-col items-center">
                             <span className="text-[10px] font-black tracking-[0.2em] text-emerald-500 uppercase">
-                                {currentStep.blockType}
+                                {(() => {
+                                    const p = currentStep.module?.protocol;
+                                    const pLabel = p ? (p.includes('PDP-') ? p : (p === 'LIBRE' ? 'LIBRE' : `PDP-${p}`)) : '';
+                                    return pLabel ? `${pLabel}: ${currentStep.blockType}` : currentStep.blockType;
+                                })()}
                             </span>
                             {currentStep.module?.partLabel && (
                                 <span className="text-[8px] bg-slate-800 px-2 py-0.5 rounded text-xs font-bold text-slate-300 mt-0.5">
@@ -1305,7 +1309,10 @@ const WarmupBlock = ({ step, plan, onComplete, isProcessing }) => {
 
 const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShort, playCountdownFinal, playHalfway, playMinuteWarning, playSuccess, initAudio }) => {
     const { module, blockType } = step;
-    const protocol = module.protocol; // T, R, E
+
+    // Normalize protocol: Handle 'PDP-T' etc and ensure consistent short names for UI logic
+    const rawProtocol = module.protocol || 'LIBRE';
+    const protocol = rawProtocol.replace('PDP-', '').toUpperCase() === 'MIX' ? 'LIBRE' : rawProtocol.replace('PDP-', '').toUpperCase();
     const exercises = module.exercises || []; // full objects
     const { currentUser } = useAuth();
 

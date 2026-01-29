@@ -113,20 +113,23 @@ export const parseNewStructure = async (sessionData, globalProtocol) => {
             }
         }
 
+        // Assign protocol based on global type or block override
+        const protocol = globalProtocol === 'mix'
+            ? (block.protocol || 'LIBRE')
+            : globalProtocol;
+
         const builtModule = {
             id: block.id,
             name: blockName,
-            protocol: globalProtocol === 'mix' ? (block.protocol || 'mix') : globalProtocol,
+            protocol: protocol,
+            targeting: [{
+                timeCap: block.params?.timeCap || 0,
+                volume: block.params?.rounds || 0,
+                instruction: block.description || ''
+            }],
             exercises: normalizedExercises,
             exerciseNames: getExerciseNames(normalizedExercises),
             blockType: blockName,
-            targeting: block.targeting || [
-                {
-                    volume: 0,
-                    timeCap: block.params?.timeCap || 240,
-                    instruction: block.description || 'Completar Tarea'
-                }
-            ],
             emomParams: finalEmomParams
         };
 
