@@ -10,7 +10,12 @@
     text-size-adjust: 100%;
   }
 
+  html, body {
+    @apply h-full m-0 p-0 overflow-x-hidden;
+    background-color: #020617; /* bg-slate-950 */
+  }
+
   body {
-    @apply bg-white text-brand-dark antialiased font-sans;
+    @apply text-brand-dark antialiased font-sans;
   }
 }

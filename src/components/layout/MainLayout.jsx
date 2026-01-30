@@ -13,7 +13,7 @@ const MainLayout = () => {
     const isHome = location.pathname === '/hub' || location.pathname === '/';
 
     return (
-        <div className="flex flex-col h-screen max-w-md mx-auto bg-slate-50 relative overflow-hidden shadow-2xl pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
+        <div className="flex flex-col h-screen max-w-md mx-auto bg-slate-50 relative overflow-hidden shadow-2xl pt-[env(safe-area-inset-top)]">
             {/* Floating Header - Only on Home */}
             {isHome && (
                 <div className="fixed top-[env(safe-area-inset-top)] left-0 right-0 p-4 z-50 flex justify-between items-center pointer-events-none max-w-md mx-auto">

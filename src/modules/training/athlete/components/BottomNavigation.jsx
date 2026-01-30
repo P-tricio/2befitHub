@@ -11,7 +11,7 @@ const BottomNavigation = () => {
     ];
 
     return (
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 px-4 py-2 pb-[calc(8px+env(safe-area-inset-bottom))] z-40 shadow-[0_-5px_20px_-10px_rgba(0,0,0,0.1)]">
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 px-4 py-2 z-40 shadow-[0_-5px_20px_-10px_rgba(0,0,0,0.1)]">
             <div className="flex justify-between items-center max-w-md mx-auto">
                 {navItems.map((item) => (
                     <NavLink
