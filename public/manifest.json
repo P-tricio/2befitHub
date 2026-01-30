@@ -3,25 +3,15 @@
     "short_name": "2BEFITHUB",
     "start_url": "/",
     "display": "standalone",
+    "background_color": "#ffffff",
     "theme_color": "#57B590",
+    "orientation": "portrait-primary",
     "icons": [
         {
-            "src": "/icon-192.png",
+            "src": "/Logocompact.png",
             "type": "image/png",
-            "sizes": "192x192",
+            "sizes": "122x142",
             "purpose": "any"
-        },
-        {
-            "src": "/icon-512.png",
-            "type": "image/png",
-            "sizes": "512x512",
-            "purpose": "any"
-        },
-        {
-            "src": "/icon-512.png",
-            "type": "image/png",
-            "sizes": "512x512",
-            "purpose": "maskable"
         }
     ]
 }

@@ -393,11 +393,11 @@ const SessionRunner = () => {
         );
     }
 
-    // Render
+    // Render Steps
     if (currentStep?.type === 'PLANNING') {
         const uniqueModulesInPlan = currentStep.modules || [];
         return (
-            <div className="fixed inset-0 z-[5000] bg-slate-900 text-white flex flex-col overflow-hidden pt-[env(safe-area-inset-top)]">
+            <div className="fixed inset-0 z-[5000] bg-slate-900 text-white flex flex-col overflow-hidden">
                 {/* Immersive Header */}
                 <div className="px-4 py-3 bg-slate-900/90 backdrop-blur-md flex items-center justify-between border-b border-slate-800 shrink-0 z-20">
                     <button onClick={handlePrev} className="w-10 h-10 flex items-center justify-center rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition-all">
@@ -532,7 +532,7 @@ const SessionRunner = () => {
 
     // Active Session View (WORK + SUMMARY)
     return (
-        <div className="fixed inset-0 z-[5000] bg-slate-900 text-white flex flex-col overflow-hidden pt-[env(safe-area-inset-top)]">
+        <div className="fixed inset-0 z-[5000] bg-slate-900 text-white flex flex-col overflow-hidden">
             {/* Header (Safe Guarded for Summary) */}
             <div className="px-3 py-3 flex justify-between items-center z-10 sticky top-0 bg-slate-900/90 backdrop-blur-md border-b border-slate-800">
                 <button onClick={handlePrev} className="w-10 h-10 flex items-center justify-center rounded-full bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition-all">

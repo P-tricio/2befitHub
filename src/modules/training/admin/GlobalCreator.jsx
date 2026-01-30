@@ -2631,14 +2631,6 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                                                 value={pickerSearch}
                                                 onChange={e => setPickerSearch(e.target.value)}
                                             />
-                                            {/* NEW: Quick Create in Picker */}
-                                            <button
-                                                onClick={() => handleStartCreation()}
-                                                className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                                                title="Nuevo Ejercicio"
-                                            >
-                                                <Plus size={18} />
-                                            </button>
                                             <button onClick={() => setExercisePickerOpen(false)} className="p-2 bg-white rounded-full shadow-sm"><X size={16} /></button>
                                         </div>
 
@@ -2976,6 +2968,198 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                             )}
                         </AnimatePresence>
 
+                        {/* Quick Exercise Creator Modal */}
+                        <AnimatePresence>
+                            {quickCreatorOpen && (
+                                <motion.div
+                                    initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+                                    className="absolute inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+                                >
+                                    <div className="bg-white w-full max-w-sm max-h-[85vh] rounded-3xl shadow-2xl flex flex-col">
+                                        {/* Fixed Header */}
+                                        <div className="p-4 pb-3 border-b border-slate-100 shrink-0">
+                                            <h3 className="text-lg font-black text-slate-800">Nuevo Ejercicio</h3>
+                                        </div>
+
+                                        {/* Scrollable Content */}
+                                        <div className="flex-1 overflow-y-auto px-4 py-3">
+                                            <div className="space-y-4">
+                                                <div>
+                                                    <label className="text-xs font-bold text-slate-500 mb-1 block">Nombre</label>
+                                                    <input
+                                                        value={creationData.name}
+                                                        onChange={e => setCreationData({ ...creationData, name: e.target.value })}
+                                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-blue-500"
+                                                        placeholder="Nombre del ejercicio"
+                                                    />
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div>
+                                                        <label className="text-xs font-bold text-slate-500 mb-1 block">Patrón</label>
+                                                        <select
+                                                            value={creationData.pattern}
+                                                            onChange={e => setCreationData({ ...creationData, pattern: e.target.value })}
+                                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-bold outline-none focus:border-blue-500"
+                                                        >
+                                                            {PATTERNS.map(p => <option key={p} value={p}>{p}</option>)}
+                                                        </select>
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-xs font-bold text-slate-500 mb-1 block">Equipamiento</label>
+                                                        <select
+                                                            value={creationData.equipment}
+                                                            onChange={e => setCreationData({ ...creationData, equipment: e.target.value })}
+                                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-bold outline-none focus:border-blue-500"
+                                                        >
+                                                            {EQUIPMENT.map(e => <option key={e} value={e}>{e}</option>)}
+                                                        </select>
+                                                    </div>
+                                                </div>
+
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div>
+                                                        <label className="text-xs font-bold text-slate-500 mb-1 block">Nivel</label>
+                                                        <select
+                                                            value={creationData.level}
+                                                            onChange={e => setCreationData({ ...creationData, level: e.target.value })}
+                                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-bold outline-none focus:border-blue-500"
+                                                        >
+                                                            {LEVELS.map(l => <option key={l} value={l}>{l}</option>)}
+                                                        </select>
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-xs font-bold text-slate-500 mb-1 block">Grupo</label>
+                                                        <select
+                                                            value={creationData.group}
+                                                            onChange={e => setCreationData({ ...creationData, group: e.target.value })}
+                                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-bold outline-none focus:border-blue-500"
+                                                        >
+                                                            <option value="">Sin agrupar</option>
+                                                            {exerciseGroups.map(g => (
+                                                                <option key={g.id || g.name} value={g.name}>{g.name}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                </div>
+
+                                                <div>
+                                                    <label className="text-xs font-bold text-slate-500 mb-1 block">Cualidad Principal</label>
+                                                    <select
+                                                        value={creationData.quality}
+                                                        onChange={e => setCreationData({ ...creationData, quality: e.target.value })}
+                                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-bold outline-none focus:border-blue-500"
+                                                    >
+                                                        {QUALITIES.map(q => <option key={q.id} value={q.id}>{q.label}</option>)}
+                                                    </select>
+                                                </div>
+
+                                                {/* Loadable Checkbox - Peso Externo */}
+                                                <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                                                    <input
+                                                        type="checkbox"
+                                                        id="loadable-checkbox"
+                                                        checked={creationData.loadable || false}
+                                                        onChange={e => setCreationData({ ...creationData, loadable: e.target.checked })}
+                                                        className="w-4 h-4 text-blue-600 bg-white border-slate-300 rounded focus:ring-blue-500 focus:ring-2"
+                                                    />
+                                                    <label htmlFor="loadable-checkbox" className="text-xs font-bold text-slate-700 flex-1 cursor-pointer">
+                                                        ⚖️ Ejercicio con Peso Externo
+                                                        <span className="block text-[10px] text-slate-400 font-medium mt-0.5">
+                                                            Marca si el ejercicio usa barras, mancuernas, etc.
+                                                        </span>
+                                                    </label>
+                                                </div>
+
+                                                <div>
+                                                    <ImageUploadInput
+                                                        label="GIF / Imagen URL"
+                                                        value={creationData.mediaUrl}
+                                                        onChange={(val) => setCreationData(prev => ({ ...prev, mediaUrl: val }))}
+                                                        placeholder="https://... (o subir foto)"
+                                                    />
+                                                </div>
+
+                                                {/* Auto-GIF Options */}
+                                                <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                                                    <div className="col-span-2">
+                                                        <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">Auto-GIF (Inicio / Fin)</p>
+                                                    </div>
+                                                    <div>
+                                                        <ImageUploadInput
+                                                            label=""
+                                                            placeholder="Foto Inicio"
+                                                            value={creationData.imageStart}
+                                                            onChange={(val) => setCreationData(prev => ({ ...prev, imageStart: val }))}
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <ImageUploadInput
+                                                            label=""
+                                                            placeholder="Foto Fin"
+                                                            value={creationData.imageEnd}
+                                                            onChange={(val) => setCreationData(prev => ({ ...prev, imageEnd: val }))}
+                                                        />
+                                                    </div>
+                                                </div>
+
+                                                <div>
+                                                    <label className="text-xs font-bold text-slate-500 mb-1 block">YouTube URL</label>
+                                                    <input
+                                                        value={creationData.youtubeUrl}
+                                                        onChange={e => setCreationData({ ...creationData, youtubeUrl: e.target.value })}
+                                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-bold outline-none focus:border-blue-500"
+                                                        placeholder="https://youtube.com/watch?v=..."
+                                                    />
+                                                </div>
+
+                                                <div>
+                                                    <label className="text-xs font-bold text-slate-500 mb-1 block">Etiquetas (Tags)</label>
+                                                    <input
+                                                        type="text"
+                                                        value={(creationData.tags || []).join(', ')}
+                                                        onChange={e => setCreationData({ ...creationData, tags: e.target.value.split(',').map(t => t.trim()).filter(Boolean) })}
+                                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-bold outline-none focus:border-blue-500"
+                                                        placeholder="Ej: bíceps, secundario"
+                                                    />
+                                                </div>
+
+                                                <div>
+                                                    <label className="text-xs font-bold text-slate-500 mb-1 block">Descripción / Notas</label>
+                                                    <textarea
+                                                        value={creationData.description}
+                                                        onChange={e => setCreationData({ ...creationData, description: e.target.value })}
+                                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-medium outline-none focus:border-blue-500 h-20 resize-none"
+                                                        placeholder="Instrucciones del ejercicio..."
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Fixed Footer with Buttons */}
+                                        <div className="p-3 border-t border-slate-100 shrink-0 bg-white rounded-b-3xl">
+                                            <button
+                                                onClick={handleCreateAndSelect}
+                                                className="w-full bg-slate-900 text-white py-4 rounded-xl font-black text-sm uppercase tracking-widest shadow-lg active:scale-95 transition-all"
+                                            >
+                                                Guardar y Añadir
+                                            </button>
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+
+                        {/* Exercise Config Drawer */}
+                        <ExerciseConfigDrawer
+                            isOpen={configDrawerOpen}
+                            onClose={() => setConfigDrawerOpen(false)}
+                            exercise={activeExerciseObj}
+                            isGrouped={activeBlockIdx !== null && activeExIdx !== null && blocks[activeBlockIdx] && (
+                                blocks[activeBlockIdx].exercises[activeExIdx]?.isGrouped ||
+                                blocks[activeBlockIdx].exercises[activeExIdx + 1]?.isGrouped
+                            )}
+                            onSave={handleSaveConfig}
+                        />
                     </>
                 )
             }
@@ -3031,17 +3215,6 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                                 </p>
                                 {pickerTab === 'library' && (
                                     <div className="flex items-center gap-2 order-1 md:order-2 ml-auto md:ml-0 w-full md:w-auto justify-end">
-                                        {/* NEW: Global Create Exercise Button */}
-                                        <button
-                                            onClick={() => handleStartCreation()}
-                                            className="flex items-center gap-2 px-3 py-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all font-bold text-[10px] uppercase tracking-wider shadow-sm"
-                                        >
-                                            <Plus size={14} />
-                                            <span>Nuevo Ejercicio</span>
-                                        </button>
-
-                                        <div className="w-px h-6 bg-slate-200 mx-1"></div>
-
                                         <div className="flex items-center gap-1">
                                             <input
                                                 type="text"
@@ -3571,205 +3744,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                     </div>
                 )}
             </AnimatePresence>
-
-            {/* Quick Exercise Creator Modal */}
-            <AnimatePresence>
-                {quickCreatorOpen && (
-                    <motion.div
-                        initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-                        className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
-                    >
-                        <div className="bg-white w-full max-w-sm max-h-[85vh] rounded-3xl shadow-2xl flex flex-col">
-                            {/* Fixed Header */}
-                            <div className="p-4 pb-3 border-b border-slate-100 shrink-0">
-                                <div className="flex justify-between items-center">
-                                    <h3 className="text-lg font-black text-slate-800">Nuevo Ejercicio</h3>
-                                    <button onClick={() => setQuickCreatorOpen(false)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors">
-                                        <X size={18} className="text-slate-600" />
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Scrollable Content */}
-                            <div className="flex-1 overflow-y-auto px-4 py-3">
-                                <div className="space-y-4">
-                                    <div>
-                                        <label className="text-xs font-bold text-slate-500 mb-1 block">Nombre</label>
-                                        <input
-                                            value={creationData.name}
-                                            onChange={e => setCreationData({ ...creationData, name: e.target.value })}
-                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-blue-500"
-                                            placeholder="Nombre del ejercicio"
-                                        />
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div>
-                                            <label className="text-xs font-bold text-slate-500 mb-1 block">Patrón</label>
-                                            <select
-                                                value={creationData.pattern}
-                                                onChange={e => setCreationData({ ...creationData, pattern: e.target.value })}
-                                                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-bold outline-none focus:border-blue-500"
-                                            >
-                                                {PATTERNS.map(p => <option key={p} value={p}>{p}</option>)}
-                                            </select>
-                                        </div>
-                                        <div>
-                                            <label className="text-xs font-bold text-slate-500 mb-1 block">Equipamiento</label>
-                                            <select
-                                                value={creationData.equipment}
-                                                onChange={e => setCreationData({ ...creationData, equipment: e.target.value })}
-                                                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-bold outline-none focus:border-blue-500"
-                                            >
-                                                {EQUIPMENT.map(e => <option key={e} value={e}>{e}</option>)}
-                                            </select>
-                                        </div>
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div>
-                                            <label className="text-xs font-bold text-slate-500 mb-1 block">Nivel</label>
-                                            <select
-                                                value={creationData.level}
-                                                onChange={e => setCreationData({ ...creationData, level: e.target.value })}
-                                                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-bold outline-none focus:border-blue-500"
-                                            >
-                                                {LEVELS.map(l => <option key={l} value={l}>{l}</option>)}
-                                            </select>
-                                        </div>
-                                        <div>
-                                            <label className="text-xs font-bold text-slate-500 mb-1 block">Grupo</label>
-                                            <select
-                                                value={creationData.group}
-                                                onChange={e => setCreationData({ ...creationData, group: e.target.value })}
-                                                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-bold outline-none focus:border-blue-500"
-                                            >
-                                                <option value="">Sin agrupar</option>
-                                                {exerciseGroups.map(g => (
-                                                    <option key={g.id || g.name} value={g.name}>{g.name}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <label className="text-xs font-bold text-slate-500 mb-1 block">Cualidad Principal</label>
-                                        <select
-                                            value={creationData.quality}
-                                            onChange={e => setCreationData({ ...creationData, quality: e.target.value })}
-                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-bold outline-none focus:border-blue-500"
-                                        >
-                                            {QUALITIES.map(q => <option key={q.id} value={q.id}>{q.label}</option>)}
-                                        </select>
-                                    </div>
-
-                                    {/* Loadable Checkbox - Peso Externo */}
-                                    <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
-                                        <input
-                                            type="checkbox"
-                                            id="loadable-checkbox-global"
-                                            checked={creationData.loadable || false}
-                                            onChange={e => setCreationData({ ...creationData, loadable: e.target.checked })}
-                                            className="w-4 h-4 text-blue-600 bg-white border-slate-300 rounded focus:ring-blue-500 focus:ring-2"
-                                        />
-                                        <label htmlFor="loadable-checkbox-global" className="text-xs font-bold text-slate-700 flex-1 cursor-pointer">
-                                            ⚖️ Ejercicio con Peso Externo
-                                            <span className="block text-[10px] text-slate-400 font-medium mt-0.5">
-                                                Marca si el ejercicio usa barras, mancuernas, etc.
-                                            </span>
-                                        </label>
-                                    </div>
-
-                                    <div>
-                                        <ImageUploadInput
-                                            label="GIF / Imagen URL"
-                                            value={creationData.mediaUrl}
-                                            onChange={(val) => setCreationData(prev => ({ ...prev, mediaUrl: val }))}
-                                            placeholder="https://... (o subir foto)"
-                                        />
-                                    </div>
-
-                                    {/* Auto-GIF Options */}
-                                    <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
-                                        <div className="col-span-2">
-                                            <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">Auto-GIF (Inicio / Fin)</p>
-                                        </div>
-                                        <div>
-                                            <ImageUploadInput
-                                                label=""
-                                                placeholder="Foto Inicio"
-                                                value={creationData.imageStart}
-                                                onChange={(val) => setCreationData(prev => ({ ...prev, imageStart: val }))}
-                                            />
-                                        </div>
-                                        <div>
-                                            <ImageUploadInput
-                                                label=""
-                                                placeholder="Foto Fin"
-                                                value={creationData.imageEnd}
-                                                onChange={(val) => setCreationData(prev => ({ ...prev, imageEnd: val }))}
-                                            />
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <label className="text-xs font-bold text-slate-500 mb-1 block">YouTube URL</label>
-                                        <input
-                                            value={creationData.youtubeUrl}
-                                            onChange={e => setCreationData({ ...creationData, youtubeUrl: e.target.value })}
-                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-bold outline-none focus:border-blue-500"
-                                            placeholder="https://youtube.com/watch?v=..."
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="text-xs font-bold text-slate-500 mb-1 block">Etiquetas (Tags)</label>
-                                        <input
-                                            type="text"
-                                            value={(creationData.tags || []).join(', ')}
-                                            onChange={e => setCreationData({ ...creationData, tags: e.target.value.split(',').map(t => t.trim()).filter(Boolean) })}
-                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-bold outline-none focus:border-blue-500"
-                                            placeholder="Ej: bíceps, secundario"
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="text-xs font-bold text-slate-500 mb-1 block">Descripción / Notas</label>
-                                        <textarea
-                                            value={creationData.description}
-                                            onChange={e => setCreationData({ ...creationData, description: e.target.value })}
-                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-medium outline-none focus:border-blue-500 h-20 resize-none"
-                                            placeholder="Instrucciones del ejercicio..."
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Fixed Footer with Buttons */}
-                            <div className="p-3 border-t border-slate-100 shrink-0 bg-white rounded-b-3xl">
-                                <button
-                                    onClick={handleCreateAndSelect}
-                                    className="w-full bg-slate-900 text-white py-4 rounded-xl font-black text-sm uppercase tracking-widest shadow-lg active:scale-95 transition-all"
-                                >
-                                    Guardar y Añadir
-                                </button>
-                            </div>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
-            {/* Exercise Config Drawer */}
-            <ExerciseConfigDrawer
-                isOpen={configDrawerOpen}
-                onClose={() => setConfigDrawerOpen(false)}
-                exercise={activeExerciseObj}
-                isGrouped={activeBlockIdx !== null && activeExIdx !== null && blocks[activeBlockIdx] && (
-                    blocks[activeBlockIdx].exercises[activeExIdx]?.isGrouped ||
-                    blocks[activeBlockIdx].exercises[activeExIdx + 1]?.isGrouped
-                )}
-                onSave={handleSaveConfig}
-            />
-        </div>
+        </div >
     );
 };
 
