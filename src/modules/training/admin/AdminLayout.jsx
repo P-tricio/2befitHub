@@ -47,7 +47,7 @@ const AdminLayout = () => {
     }, []);
 
     return (
-        <div className="flex flex-col lg:flex-row h-screen bg-slate-50 pt-[env(safe-area-inset-top)] lg:pt-0">
+        <div className="flex flex-col lg:flex-row h-screen bg-slate-50 lg:pt-0">
             {/* Desktop Sidebar (Hidden on Mobile) */}
             <aside className="hidden lg:flex w-64 bg-slate-900 text-white flex-col shrink-0 transition-all">
                 <div className="p-6 border-b border-slate-800">

@@ -10,9 +10,11 @@
     text-size-adjust: 100%;
   }
 
-  html, body {
+  html,
+  body {
     @apply h-full m-0 p-0 overflow-x-hidden;
-    background-color: #020617; /* bg-slate-950 */
+    background-color: #020617;
+    /* bg-slate-950 */
   }
 
   body {
