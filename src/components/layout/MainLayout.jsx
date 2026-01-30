@@ -13,10 +13,10 @@ const MainLayout = () => {
     const isHome = location.pathname === '/hub' || location.pathname === '/';
 
     return (
-        <div className="flex flex-col h-screen max-w-md mx-auto bg-slate-50 relative overflow-hidden shadow-2xl">
+        <div className="flex flex-col h-screen max-w-md mx-auto bg-slate-50 relative overflow-hidden shadow-2xl pt-[env(safe-area-inset-top)]">
             {/* Floating Header - Only on Home */}
             {isHome && (
-                <div className="fixed top-0 left-0 right-0 p-4 z-50 flex justify-between items-center pointer-events-none max-w-md mx-auto">
+                <div className="fixed top-[env(safe-area-inset-top)] left-0 right-0 p-4 z-50 flex justify-between items-center pointer-events-none max-w-md mx-auto">
                     <NavLink to="/" className="pointer-events-auto active:scale-95 transition-all w-12 h-12 flex items-center justify-center">
                         <img src="/brand-compact.png" alt="2BeFit" className="w-8 h-8 object-contain" />
                     </NavLink>
