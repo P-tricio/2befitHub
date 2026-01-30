@@ -415,11 +415,14 @@ const SessionRunner = () => {
                     <div className="space-y-4 mb-4">
                         {/* Protocol Header (FIRST) */}
                         {(() => {
-                            const protocols = uniqueModulesInPlan.map(m => m.protocol).filter(Boolean);
-                            const isT = protocols.every(p => p === 'T');
-                            const isR = protocols.every(p => p === 'R');
-                            const isE = protocols.every(p => p === 'E');
-                            const isLIBRE = protocols.every(p => p === 'LIBRE');
+                            const protocols = uniqueModulesInPlan.map(m => {
+                                const p = m.protocol || 'LIBRE';
+                                return p.replace('PDP-', '').toUpperCase() === 'MIX' ? 'LIBRE' : p.replace('PDP-', '').toUpperCase();
+                            });
+                            const isT = protocols.length > 0 && protocols.every(p => p === 'T');
+                            const isR = protocols.length > 0 && protocols.every(p => p === 'R');
+                            const isE = protocols.length > 0 && protocols.every(p => p === 'E');
+                            const isLIBRE = protocols.length > 0 && protocols.every(p => p === 'LIBRE');
 
                             let title = "Sesión Híbrida";
                             let desc = "Objetivo: Sesión mixta, atiende a las instrucciones de cada bloque.";
@@ -762,6 +765,8 @@ const ExerciseDetailModal = ({ selectedExercise, onClose, protocol }) => (
 
 const CollapsiblePlanningBlock = ({ module, onSelectExercise }) => {
     const [isOpen, setIsOpen] = useState(true);
+    const rawProtocol = module.protocol || 'LIBRE';
+    const protocol = rawProtocol.replace('PDP-', '').toUpperCase() === 'MIX' ? 'LIBRE' : rawProtocol.replace('PDP-', '').toUpperCase();
 
     return (
         <div className="bg-slate-800/30 rounded-3xl border border-slate-800 overflow-hidden">
@@ -806,7 +811,7 @@ const CollapsiblePlanningBlock = ({ module, onSelectExercise }) => {
                     >
                         <div className="divide-y divide-slate-800/50">
                             {(() => {
-                                const isGrouped = module.exercises?.length > 1 && (module.protocol === 'LIBRE' || !module.protocol);
+                                const isGrouped = module.exercises?.length > 1 && (protocol === 'LIBRE');
                                 const groupType = isGrouped ? (module.exercises.length === 2 ? 'SUPERSERIE' : 'CIRCUITO') : null;
 
                                 return (
@@ -844,7 +849,7 @@ const CollapsiblePlanningBlock = ({ module, onSelectExercise }) => {
                                                     {/* Targeting Configuration Badges */}
                                                     <div className="flex flex-wrap gap-1.5 mt-2">
                                                         {/* Sets x Reps - for LIBRE protocol */}
-                                                        {(module.protocol === 'LIBRE' || !module.protocol) && (() => {
+                                                        {(protocol === 'LIBRE') && (() => {
                                                             const sets = ex.config?.sets || [];
                                                             const numSets = sets.length || ex.sets || ex.targetSets || 3;
                                                             const repsPerSet = sets.length > 0
@@ -863,7 +868,7 @@ const CollapsiblePlanningBlock = ({ module, onSelectExercise }) => {
                                                         })()}
 
                                                         {/* Reps for other protocols */}
-                                                        {((ex.targetReps > 0 || ex.manifestation) && module.protocol !== 'T' && module.protocol !== 'LIBRE') && (
+                                                        {((ex.targetReps > 0 || ex.manifestation) && protocol !== 'T' && protocol !== 'LIBRE') && (
                                                             <span className="inline-flex items-center px-2 py-1 bg-slate-700/50 text-slate-200 rounded text-[10px] font-black uppercase tracking-wider border border-slate-600/50">
                                                                 {ex.targetReps ? `${ex.targetReps} reps` : ex.manifestation}
                                                             </span>
@@ -888,7 +893,7 @@ const CollapsiblePlanningBlock = ({ module, onSelectExercise }) => {
                                                         )}
 
                                                         {/* Protocol Specific Timer/Cap */}
-                                                        {module.protocol === 'T' && (
+                                                        {protocol === 'T' && (
                                                             <span className="inline-flex items-center px-2 py-1 bg-emerald-500/10 text-emerald-500 rounded text-[10px] font-black uppercase tracking-wider border border-emerald-500/20">
                                                                 <Clock size={12} className="mr-1" />
                                                                 {(() => {
@@ -899,7 +904,7 @@ const CollapsiblePlanningBlock = ({ module, onSelectExercise }) => {
                                                                 })()}
                                                             </span>
                                                         )}
-                                                        {(module.protocol === 'E' || ex.config?.isEMOM) && (
+                                                        {(protocol === 'E' || ex.config?.isEMOM) && (
                                                             <span className="inline-flex items-center px-2 py-1 bg-orange-500/10 text-orange-500 rounded text-[10px] font-black uppercase tracking-wider border border-orange-500/20">
                                                                 EMOM {ex.config?.emomTime || ex.config?.sets?.length || module.emomParams?.durationMinutes || 4}'
                                                             </span>
@@ -1052,7 +1057,8 @@ const SummaryBlock = ({ sessionState, timeline, history, setSessionState, onFini
                                         const result = sessionState.results[idx];
                                         if (!result) return null;
 
-                                        const protocol = step.module.protocol;
+                                        const rawProtocol = step.module.protocol || 'LIBRE';
+                                        const protocol = rawProtocol.replace('PDP-', '').toUpperCase() === 'MIX' ? 'LIBRE' : rawProtocol.replace('PDP-', '').toUpperCase();
                                         const isBlockExpanded = expandedBlockIndex[idx] !== false; // Default expanded
 
                                         return (
@@ -1079,7 +1085,9 @@ const SummaryBlock = ({ sessionState, timeline, history, setSessionState, onFini
                                                                             : ((result.reps && Object.values(result.reps).some(r => r > 0)) ? 'Completado' : '--'))
                                                                         : protocol === 'T'
                                                                             ? `${Math.floor((step.module.targeting?.[0]?.timeCap || 0) / 60)} min`
-                                                                            : `${step.module.emomParams?.durationMinutes || '--'} min`}
+                                                                            : protocol === 'E'
+                                                                                ? `${step.module.emomParams?.durationMinutes || '--'} min`
+                                                                                : 'Tradicional'}
                                                             </span>
                                                         </div>
                                                     </div>
@@ -1116,6 +1124,34 @@ const SummaryBlock = ({ sessionState, timeline, history, setSessionState, onFini
                                                                                 </div>
                                                                             ))}
                                                                         </div>
+                                                                    </div>
+                                                                ) : protocol === 'LIBRE' ? (
+                                                                    <div className="grid gap-2">
+                                                                        {step.module.exercises?.map((ex, exIdx) => (
+                                                                            <div key={exIdx} className="bg-white p-3 rounded-2xl border border-slate-100 shadow-sm flex flex-col gap-2">
+                                                                                <div className="flex justify-between items-start">
+                                                                                    <span className="text-xs font-black text-slate-900 leading-tight flex-1 mr-2">{ex.nameEs || ex.name}</span>
+                                                                                    <span className="text-[10px] font-black bg-blue-500 text-white px-2 py-0.5 rounded-lg">
+                                                                                        {result.libreSetsDone?.[exIdx] || 0} Sets
+                                                                                    </span>
+                                                                                </div>
+
+                                                                                {/* Per-Set Details */}
+                                                                                <div className="flex flex-wrap gap-1.5">
+                                                                                    {Array.from({ length: result.libreSetsDone?.[exIdx] || 0 }).map((_, sIdx) => {
+                                                                                        const reps = result.libreSetReps?.[exIdx]?.[sIdx] || 0;
+                                                                                        const weight = result.libreSeriesWeights?.[exIdx]?.[sIdx] || 0;
+                                                                                        return (
+                                                                                            <div key={sIdx} className="bg-slate-50 border border-slate-100 px-2 py-1 rounded-lg flex items-center gap-1">
+                                                                                                <span className="text-[10px] font-black text-slate-900">{reps}</span>
+                                                                                                <span className="text-[8px] text-slate-400 font-bold">@</span>
+                                                                                                <span className="text-[10px] font-black text-slate-600 font-mono">{weight}kg</span>
+                                                                                            </div>
+                                                                                        );
+                                                                                    })}
+                                                                                </div>
+                                                                            </div>
+                                                                        ))}
                                                                     </div>
                                                                 ) : (
                                                                     <div className="grid gap-1.5">
@@ -1778,6 +1814,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
             exerciseNotes, // Pass the per-exercise notes
             emomResults,
             libreSetsDone, // Track completed sets for LIBRE protocol
+            libreSetReps, // Track repetitions per set for LIBRE protocol
             libreSeriesWeights, // Track weight per set for LIBRE protocol
             elapsed: (protocol === 'R' || protocol === 'T') ? elapsed : 0
         });

@@ -10,6 +10,7 @@ import { PATTERNS, LEVELS, EQUIPMENT, QUALITIES } from '../constants';
 
 const DEFAULT_FORM_DATA = {
     name: '',
+    group: '',
     pattern: 'Squat',
     level: 'Intermedio',
     quality: 'F',
@@ -35,6 +36,7 @@ const DEFAULT_FORM_DATA = {
 const ExerciseFormDrawer = ({
     isOpen,
     exercise = null,
+    groups = [], // NEW PROP: List of available groups
     onSave,
     onClose,
     onDirtyChange, // NEW PROP: Notify parent about dirty state
@@ -53,6 +55,7 @@ const ExerciseFormDrawer = ({
         if (isOpen) {
             const startData = exercise ? {
                 name: exercise.name || '',
+                group: exercise.group || '',
                 pattern: exercise.pattern || 'Squat',
                 level: exercise.level || 'Intermedio',
                 quality: exercise.quality || 'F',
@@ -164,6 +167,21 @@ const ExerciseFormDrawer = ({
                                         className="w-full p-4 bg-slate-50 rounded-xl font-bold text-slate-900 border-2 border-transparent focus:border-emerald-500 outline-none transition-all"
                                         placeholder="Ej: Sentadilla Trasera"
                                     />
+                                </div>
+
+                                {/* Group Selector */}
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Grupo (Opcional)</label>
+                                    <select
+                                        value={formData.group}
+                                        onChange={e => setFormData({ ...formData, group: e.target.value })}
+                                        className="w-full p-4 bg-slate-50 rounded-xl font-bold text-slate-900 border-2 border-transparent focus:border-emerald-500 outline-none transition-all"
+                                    >
+                                        <option value="">Sin agrupar</option>
+                                        {groups.map(g => (
+                                            <option key={g.id || g.name} value={g.name}>{g.name}</option>
+                                        ))}
+                                    </select>
                                 </div>
 
                                 {/* Pattern */}

@@ -754,8 +754,12 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
     // Quick Creator State
     const [quickCreatorOpen, setQuickCreatorOpen] = useState(false);
     const [creationData, setCreationData] = useState({
-        name: '', pattern: 'Squat', equipment: 'Ninguno (Peso Corporal)',
-        level: 'Intermedio', quality: 'Fuerza',
+        name: '',
+        group: '',
+        pattern: 'Squat',
+        equipment: 'Ninguno (Peso Corporal)',
+        level: 'Intermedio',
+        quality: 'Fuerza',
         mediaUrl: '', imageStart: '', imageEnd: '', youtubeUrl: '', description: '',
         tags: []
     });
@@ -1760,10 +1764,14 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
         setPickerSearch('');
     };
 
-    const handleStartCreation = () => {
+    const handleStartCreation = (initialGroup = '') => {
         setCreationData({
-            name: pickerSearch || '', pattern: 'Squat', equipment: 'Ninguno (Peso Corporal)',
-            level: 'Intermedio', quality: 'Fuerza',
+            name: pickerSearch || '',
+            group: initialGroup || '',
+            pattern: 'Squat',
+            equipment: 'Ninguno (Peso Corporal)',
+            level: 'Intermedio',
+            quality: 'Fuerza',
             loadable: false, // Default: not loadable
             mediaUrl: '', imageStart: '', imageEnd: '', // New Fields
             youtubeUrl: '', description: '',
@@ -1778,6 +1786,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
         // Final sanitization to prevent Firestore "undefined" errors
         const sanitizedData = JSON.parse(JSON.stringify({
             name: (creationData.name || '').trim(),
+            group: creationData.group || '',
             pattern: creationData.pattern || 'Global',
             equipment: creationData.equipment || 'Ninguno',
             level: creationData.level || 'Intermedio',
@@ -2974,7 +2983,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
 
                                         {/* Scrollable Content */}
                                         <div className="flex-1 overflow-y-auto px-4 py-3">
-                                            <div className="space-y-3">
+                                            <div className="space-y-4">
                                                 <div>
                                                     <label className="text-xs font-bold text-slate-500 mb-1 block">Nombre</label>
                                                     <input
@@ -3006,6 +3015,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                                                         </select>
                                                     </div>
                                                 </div>
+
                                                 <div className="grid grid-cols-2 gap-3">
                                                     <div>
                                                         <label className="text-xs font-bold text-slate-500 mb-1 block">Nivel</label>
@@ -3018,15 +3028,29 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                                                         </select>
                                                     </div>
                                                     <div>
-                                                        <label className="text-xs font-bold text-slate-500 mb-1 block">Cualidad</label>
+                                                        <label className="text-xs font-bold text-slate-500 mb-1 block">Grupo</label>
                                                         <select
-                                                            value={creationData.quality}
-                                                            onChange={e => setCreationData({ ...creationData, quality: e.target.value })}
+                                                            value={creationData.group}
+                                                            onChange={e => setCreationData({ ...creationData, group: e.target.value })}
                                                             className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-bold outline-none focus:border-blue-500"
                                                         >
-                                                            {QUALITIES.map(q => <option key={q.id} value={q.id}>{q.label}</option>)}
+                                                            <option value="">Sin agrupar</option>
+                                                            {exerciseGroups.map(g => (
+                                                                <option key={g.id || g.name} value={g.name}>{g.name}</option>
+                                                            ))}
                                                         </select>
                                                     </div>
+                                                </div>
+
+                                                <div>
+                                                    <label className="text-xs font-bold text-slate-500 mb-1 block">Cualidad Principal</label>
+                                                    <select
+                                                        value={creationData.quality}
+                                                        onChange={e => setCreationData({ ...creationData, quality: e.target.value })}
+                                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-bold outline-none focus:border-blue-500"
+                                                    >
+                                                        {QUALITIES.map(q => <option key={q.id} value={q.id}>{q.label}</option>)}
+                                                    </select>
                                                 </div>
 
                                                 {/* Loadable Checkbox - Peso Externo */}
@@ -3041,7 +3065,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                                                     <label htmlFor="loadable-checkbox" className="text-xs font-bold text-slate-700 flex-1 cursor-pointer">
                                                         ⚖️ Ejercicio con Peso Externo
                                                         <span className="block text-[10px] text-slate-400 font-medium mt-0.5">
-                                                            Marca si el ejercicio usa barras, mancuernas, kettlebells, etc.
+                                                            Marca si el ejercicio usa barras, mancuernas, etc.
                                                         </span>
                                                     </label>
                                                 </div>
@@ -3089,7 +3113,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                                                 </div>
 
                                                 <div>
-                                                    <label className="text-xs font-bold text-slate-500 mb-1 block">Etiquetas (Tags) - Separadas por comas</label>
+                                                    <label className="text-xs font-bold text-slate-500 mb-1 block">Etiquetas (Tags)</label>
                                                     <input
                                                         type="text"
                                                         value={(creationData.tags || []).join(', ')}
@@ -3142,285 +3166,296 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
 
             {/* Library View */}
             {/* Library View */}
-            {mainView === 'library' && (
-                <div className="flex-1 flex flex-col overflow-hidden">
-                    {/* Search & Filter */}
-                    <div className="p-4 border-b border-slate-100 space-y-3 bg-slate-50">
-                        {/* Unified Tab Selector - Matching Picker Modal */}
-                        <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm relative mb-2">
-                            <button
-                                onClick={() => setPickerTab('library')}
-                                className={`flex-1 py-2 text-xs font-black uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-2 ${pickerTab === 'library' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
-                            >
-                                Biblioteca
-                                <span className={`px-1.5 py-0.5 text-[10px] font-black rounded-full ${pickerTab === 'library' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-500'}`}>
-                                    {allExercises.length}
-                                </span>
-                            </button>
-                            <button
-                                onClick={() => setPickerTab('online')}
-                                className={`flex-1 py-2 text-xs font-black uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-2 ${pickerTab === 'online' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                            >
-                                <UploadCloud size={14} /> Online
-                                {bulkExercises.length > 0 && (
-                                    <span className={`px-1.5 py-0.5 text-[10px] font-black rounded-full ${pickerTab === 'online' ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-200 text-slate-500'}`}>
-                                        {bulkExercises.length}
-                                    </span>
-                                )}
-                            </button>
-                        </div>
-
-                        <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                            <input
-                                type="text"
-                                value={pickerSearch}
-                                onChange={(e) => setPickerSearch(e.target.value)}
-                                placeholder={pickerTab === 'online' ? "Buscar en ExerciseDB (en inglés)..." : "Buscar ejercicio..."}
-                                className="w-full pl-10 pr-4 py-3 rounded-xl bg-white border border-slate-200 outline-none focus:border-emerald-500 text-sm font-medium"
-                            />
-                            {isSearchingOnline && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-500 animate-spin" size={18} />}
-                        </div>
-                        <div className="flex flex-col md:flex-row md:items-center justify-between mt-2 gap-2">
-                            <p className="text-[10px] text-slate-400 font-bold order-2 md:order-1">
-                                {pickerTab === 'library' ? `${filteredLibraryExercises.length} ejercicios` : `${onlineResults.length} resultados`}
-                                {pickerTab === 'library' && (pickerFilter.pattern.length + pickerFilter.equipment.length + pickerFilter.level.length + pickerFilter.quality.length) > 0 &&
-                                    ` • Filtros activos`
-                                }
-                            </p>
-                            {pickerTab === 'library' && (
-                                <div className="flex items-center gap-2 order-1 md:order-2 ml-auto md:ml-0 w-full md:w-auto justify-end">
-                                    <div className="flex items-center gap-1">
-                                        <input
-                                            type="text"
-                                            placeholder="Grupo..."
-                                            className="w-24 md:w-32 px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-bold outline-none focus:border-blue-400"
-                                            value={newGroupName}
-                                            onChange={e => setNewGroupName(e.target.value)}
-                                            onKeyDown={e => e.key === 'Enter' && handleCreateGroup('EXERCISE')}
-                                        />
-                                        <button
-                                            onClick={() => handleCreateGroup('EXERCISE')}
-                                            disabled={isCreatingGroup || !newGroupName.trim()}
-                                            className="p-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-                                            title="Crear Grupo de Ejercicios"
-                                        >
-                                            <Plus size={14} />
-                                        </button>
-                                    </div>
-                                    <div className="w-px h-6 bg-slate-200 mx-1"></div>
-                                    <button
-                                        onClick={() => setLibraryFilterDrawerOpen(!libraryFilterDrawerOpen)}
-                                        className={`p-1.5 md:p-2 rounded-lg flex items-center gap-2 text-xs font-bold transition-colors ${(pickerFilter.pattern.length + pickerFilter.equipment.length + pickerFilter.level.length + pickerFilter.quality.length) > 0
-                                            ? 'bg-slate-900 text-white'
-                                            : 'bg-white text-slate-500 border border-slate-200'
-                                            }`}
-                                    >
-                                        <Filter size={14} /> <span className="hidden md:inline">Filtros</span>
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Library Filter Drawer (Uses Unified Toggle) */}
-                        <AnimatePresence>
-                            {libraryFilterDrawerOpen && (
-                                <motion.div
-                                    initial={{ height: 0, opacity: 0 }}
-                                    animate={{ height: 'auto', opacity: 1 }}
-                                    exit={{ height: 0, opacity: 0 }}
-                                    className="overflow-hidden bg-white rounded-xl border border-slate-200 mt-2"
+            {
+                mainView === 'library' && (
+                    <div className="flex-1 flex flex-col overflow-hidden">
+                        {/* Search & Filter */}
+                        <div className="p-4 border-b border-slate-100 space-y-3 bg-slate-50">
+                            {/* Unified Tab Selector - Matching Picker Modal */}
+                            <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm relative mb-2">
+                                <button
+                                    onClick={() => setPickerTab('library')}
+                                    className={`flex-1 py-2 text-xs font-black uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-2 ${pickerTab === 'library' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
                                 >
-                                    <div className="p-3 space-y-4">
-                                        <div>
-                                            <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Patrón</p>
-                                            <div className="flex flex-wrap gap-2">
-                                                {PATTERNS.map(p => (
-                                                    <button key={p} onClick={() => toggleFilter('pattern', p)} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${pickerFilter.pattern.includes(p) ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>{p}</button>
-                                                ))}
-                                            </div>
+                                    Biblioteca
+                                    <span className={`px-1.5 py-0.5 text-[10px] font-black rounded-full ${pickerTab === 'library' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-500'}`}>
+                                        {allExercises.length}
+                                    </span>
+                                </button>
+                                <button
+                                    onClick={() => setPickerTab('online')}
+                                    className={`flex-1 py-2 text-xs font-black uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-2 ${pickerTab === 'online' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                >
+                                    <UploadCloud size={14} /> Online
+                                    {bulkExercises.length > 0 && (
+                                        <span className={`px-1.5 py-0.5 text-[10px] font-black rounded-full ${pickerTab === 'online' ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-200 text-slate-500'}`}>
+                                            {bulkExercises.length}
+                                        </span>
+                                    )}
+                                </button>
+                            </div>
+
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                <input
+                                    type="text"
+                                    value={pickerSearch}
+                                    onChange={(e) => setPickerSearch(e.target.value)}
+                                    placeholder={pickerTab === 'online' ? "Buscar en ExerciseDB (en inglés)..." : "Buscar ejercicio..."}
+                                    className="w-full pl-10 pr-4 py-3 rounded-xl bg-white border border-slate-200 outline-none focus:border-emerald-500 text-sm font-medium"
+                                />
+                                {isSearchingOnline && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-500 animate-spin" size={18} />}
+                            </div>
+                            <div className="flex flex-col md:flex-row md:items-center justify-between mt-2 gap-2">
+                                <p className="text-[10px] text-slate-400 font-bold order-2 md:order-1">
+                                    {pickerTab === 'library' ? `${filteredLibraryExercises.length} ejercicios` : `${onlineResults.length} resultados`}
+                                    {pickerTab === 'library' && (pickerFilter.pattern.length + pickerFilter.equipment.length + pickerFilter.level.length + pickerFilter.quality.length) > 0 &&
+                                        ` • Filtros activos`
+                                    }
+                                </p>
+                                {pickerTab === 'library' && (
+                                    <div className="flex items-center gap-2 order-1 md:order-2 ml-auto md:ml-0 w-full md:w-auto justify-end">
+                                        <div className="flex items-center gap-1">
+                                            <input
+                                                type="text"
+                                                placeholder="Grupo..."
+                                                className="w-24 md:w-32 px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-bold outline-none focus:border-blue-400"
+                                                value={newGroupName}
+                                                onChange={e => setNewGroupName(e.target.value)}
+                                                onKeyDown={e => e.key === 'Enter' && handleCreateGroup('EXERCISE')}
+                                            />
+                                            <button
+                                                onClick={() => handleCreateGroup('EXERCISE')}
+                                                disabled={isCreatingGroup || !newGroupName.trim()}
+                                                className="p-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                                                title="Crear Grupo de Ejercicios"
+                                            >
+                                                <Plus size={14} />
+                                            </button>
                                         </div>
-                                        <div>
-                                            <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Equipamiento</p>
-                                            <div className="flex flex-wrap gap-2">
-                                                {EQUIPMENT.map(e => (
-                                                    <button key={e} onClick={() => toggleFilter('equipment', e)} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${pickerFilter.equipment.includes(e) ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>{e}</button>
-                                                ))}
-                                            </div>
-                                        </div>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Nivel</p>
-                                                <div className="flex flex-col gap-2">
-                                                    {LEVELS.map(l => (
-                                                        <button key={l} onClick={() => toggleFilter('level', l)} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors text-left ${pickerFilter.level.includes(l) ? 'bg-orange-100 text-orange-700 border-orange-200' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>{l}</button>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                            <div>
-                                                <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Cualidad</p>
-                                                <div className="flex flex-col gap-2">
-                                                    {QUALITIES.map(q => (
-                                                        <button key={q.id} onClick={() => toggleFilter('quality', q.id)} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors text-left ${pickerFilter.quality.includes(q.id) ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>{q.label}</button>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        </div>
+                                        <div className="w-px h-6 bg-slate-200 mx-1"></div>
                                         <button
-                                            onClick={() => setPickerFilter({ pattern: [], equipment: [], level: [], quality: [] })}
-                                            className="w-full py-2 text-xs text-red-500 font-bold hover:bg-red-50 rounded-lg"
+                                            onClick={() => setLibraryFilterDrawerOpen(!libraryFilterDrawerOpen)}
+                                            className={`p-1.5 md:p-2 rounded-lg flex items-center gap-2 text-xs font-bold transition-colors ${(pickerFilter.pattern.length + pickerFilter.equipment.length + pickerFilter.level.length + pickerFilter.quality.length) > 0
+                                                ? 'bg-slate-900 text-white'
+                                                : 'bg-white text-slate-500 border border-slate-200'
+                                                }`}
                                         >
-                                            Limpiar Filtros
+                                            <Filter size={14} /> <span className="hidden md:inline">Filtros</span>
                                         </button>
                                     </div>
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
-                    </div>
+                                )}
+                            </div>
 
-                    {/* Exercise Grid */}
-                    <div className="flex-1 overflow-y-auto p-4">
-                        <div className="grid grid-cols-1 gap-3">
-                            {pickerTab === 'library' ? (
-                                (() => {
-                                    // Grouping Logic
-                                    const grouped = filteredLibraryExercises.reduce((acc, ex) => {
-                                        const group = ex.group || 'Sin agrupar';
-                                        if (!acc[group]) acc[group] = [];
-                                        acc[group].push(ex);
-                                        return acc;
-                                    }, {});
-
-                                    // Add explicitly created groups
-                                    exerciseGroups.forEach(g => {
-                                        if (!grouped[g.name]) grouped[g.name] = [];
-                                    });
-
-                                    const sortedGroups = Object.keys(grouped).sort((a, b) => {
-                                        if (a === 'Sin agrupar') return 1;
-                                        if (b === 'Sin agrupar') return -1;
-                                        return a.localeCompare(b);
-                                    });
-
-                                    if (sortedGroups.length === 0 || (sortedGroups.length === 1 && sortedGroups[0] === 'Sin agrupar' && grouped['Sin agrupar'].length === 0)) {
-                                        return (
-                                            <div className="text-center py-20 opacity-40">
-                                                <Search size={48} className="mx-auto mb-4" />
-                                                <p className="font-bold text-sm">No hay resultados en la biblioteca local</p>
-                                            </div>
-                                        );
-                                    }
-
-                                    return sortedGroups.map(groupName => {
-                                        const exercises = grouped[groupName];
-                                        const groupDoc = exerciseGroups.find(g => g.name === groupName);
-                                        const isExpanded = expandedGroups[`ex_${groupName}`] !== false; // Default expanded
-
-                                        // Skip empty "Sin agrupar" if we have other groups, or show it? 
-                                        // Usually we want to show it if there are exercises.
-                                        if (groupName === 'Sin agrupar' && exercises.length === 0) return null;
-
-                                        return (
-                                            <div key={groupName} className="space-y-2 mb-2">
-                                                <div className="flex items-center gap-2 group/header-container">
-                                                    <button
-                                                        onClick={() => setExpandedGroups(prev => ({ ...prev, [`ex_${groupName}`]: !isExpanded }))}
-                                                        className="flex-1 flex items-center justify-between p-2 hover:bg-slate-50 rounded-xl transition-colors group/header"
-                                                    >
-                                                        <div className="flex items-center gap-2">
-                                                            <div className={`w-1.5 h-1.5 rounded-full ${groupName === 'Sin agrupar' ? 'bg-slate-300' : 'bg-emerald-500'}`} />
-                                                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 group-hover/header:text-slate-900 transition-colors">
-                                                                {groupName} <span className="ml-1 text-slate-300">({exercises.length})</span>
-                                                            </span>
-                                                        </div>
-                                                        <ChevronDown size={14} className={`text-slate-300 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
-                                                    </button>
-                                                    {groupDoc && exercises.length === 0 && (
-                                                        <button
-                                                            onClick={() => handleDeleteGroup(groupDoc.id, groupName, 'EXERCISE')}
-                                                            className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover/header-container:opacity-100"
-                                                            title="Eliminar Grupo Vacío"
-                                                        >
-                                                            <Trash2 size={14} />
-                                                        </button>
-                                                    )}
+                            {/* Library Filter Drawer (Uses Unified Toggle) */}
+                            <AnimatePresence>
+                                {libraryFilterDrawerOpen && (
+                                    <motion.div
+                                        initial={{ height: 0, opacity: 0 }}
+                                        animate={{ height: 'auto', opacity: 1 }}
+                                        exit={{ height: 0, opacity: 0 }}
+                                        className="overflow-hidden bg-white rounded-xl border border-slate-200 mt-2"
+                                    >
+                                        <div className="p-3 space-y-4">
+                                            <div>
+                                                <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Patrón</p>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {PATTERNS.map(p => (
+                                                        <button key={p} onClick={() => toggleFilter('pattern', p)} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${pickerFilter.pattern.includes(p) ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>{p}</button>
+                                                    ))}
                                                 </div>
-
-                                                {isExpanded && (
-                                                    <div className="space-y-3">
-                                                        {exercises.length === 0 && groupName !== 'Sin agrupar' && (
-                                                            <div className="p-4 bg-slate-50/50 rounded-2xl border border-slate-100 border-dashed text-center">
-                                                                <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest italic">Carpeta vacía</p>
-                                                            </div>
-                                                        )}
-                                                        {exercises.map(ex => (
-                                                            <ExerciseCard
-                                                                key={ex.id}
-                                                                ex={ex}
-                                                                showCheckbox={false}
-                                                                onEdit={() => handleLibraryEdit(ex)}
-                                                                onDelete={() => handleLibraryDelete(ex.id)}
-                                                                onDuplicate={() => handleLibraryDuplicate(ex)}
-                                                                onMove={() => setMovingExercise(ex)}
-                                                            />
+                                            </div>
+                                            <div>
+                                                <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Equipamiento</p>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {EQUIPMENT.map(e => (
+                                                        <button key={e} onClick={() => toggleFilter('equipment', e)} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${pickerFilter.equipment.includes(e) ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>{e}</button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Nivel</p>
+                                                    <div className="flex flex-col gap-2">
+                                                        {LEVELS.map(l => (
+                                                            <button key={l} onClick={() => toggleFilter('level', l)} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors text-left ${pickerFilter.level.includes(l) ? 'bg-orange-100 text-orange-700 border-orange-200' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>{l}</button>
                                                         ))}
                                                     </div>
+                                                </div>
+                                                <div>
+                                                    <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Cualidad</p>
+                                                    <div className="flex flex-col gap-2">
+                                                        {QUALITIES.map(q => (
+                                                            <button key={q.id} onClick={() => toggleFilter('quality', q.id)} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors text-left ${pickerFilter.quality.includes(q.id) ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>{q.label}</button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={() => setPickerFilter({ pattern: [], equipment: [], level: [], quality: [] })}
+                                                className="w-full py-2 text-xs text-red-500 font-bold hover:bg-red-50 rounded-lg"
+                                            >
+                                                Limpiar Filtros
+                                            </button>
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </div>
+
+                        {/* Exercise Grid */}
+                        <div className="flex-1 overflow-y-auto p-4">
+                            <div className="grid grid-cols-1 gap-3">
+                                {pickerTab === 'library' ? (
+                                    (() => {
+                                        // Grouping Logic
+                                        const grouped = filteredLibraryExercises.reduce((acc, ex) => {
+                                            const group = ex.group || 'Sin agrupar';
+                                            if (!acc[group]) acc[group] = [];
+                                            acc[group].push(ex);
+                                            return acc;
+                                        }, {});
+
+                                        // Add explicitly created groups
+                                        exerciseGroups.forEach(g => {
+                                            if (!grouped[g.name]) grouped[g.name] = [];
+                                        });
+
+                                        const sortedGroups = Object.keys(grouped).sort((a, b) => {
+                                            if (a === 'Sin agrupar') return 1;
+                                            if (b === 'Sin agrupar') return -1;
+                                            return a.localeCompare(b);
+                                        });
+
+                                        if (sortedGroups.length === 0 || (sortedGroups.length === 1 && sortedGroups[0] === 'Sin agrupar' && grouped['Sin agrupar'].length === 0)) {
+                                            return (
+                                                <div className="text-center py-20 opacity-40">
+                                                    <Search size={48} className="mx-auto mb-4" />
+                                                    <p className="font-bold text-sm">No hay resultados en la biblioteca local</p>
+                                                </div>
+                                            );
+                                        }
+
+                                        return sortedGroups.map(groupName => {
+                                            const exercises = grouped[groupName];
+                                            const groupDoc = exerciseGroups.find(g => g.name === groupName);
+                                            const isExpanded = expandedGroups[`ex_${groupName}`] !== false; // Default expanded
+
+                                            // Skip empty "Sin agrupar" if we have other groups, or show it? 
+                                            // Usually we want to show it if there are exercises.
+                                            if (groupName === 'Sin agrupar' && exercises.length === 0) return null;
+
+                                            return (
+                                                <div key={groupName} className="space-y-2 mb-2">
+                                                    <div className="flex items-center gap-2 group/header-container">
+                                                        <button
+                                                            onClick={() => setExpandedGroups(prev => ({ ...prev, [`ex_${groupName}`]: !isExpanded }))}
+                                                            className="flex-1 flex items-center justify-between p-2 hover:bg-slate-50 rounded-xl transition-colors group/header"
+                                                        >
+                                                            <div className="flex items-center gap-2">
+                                                                <div className={`w-1.5 h-1.5 rounded-full ${groupName === 'Sin agrupar' ? 'bg-slate-300' : 'bg-emerald-500'}`} />
+                                                                <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 group-hover/header:text-slate-900 transition-colors">
+                                                                    {groupName} <span className="ml-1 text-slate-300">({exercises.length})</span>
+                                                                </span>
+                                                            </div>
+                                                            <ChevronDown size={14} className={`text-slate-300 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                                                        </button>
+                                                        {groupName !== 'Sin agrupar' && (
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); handleStartCreation(groupName); }}
+                                                                className="p-1.5 text-slate-300 hover:text-emerald-500 hover:bg-emerald-50 rounded-lg transition-all opacity-0 group-hover/header-container:opacity-100"
+                                                                title={`Añadir ejercicio a ${groupName}`}
+                                                            >
+                                                                <Plus size={14} />
+                                                            </button>
+                                                        )}
+                                                        {groupDoc && exercises.length === 0 && (
+                                                            <button
+                                                                onClick={() => handleDeleteGroup(groupDoc.id, groupName, 'EXERCISE')}
+                                                                className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover/header-container:opacity-100"
+                                                                title="Eliminar Grupo Vacío"
+                                                            >
+                                                                <Trash2 size={14} />
+                                                            </button>
+                                                        )}
+                                                    </div>
+
+                                                    {isExpanded && (
+                                                        <div className="space-y-3">
+                                                            {exercises.length === 0 && groupName !== 'Sin agrupar' && (
+                                                                <div className="p-4 bg-slate-50/50 rounded-2xl border border-slate-100 border-dashed text-center">
+                                                                    <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest italic">Carpeta vacía</p>
+                                                                </div>
+                                                            )}
+                                                            {exercises.map(ex => (
+                                                                <ExerciseCard
+                                                                    key={ex.id}
+                                                                    ex={ex}
+                                                                    showCheckbox={false}
+                                                                    onEdit={() => handleLibraryEdit(ex)}
+                                                                    onDelete={() => handleLibraryDelete(ex.id)}
+                                                                    onDuplicate={() => handleLibraryDuplicate(ex)}
+                                                                    onMove={() => setMovingExercise(ex)}
+                                                                />
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        });
+                                    })()
+                                ) : (
+                                    <>
+                                        {pickerTab === 'online' && (
+                                            <div className="mb-4">
+                                                {!discoveryMode && (
+                                                    <button
+                                                        onClick={handleEnableDiscovery}
+                                                        className="w-full p-4 bg-emerald-50 border border-dashed border-emerald-300 rounded-2xl flex items-center gap-4 text-emerald-700 hover:bg-emerald-100 transition-all group"
+                                                    >
+                                                        <Zap size={24} className="group-hover:scale-110 transition-transform" />
+                                                        <div className="text-left">
+                                                            <p className="font-black text-sm uppercase tracking-tight">Activar Modo Discovery</p>
+                                                            <p className="text-[10px] font-bold opacity-70">Carga rápida de más de 1300 ejercicios sin límites.</p>
+                                                        </div>
+                                                    </button>
                                                 )}
                                             </div>
-                                        );
-                                    });
-                                })()
-                            ) : (
-                                <>
-                                    {pickerTab === 'online' && (
-                                        <div className="mb-4">
-                                            {!discoveryMode && (
-                                                <button
-                                                    onClick={handleEnableDiscovery}
-                                                    className="w-full p-4 bg-emerald-50 border border-dashed border-emerald-300 rounded-2xl flex items-center gap-4 text-emerald-700 hover:bg-emerald-100 transition-all group"
-                                                >
-                                                    <Zap size={24} className="group-hover:scale-110 transition-transform" />
-                                                    <div className="text-left">
-                                                        <p className="font-black text-sm uppercase tracking-tight">Activar Modo Discovery</p>
-                                                        <p className="text-[10px] font-bold opacity-70">Carga rápida de más de 1300 ejercicios sin límites.</p>
-                                                    </div>
-                                                </button>
-                                            )}
-                                        </div>
-                                    )}
+                                        )}
 
-                                    {isSearchingOnline ? (
-                                        <div className="text-center py-20">
-                                            <Loader2 className="animate-spin mx-auto text-emerald-500 mb-4" size={32} />
-                                            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Buscando en la nube...</p>
-                                        </div>
-                                    ) : onlineResults.length > 0 ? (
-                                        onlineResults.map(onlineEx => (
-                                            <ExerciseCard
-                                                key={onlineEx.id}
-                                                ex={{
-                                                    ...onlineEx,
-                                                    source: 'exercisedb'
-                                                }}
-                                                showCheckbox={false}
-                                                showActions={false}
-                                                onImport={() => handleImportOnlineExercise(onlineEx)}
-                                            />
-                                        ))
-                                    ) : (
-                                        <div className="text-center py-20 opacity-40">
-                                            <UploadCloud size={48} className="mx-auto mb-4" />
-                                            <p className="font-bold text-sm">
-                                                {pickerSearch.length < 3 ? 'Escribe al menos 3 letras para buscar' : 'No se encontraron resultados online'}
-                                            </p>
-                                        </div>
-                                    )}
-                                </>
-                            )}
+                                        {isSearchingOnline ? (
+                                            <div className="text-center py-20">
+                                                <Loader2 className="animate-spin mx-auto text-emerald-500 mb-4" size={32} />
+                                                <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Buscando en la nube...</p>
+                                            </div>
+                                        ) : onlineResults.length > 0 ? (
+                                            onlineResults.map(onlineEx => (
+                                                <ExerciseCard
+                                                    key={onlineEx.id}
+                                                    ex={{
+                                                        ...onlineEx,
+                                                        source: 'exercisedb'
+                                                    }}
+                                                    showCheckbox={false}
+                                                    showActions={false}
+                                                    onImport={() => handleImportOnlineExercise(onlineEx)}
+                                                />
+                                            ))
+                                        ) : (
+                                            <div className="text-center py-20 opacity-40">
+                                                <UploadCloud size={48} className="mx-auto mb-4" />
+                                                <p className="font-bold text-sm">
+                                                    {pickerSearch.length < 3 ? 'Escribe al menos 3 letras para buscar' : 'No se encontraron resultados online'}
+                                                </p>
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
 
             {/* Sessions View */}
@@ -3709,7 +3744,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                     </div>
                 )}
             </AnimatePresence>
-        </div>
+        </div >
     );
 };
 

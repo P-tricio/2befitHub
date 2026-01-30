@@ -8,10 +8,22 @@
     "orientation": "portrait-primary",
     "icons": [
         {
-            "src": "/Logocompact.png",
+            "src": "/icon-192.png",
             "type": "image/png",
-            "sizes": "122x142",
+            "sizes": "192x192",
             "purpose": "any"
+        },
+        {
+            "src": "/icon-512.png",
+            "type": "image/png",
+            "sizes": "512x512",
+            "purpose": "any"
+        },
+        {
+            "src": "/icon-512.png",
+            "type": "image/png",
+            "sizes": "512x512",
+            "purpose": "maskable"
         }
     ]
 }
