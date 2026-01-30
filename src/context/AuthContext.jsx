@@ -78,6 +78,7 @@ export const AuthProvider = ({ children }) => {
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
             if (user) {
+                setLoading(true); // Ensure loading state while fetching Firestore
                 // Sync user to Firestore 'users' collection
                 const userRef = doc(db, 'users', user.uid);
 

@@ -47,7 +47,7 @@ const AdminLayout = () => {
     }, []);
 
     return (
-        <div className="flex flex-col lg:flex-row h-screen bg-slate-50">
+        <div className="flex flex-col lg:flex-row h-screen bg-slate-50 pt-[env(safe-area-inset-top)] lg:pt-0 pb-[env(safe-area-inset-bottom)]">
             {/* Desktop Sidebar (Hidden on Mobile) */}
             <aside className="hidden lg:flex w-64 bg-slate-900 text-white flex-col shrink-0 transition-all">
                 <div className="p-6 border-b border-slate-800">
@@ -136,7 +136,7 @@ const AdminLayout = () => {
             </main>
 
             {/* Mobile Bottom Navigation (Hidden on Desktop) */}
-            <nav className={`lg:hidden fixed bottom-0 left-0 right-0 bg-slate-900 text-white flex justify-around p-2 pb-safe z-50 border-t border-slate-800 transition-all ${isMobileLandscape ? 'p-1' : 'p-2'}`}>
+            <nav className={`lg:hidden fixed bottom-0 left-0 right-0 bg-slate-900 text-white flex justify-around p-2 pb-[env(safe-area-inset-bottom)] z-50 border-t border-slate-800 transition-all ${isMobileLandscape ? 'p-1' : 'p-2'}`}>
                 <MobileLink to="/training/admin" icon={Layers} label="Home" end isMobileLandscape={isMobileLandscape} />
                 <MobileLink to="/training/admin/global-creator" icon={Sparkles} label="Editor" isMobileLandscape={isMobileLandscape} />
                 <MobileLink to="/training/admin/programs" icon={Calendar} label="Progr." isMobileLandscape={isMobileLandscape} />
