@@ -10,6 +10,7 @@ import SessionResultsModal from '../../components/SessionResultsModal';
 import { format, startOfWeek, endOfWeek, addDays, isSameDay, isSameMonth, subWeeks, addWeeks, startOfMonth, endOfMonth, eachDayOfInterval, subMonths, addMonths, getDay } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
+import NutritionDayView from '../../../nutrition/user/NutritionDayView';
 
 const AthleteAgenda = () => {
     const { currentUser } = useAuth();
@@ -20,6 +21,7 @@ const AthleteAgenda = () => {
     const [sessionsMap, setSessionsMap] = useState({});
     const [, setLoading] = useState(true);
     const [checkinTask, setCheckinTask] = useState(null);
+    const [nutritionDayTask, setNutritionDayTask] = useState(null);
     const [sessionResultsTask, setSessionResultsTask] = useState(null);
     const [userCustomMetrics, setUserCustomMetrics] = useState([]);
     const [userMinimums, setUserMinimums] = useState(null);
@@ -114,7 +116,13 @@ const AthleteAgenda = () => {
             (userMinimums.uncategorized?.length > 0)
         );
 
-        if (hasMinimums) {
+        // Check if date is in the future (strict future)
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const startOfTargetDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+        const isFuture = startOfTargetDate > startOfToday;
+
+        if (hasMinimums && !isFuture) {
             const isWeekly = habitFrequency === 'weekly';
             const isSunday = getDay(date) === 0;
 
@@ -310,10 +318,16 @@ const AthleteAgenda = () => {
 
                         return (
                             <button
-                                key={idx}
+                                key={task.id || `${task.type}-${idx}`}
                                 onClick={() => {
                                     if (isSession && isCompleted) setSessionResultsTask({ task, session });
-                                    else if (!isSession) setCheckinTask({ ...task, _selectedDate: selectedDate });
+                                    else if (!isSession) {
+                                        if (task.type === 'nutrition_day') {
+                                            setNutritionDayTask(task);
+                                        } else {
+                                            setCheckinTask({ ...task, _selectedDate: selectedDate });
+                                        }
+                                    }
                                 }}
                                 className={`w-full p-4 rounded-[1.8rem] border flex items-center justify-between transition-all text-left shadow-sm group ${isCompleted ? 'bg-white border-emerald-100/50' : 'bg-white border-slate-100 hover:border-emerald-100'
                                     }`}
@@ -323,14 +337,17 @@ const AthleteAgenda = () => {
                                         task.type === 'session' ? 'bg-orange-50 text-orange-600' :
                                             task.type === 'neat' ? 'bg-emerald-50 text-emerald-500' :
                                                 task.type === 'nutrition' ? 'bg-amber-50 text-amber-500' :
-                                                    task.type === 'free_training' ? 'bg-slate-100 text-slate-600' :
-                                                        'bg-blue-50 text-blue-500'
+                                                    task.type === 'nutrition_day' ? 'bg-orange-50 text-orange-500' :
+                                                        task.type === 'free_training' ? 'bg-slate-100 text-slate-600' :
+                                                            'bg-blue-50 text-blue-500'
                                         }`}>
                                         {isCompleted ? <Check size={20} strokeWidth={3} /> : (
                                             <>
                                                 {task.type === 'session' && (sessionMeta?.isCardio ? <Footprints size={20} /> : <Dumbbell size={20} />)}
                                                 {task.type === 'neat' && <Footprints size={20} />}
+                                                {task.type === 'neat' && <Footprints size={20} />}
                                                 {task.type === 'nutrition' && <CheckSquare size={20} />}
+                                                {task.type === 'nutrition_day' && <Utensils size={20} />}
                                                 {(task.type === 'tracking' || task.type === 'checkin') && <ClipboardList size={20} />}
                                                 {task.type === 'free_training' && <Dumbbell size={20} />}
                                             </>
@@ -339,7 +356,15 @@ const AthleteAgenda = () => {
                                     <div>
                                         <div className="flex items-center gap-2">
                                             <h3 className={`font-black ${isCompleted ? 'text-slate-400 text-sm line-through decoration-emerald-500/20' : 'text-slate-800'}`}>
-                                                {isSession ? (session?.name || 'Entreno') : (task.title || 'Tarea')}
+                                                {isSession ? (session?.name || 'Entreno') : (
+                                                    task.title || task.name ||
+                                                    (task.type === 'nutrition_day' ? 'Día Nutrición' :
+                                                        task.type === 'tracking' || task.type === 'checkin' ? 'Seguimiento' :
+                                                            task.type === 'free_training' ? 'Entreno Libre' :
+                                                                task.type === 'neat' ? 'Movimiento NEAT' :
+                                                                    task.type === 'nutrition' ? 'Hábitos' :
+                                                                        'Tarea')
+                                                )}
                                             </h3>
                                             {isCompleted && (
                                                 <span className="px-2 py-0.5 bg-emerald-50 text-emerald-600 text-[7px] font-black rounded-full uppercase tracking-widest">OK</span>
@@ -397,6 +422,15 @@ const AthleteAgenda = () => {
                         session={sessionResultsTask.session}
                         onClose={() => setSessionResultsTask(null)}
                         userId={currentUser.uid}
+                    />
+                )}
+                {nutritionDayTask && (
+                    <NutritionDayView
+                        userId={currentUser.uid}
+                        date={format(selectedDate, 'yyyy-MM-dd')}
+                        dayId={nutritionDayTask.dayId || nutritionDayTask.config?.dayId}
+                        taskId={nutritionDayTask.id}
+                        onClose={() => setNutritionDayTask(null)}
                     />
                 )}
 

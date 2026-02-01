@@ -118,15 +118,51 @@ export const parseNewStructure = async (sessionData, globalProtocol) => {
             ? (block.protocol || 'LIBRE')
             : globalProtocol;
 
+        // Enhanced Targeting Extraction
+        let primaryTargeting = {
+            timeCap: block.params?.timeCap || 0,
+            volume: block.params?.rounds || 0,
+            instruction: block.description || ''
+        };
+
+        // If no explicit block params, try to infer from first exercise config (common for single-exercise cardio blocks)
+        if (normalizedExercises.length > 0) {
+            const ex0 = normalizedExercises[0];
+            const cfg = ex0.config;
+
+            // If it has sets, use the first set as primary target reference
+            if (cfg?.sets?.[0]) {
+                const s0 = cfg.sets[0];
+
+                // If targeting is empty, fill it
+                if (!primaryTargeting.timeCap && !primaryTargeting.volume) {
+                    if (s0.volType === 'TIME') {
+                        primaryTargeting.timeCap = s0.volume;
+                        primaryTargeting.type = 'time';
+                        primaryTargeting.metric = 'time'; // Explicit metric
+                    } else if (['KM', 'METROS', 'KCAL', 'REPS'].includes(s0.volType)) {
+                        primaryTargeting.volume = s0.volume;
+                        primaryTargeting.metric = s0.volType.toLowerCase();
+                    }
+                }
+
+                // Map Intensity if present
+                if (s0.intensity) {
+                    primaryTargeting.intensity = s0.intensity;
+                    primaryTargeting.intensity_type = s0.intType || 'RPE';
+                }
+            }
+            // Fallback for flat instructions
+            if (!primaryTargeting.instruction && ex0.notes) {
+                primaryTargeting.instruction = ex0.notes;
+            }
+        }
+
         const builtModule = {
             id: block.id,
             name: blockName,
             protocol: protocol,
-            targeting: [{
-                timeCap: block.params?.timeCap || 0,
-                volume: block.params?.rounds || 0,
-                instruction: block.description || ''
-            }],
+            targeting: [primaryTargeting],
             exercises: normalizedExercises,
             exerciseNames: getExerciseNames(normalizedExercises),
             blockType: blockName,

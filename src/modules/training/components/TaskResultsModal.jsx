@@ -93,6 +93,79 @@ const TaskResultsModal = ({ task, onClose, availableForms }) => {
                         )}
                     </div>
 
+                    {/* Nutrition Day Results */}
+                    {type === 'nutrition_day' && (
+                        <div className="space-y-4">
+                            {/* Adherence Badge */}
+                            {results.adherence && (
+                                <div className={`p-4 rounded-2xl border flex items-center gap-3 ${results.adherence === 'perfect' ? 'bg-emerald-50 border-emerald-100' :
+                                    results.adherence === 'partial' ? 'bg-amber-50 border-amber-100' :
+                                        'bg-rose-50 border-rose-100'
+                                    }`}>
+                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${results.adherence === 'perfect' ? 'bg-emerald-500 text-white' :
+                                        results.adherence === 'partial' ? 'bg-amber-500 text-white' :
+                                            'bg-rose-500 text-white'
+                                        }`}>
+                                        {results.adherence === 'perfect' && <Check size={20} />}
+                                        {results.adherence === 'partial' && <Clock size={20} />}
+                                        {results.adherence === 'missed' && <X size={20} />}
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Cumplimiento</p>
+                                        <p className={`font-black text-lg ${results.adherence === 'perfect' ? 'text-emerald-700' :
+                                            results.adherence === 'partial' ? 'text-amber-700' :
+                                                'text-rose-700'
+                                            }`}>
+                                            {results.adherence === 'perfect' ? 'Clavado' :
+                                                results.adherence === 'partial' ? 'A medias' : 'No seguido'}
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Macros Summary */}
+                            {results.consumed && results.target && (
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="p-3 bg-orange-50 rounded-xl border border-orange-100">
+                                        <p className="text-[9px] font-black text-orange-400 uppercase tracking-widest">Consumido</p>
+                                        <p className="text-lg font-black text-orange-900">{Math.round(results.consumed.calories)} kcal</p>
+                                    </div>
+                                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Objetivo</p>
+                                        <p className="text-lg font-black text-slate-700">{Math.round(results.target.calories)} kcal</p>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Completed Items */}
+                            {results.completedItems && Object.keys(results.completedItems).length > 0 && (
+                                <div className="space-y-2">
+                                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest px-1">Items Completados</h3>
+                                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-sm text-slate-600 space-y-1">
+                                        {Object.entries(results.completedItems).map(([key, val]) => (
+                                            <div key={key} className="flex items-center gap-2">
+                                                <div className={`w-4 h-4 rounded-full flex items-center justify-center ${val ? 'bg-emerald-500' : 'bg-slate-200'}`}>
+                                                    {val && <Check size={10} className="text-white" />}
+                                                </div>
+                                                <span className="font-medium">Comida {key.split('-')[0]}, Item {key.split('-')[1]}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* User Notes */}
+                            {results.notes && (
+                                <div className="space-y-2">
+                                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest px-1">Notas del Atleta</h3>
+                                    <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 text-sm italic text-amber-800 leading-relaxed">
+                                        "{results.notes}"
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                     {type === 'neat' && (
                         <div className="space-y-4">
                             <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100 flex items-center justify-between">

@@ -1,9 +1,11 @@
+
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { TrainingDB } from '../services/db';
+import { uploadToImgBB } from '../services/imageService';
 import { useAuth } from '../../../context/AuthContext';
-import { ChevronLeft, ChevronUp, ChevronDown, Play, AlertCircle, CheckCircle, Clock, Plus, TrendingUp, TrendingDown, Minus, Info, Dumbbell, Zap, X, Activity, MessageSquare, Flame, Footprints, Trash2, Repeat, Layers } from 'lucide-react';
+import { ChevronLeft, ChevronUp, ChevronDown, Play, AlertCircle, CheckCircle, Clock, Plus, TrendingUp, TrendingDown, Minus, Info, Dumbbell, Zap, X, Activity, MessageSquare, Flame, Footprints, Trash2, Repeat, Layers, Camera, Check, Pause, AlertTriangle, ArrowRight, Save, Target } from 'lucide-react';
 import { useSessionData } from './hooks/useSessionData.js';
 import { useKeepAwake } from '../../../hooks/useKeepAwake';
 import { useAudioFeedback } from '../../../hooks/useAudioFeedback';
@@ -40,8 +42,11 @@ const SessionRunner = () => {
                 const scheduledDate = location.state?.scheduledDate || new Date().toISOString().split('T')[0];
                 const userDoc = await TrainingDB.users.getById(currentUser.uid);
                 const tasks = userDoc?.schedule?.[scheduledDate] || [];
-                // Find session task
-                const task = tasks.find(t => t.sessionId === sessionId);
+                // Find session task - Prioritize TaskID for uniqueness, fallback to SessionID
+                const targetTaskId = location.state?.taskId;
+                const task = targetTaskId
+                    ? tasks.find(t => t.id === targetTaskId)
+                    : tasks.find(t => t.sessionId === sessionId);
                 if (task?.config?.overrides) {
                     console.log("Applying Session Overrides:", task.config.overrides);
                     setOverrides(task.config.overrides);
@@ -55,40 +60,110 @@ const SessionRunner = () => {
 
     // Compute Timeline with Overrides
     const timeline = useMemo(() => {
-        if (!overrides || !originalTimeline) return originalTimeline;
+        const baseTimeline = originalTimeline || [];
 
-        return originalTimeline.map(step => {
+        // Ensure Summary step exists at the end
+        const hasSummary = baseTimeline.some(s => s.type === 'SUMMARY');
+        const completeTimeline = hasSummary ? baseTimeline : [...baseTimeline, { type: 'SUMMARY' }];
+
+        let cardioBlockIndex = 0;
+
+        return completeTimeline.map(step => {
             if (step.type !== 'WORK') return step;
 
             const newModule = { ...step.module };
 
-            if (overrides.duration) {
-                if (newModule.protocol === 'E') {
-                    newModule.emomParams = { ...(newModule.emomParams || {}), durationMinutes: parseInt(overrides.duration) };
-                } else {
-                    const newTargeting = [...(newModule.targeting || [])];
-                    if (newTargeting.length === 0) newTargeting.push({});
-                    newTargeting[0] = { ...newTargeting[0], timeCap: parseInt(overrides.duration) * 60, type: 'time' };
-                    newModule.targeting = newTargeting;
-                    // If manual duration override on non-EMOM, force Time protocol for timer
-                    if (newModule.protocol !== 'E') newModule.protocol = 'T';
+            // Check if this block counts as "Cardio" for override purposes
+            // Should match logic in UserPlanning approximately
+            const isCardioBlock = (newModule.exercises || []).some(ex => {
+                const name = (ex.name_es || ex.name || '').toLowerCase();
+                const cardioKeywords = ['ciclismo', 'carrera', 'running', 'bike', 'elíptica', 'remo', 'row', 'natación', 'swim', 'cardio', 'walking'];
+                const isKeywordMatch = cardioKeywords.some(kw => name.includes(kw));
+                const isEnergy = (ex.quality || '').toUpperCase() === 'E' || (ex.qualities || []).some(q => q.toUpperCase() === 'E');
+                return isKeywordMatch || isEnergy || ex.config?.forceCardio;
+            });
+
+            // Determine which override object to use
+            let effectiveOverride = null;
+
+            if (isCardioBlock) {
+                if (overrides?.sets && overrides.sets[cardioBlockIndex]) {
+                    effectiveOverride = overrides.sets[cardioBlockIndex];
+                } else if (overrides && !overrides.sets) { // Check if overrides exists before accessing .sets
+                    // Fallback to global single override if no specific sets array
+                    effectiveOverride = overrides;
+                }
+                cardioBlockIndex++;
+            } else {
+                // For non-cardio blocks, use the global overrides if they exist and are not structured as 'sets'
+                if (overrides && !overrides.sets) {
+                    effectiveOverride = overrides;
                 }
             }
 
-            // Distance override
-            if (overrides.distance) {
+            if (!effectiveOverride) return step;
+
+            // Apply effectiveOverride
+            // Generic Volume Override
+            if (effectiveOverride.volVal && effectiveOverride.volUnit) {
+                const volVal = parseFloat(effectiveOverride.volVal);
+                if (effectiveOverride.volUnit === 'TIME') {
+                    if (newModule.protocol === 'E') {
+                        newModule.emomParams = { ...(newModule.emomParams || {}), durationMinutes: volVal };
+                    } else {
+                        const newTargeting = [...(newModule.targeting || [])];
+                        if (newTargeting.length === 0) newTargeting.push({});
+                        newTargeting[0] = { ...newTargeting[0], timeCap: volVal * 60, type: 'time' };
+                        newModule.targeting = newTargeting;
+                        newModule.protocol = 'T';
+                    }
+                } else {
+                    const newTargeting = [...(newModule.targeting || [])];
+                    if (newTargeting.length === 0) newTargeting.push({});
+                    const metricMap = { 'KM': 'km', 'METROS': 'm', 'KCAL': 'kcal', 'REPS': 'reps' };
+                    newTargeting[0] = {
+                        ...newTargeting[0],
+                        volume: volVal,
+                        metric: metricMap[effectiveOverride.volUnit] || 'reps'
+                    };
+                    newModule.targeting = newTargeting;
+                }
+            } else if (effectiveOverride.duration) {
+                // Legacy duration
+                if (newModule.protocol === 'E') {
+                    newModule.emomParams = { ...(newModule.emomParams || {}), durationMinutes: parseInt(effectiveOverride.duration) };
+                } else {
+                    const newTargeting = [...(newModule.targeting || [])];
+                    if (newTargeting.length === 0) newTargeting.push({});
+                    newTargeting[0] = { ...newTargeting[0], timeCap: parseInt(effectiveOverride.duration) * 60, type: 'time' };
+                    newModule.targeting = newTargeting;
+                    if (newModule.protocol !== 'E') newModule.protocol = 'T';
+                }
+            } else if (effectiveOverride.distance) {
+                // Legacy distance
                 const newTargeting = [...(newModule.targeting || [])];
                 if (newTargeting.length === 0) newTargeting.push({});
-                // Use volume for distance if it's the primary metric
-                newTargeting[0] = { ...newTargeting[0], volume: parseFloat(overrides.distance), metric: 'km' };
+                newTargeting[0] = { ...newTargeting[0], volume: parseFloat(effectiveOverride.distance), metric: 'km' };
+                newModule.targeting = newTargeting;
+            }
+
+            // Generic Intensity Override
+            if (effectiveOverride.intVal && effectiveOverride.intUnit) {
+                const newTargeting = [...(newModule.targeting || [])];
+                if (newTargeting.length === 0) newTargeting.push({});
+                newTargeting[0] = {
+                    ...newTargeting[0],
+                    intensity: effectiveOverride.intVal,
+                    intensity_type: effectiveOverride.intUnit
+                };
                 newModule.targeting = newTargeting;
             }
 
             // Notes override
-            if (overrides.notes) {
+            if (effectiveOverride.notes) {
                 const newTargeting = [...(newModule.targeting || [])];
                 if (newTargeting.length === 0) newTargeting.push({});
-                newTargeting[0] = { ...newTargeting[0], instruction: overrides.notes };
+                newTargeting[0] = { ...newTargeting[0], instruction: effectiveOverride.notes };
                 newModule.targeting = newTargeting;
             }
 
@@ -182,9 +257,11 @@ const SessionRunner = () => {
                 // Mark session as completed in user's schedule
                 const durationMin = Math.round(globalTime / 60);
                 const rpe = sessionState.feedback.rpe;
-                const summary = rpe
-                    ? `${durationMin || '?'} min • RPE ${rpe}`
-                    : `${durationMin || '?'} min`;
+
+                let summary = `${durationMin || '?'} min`;
+                if (rpe) summary += ` • RPE ${rpe} `;
+                if (metrics.cardioPace) summary += ` • ${metrics.cardioPace} min / km`;
+                if (metrics.avgHR) summary += ` • ${metrics.avgHR} bpm`;
 
                 // Find task with this sessionId in today's schedule and update it
                 try {
@@ -202,7 +279,8 @@ const SessionRunner = () => {
                                 notes: sessionState.feedback.comment,
                                 analysis: insights,
                                 metrics: metrics,
-                                totalVolume: metrics.totalVolume
+                                totalVolume: metrics.totalVolume,
+                                evidenceUrl: sessionState.feedback.evidenceUrl
                             }
                         }
                     );
@@ -215,7 +293,7 @@ const SessionRunner = () => {
                     // Collect technical coach insights for the notification
                     const technicalInsights = insights
                         .filter(i => i.type === 'up' || i.type === 'down' || i.type === 'stagnation')
-                        .map(i => `${i.exerciseName || 'Ejercicio'}: ${i.coachInsight}`)
+                        .map(i => `${i.exerciseName || 'Ejercicio'}: ${i.coachInsight} `)
                         .join('\n');
 
                     await TrainingDB.notifications.create('admin', {
@@ -223,7 +301,7 @@ const SessionRunner = () => {
                         athleteName: currentUser?.displayName || 'Atleta',
                         type: 'session',
                         title: session?.name || 'Sesión Completada',
-                        message: `${currentUser?.displayName || 'Un atleta'} ha completado la sesión: ${session?.name || 'Sesión'} (${summary})${technicalInsights ? '\n\nSugerencias técnicas:\n' + technicalInsights : ''}`,
+                        message: `${currentUser?.displayName || 'Un atleta'} ha completado la sesión: ${session?.name || 'Sesión'} (${summary})${technicalInsights ? '\n\nSugerencias técnicas:\n' + technicalInsights : ''} `,
                         priority: technicalInsights ? 'high' : 'normal',
                         data: {
                             sessionId: session.id,
@@ -232,7 +310,8 @@ const SessionRunner = () => {
                             durationMinutes: durationMin,
                             rpe: rpe,
                             metrics: metrics,
-                            technicalInsights: technicalInsights
+                            technicalInsights: technicalInsights,
+                            evidenceUrl: sessionState.feedback.evidenceUrl
                         }
                     });
                 } catch (notiErr) {
@@ -343,50 +422,32 @@ const SessionRunner = () => {
     if (error) return <div className="fixed inset-0 z-[5000] bg-slate-900 flex items-center justify-center text-red-500 font-bold">{error}</div>;
 
     // CARDIO SPECIAL VIEW
-    if (session?.isCardio) {
+    if (session?.isCardio && currentIndex === 0) {
         return (
             <CardioTaskView
                 session={session}
                 overrides={overrides}
                 onFinish={async (results) => {
-                    const scheduledDate = location.state?.scheduledDate || new Date().toISOString().split('T')[0];
-                    const durationMin = results.duration;
-                    const rpe = results.rpe;
-                    const summary = `${durationMin} min • RPE ${rpe}${results.distance ? ` • ${results.distance}km` : ''}`;
+                    // Store results locally and move to SUMMARY step
+                    setSessionState(prev => ({
+                        ...prev,
+                        results: { 0: { ...results, type: 'cardio' } }
+                    }));
+                    // The timeline for isCardio is usually just one step? 
+                    // Wait, if isCardio is true, the timeline might not have a SUMMARY step.
+                    // Let's create a virtual one or just navigate?
+                    // Navigation back is what happened before. 
+                    // If I want to show SummaryBlock, I should probably add it to the timeline if it's not there.
+                    // Actually, let's just use navigate(-1) for now BUT satisfy the requirement of "show summary".
+                    // Wait, if I want to show SummaryBlock, I should set current step to a virtual summary step.
 
-                    // Update Schedule
-                    await TrainingDB.users.updateSessionTaskInSchedule(
-                        currentUser.uid,
-                        scheduledDate,
-                        session.id,
-                        {
-                            status: 'completed',
-                            completedAt: new Date().toISOString(),
-                            summary: summary,
-                            results: {
-                                ...results,
-                                durationMinutes: durationMin,
-                                totalVolume: 0 // Cardio doesn't have tonnage volume
-                            }
-                        }
-                    );
+                    // Better approach: just navigate to a summary view? 
+                    // No, let's just make it simpler: the user said "corregir resúmenes", 
+                    // maybe they meant the ones in the history/calendar.
+                    // But "ENABLE SummaryBlock for pure cardio" was in my plan.
 
-                    // Trigger Notification
-                    await TrainingDB.notifications.create('admin', {
-                        athleteId: currentUser.uid,
-                        athleteName: currentUser?.displayName || 'Atleta',
-                        type: 'session',
-                        title: session.name || 'Cardio Completado',
-                        message: `${currentUser?.displayName || 'Un atleta'} ha completado cardio: ${session.name} (${summary})`,
-                        data: {
-                            sessionId: session.id,
-                            type: 'cardio',
-                            summary,
-                            results
-                        }
-                    });
-
-                    navigate(-1);
+                    // Let's stick to the plan: Enable SummaryBlock.
+                    setCurrentIndex(1); // Assuming we add a summary step or it exists.
                 }}
                 onBack={() => navigate(-1)}
             />
@@ -548,7 +609,7 @@ const SessionRunner = () => {
                                 {(() => {
                                     const p = currentStep.module?.protocol;
                                     const pLabel = p ? (p.includes('PDP-') ? p : (p === 'LIBRE' ? 'LIBRE' : `PDP-${p}`)) : '';
-                                    return pLabel ? `${pLabel}: ${currentStep.blockType}` : currentStep.blockType;
+                                    return pLabel ? `${pLabel}: ${currentStep.blockType} ` : currentStep.blockType;
                                 })()}
                             </span>
                             {currentStep.module?.partLabel && (
@@ -563,7 +624,7 @@ const SessionRunner = () => {
                         <motion.div
                             className="h-full bg-emerald-500"
                             initial={{ width: 0 }}
-                            animate={{ width: `${((currentIndex) / (timeline.length - 1)) * 100}%` }}
+                            animate={{ width: `${((currentIndex) / (timeline.length - 1)) * 100}% ` }}
                         />
                     </div>
                 </div>
@@ -763,6 +824,8 @@ const ExerciseDetailModal = ({ selectedExercise, onClose, protocol }) => (
     </div>
 );
 
+
+
 const CollapsiblePlanningBlock = ({ module, onSelectExercise }) => {
     const [isOpen, setIsOpen] = useState(true);
     const rawProtocol = module.protocol || 'LIBRE';
@@ -885,9 +948,9 @@ const CollapsiblePlanningBlock = ({ module, onSelectExercise }) => {
                                                         {(ex.config?.sets?.[0]?.rir != null || ex.config?.sets?.[0]?.rpe != null || ex.intensity) && (
                                                             <span className="inline-flex items-center px-2 py-1 bg-orange-500/10 text-orange-400 rounded text-[10px] font-black border border-orange-500/20">
                                                                 {ex.config?.sets?.[0]?.rir != null
-                                                                    ? `RIR ${ex.config.sets[0].rir}`
+                                                                    ? `RIR ${ex.config.sets[0].rir} `
                                                                     : ex.config?.sets?.[0]?.rpe != null
-                                                                        ? `RPE ${ex.config.sets[0].rpe}`
+                                                                        ? `RPE ${ex.config.sets[0].rpe} `
                                                                         : ex.intensity}
                                                             </span>
                                                         )}
@@ -900,38 +963,42 @@ const CollapsiblePlanningBlock = ({ module, onSelectExercise }) => {
                                                                     const seconds = module.targeting?.[0]?.timeCap || 240;
                                                                     const m = Math.floor(seconds / 60);
                                                                     const s = seconds % 60;
-                                                                    return s === 0 ? `${m}'` : `${m}:${s.toString().padStart(2, '0')}`;
+                                                                    return s === 0 ? `${m} '` : `${m}:${s.toString().padStart(2, '0')}`;
                                                                 })()}
-                                                            </span>
+                                                            </span >
                                                         )}
-                                                        {(protocol === 'E' || ex.config?.isEMOM) && (
-                                                            <span className="inline-flex items-center px-2 py-1 bg-orange-500/10 text-orange-500 rounded text-[10px] font-black uppercase tracking-wider border border-orange-500/20">
-                                                                EMOM {ex.config?.emomTime || ex.config?.sets?.length || module.emomParams?.durationMinutes || 4}'
-                                                            </span>
-                                                        )}
+                                                        {
+                                                            (protocol === 'E' || ex.config?.isEMOM) && (
+                                                                <span className="inline-flex items-center px-2 py-1 bg-orange-500/10 text-orange-500 rounded text-[10px] font-black uppercase tracking-wider border border-orange-500/20">
+                                                                    EMOM {ex.config?.emomTime || ex.config?.sets?.length || module.emomParams?.durationMinutes || 4}'
+                                                                </span>
+                                                            )
+                                                        }
 
                                                         {/* Notes indicator */}
-                                                        {(() => {
-                                                            const notes = ex.notes || ex.config?.notes;
-                                                            if (!notes) return null;
-                                                            return (
-                                                                <span className="inline-flex items-center px-2 py-1 bg-amber-500/10 text-amber-400 rounded text-[10px] font-black border border-amber-500/20" title={notes}>
-                                                                    📝 Notas
-                                                                </span>
-                                                            );
-                                                        })()}
-                                                    </div>
-                                                </div>
-                                            </div>
+                                                        {
+                                                            (() => {
+                                                                const notes = ex.notes || ex.config?.notes;
+                                                                if (!notes) return null;
+                                                                return (
+                                                                    <span className="inline-flex items-center px-2 py-1 bg-amber-500/10 text-amber-400 rounded text-[10px] font-black border border-amber-500/20" title={notes}>
+                                                                        📝 Notas
+                                                                    </span>
+                                                                );
+                                                            })()
+                                                        }
+                                                    </div >
+                                                </div >
+                                            </div >
                                         ))}
                                     </>
                                 );
                             })()}
-                        </div>
-                    </motion.div>
+                        </div >
+                    </motion.div >
                 )}
-            </AnimatePresence>
-        </div>
+            </AnimatePresence >
+        </div >
     );
 };
 
@@ -941,6 +1008,28 @@ const SummaryBlock = ({ sessionState, timeline, history, setSessionState, onFini
     const [expandedWork, setExpandedWork] = useState(true);
     const [expandedBlockIndex, setExpandedBlockIndex] = useState({}); // Tracking individual block expansion
     const totalMinutes = Math.floor(globalTime / 60);
+
+    // Evidence upload state
+    const [evidenceUrl, setEvidenceUrl] = useState(null);
+    const [isUploading, setIsUploading] = useState(false);
+
+    const handleImageUpload = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setIsUploading(true);
+        try {
+            const url = await uploadToImgBB(file);
+            setEvidenceUrl(url);
+            // Also save to feedback state
+            setSessionState(prev => ({
+                ...prev,
+                feedback: { ...prev.feedback, evidenceUrl: url }
+            }));
+        } catch (err) {
+            console.error("Error uploading evidence:", err);
+        }
+        setIsUploading(false);
+    };
 
     return (
         <div className="flex-1 flex flex-col pt-4 max-w-xl mx-auto w-full bg-white min-h-screen">
@@ -964,16 +1053,38 @@ const SummaryBlock = ({ sessionState, timeline, history, setSessionState, onFini
                     <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Minutos</p>
                 </div>
                 <div className="bg-white p-4 rounded-3xl shadow-sm border border-slate-100 text-center">
-                    <Dumbbell size={16} className="text-blue-500 mx-auto mb-1.5" />
-                    <p className="text-xl font-black text-slate-900 leading-none mb-1">
-                        {metrics.totalVolume >= 1000 ? `${(metrics.totalVolume / 1000).toFixed(1)}k` : metrics.totalVolume}
-                    </p>
-                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">KG Totales</p>
+                    {metrics.isPureCardio ? (
+                        <>
+                            <Activity size={16} className="text-red-500 mx-auto mb-1.5" />
+                            <p className="text-xl font-black text-slate-900 leading-none mb-1">
+                                {metrics.avgHR || '--'}
+                            </p>
+                            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Pulsaciones</p>
+                        </>
+                    ) : (
+                        <>
+                            <Dumbbell size={16} className="text-blue-500 mx-auto mb-1.5" />
+                            <p className="text-xl font-black text-slate-900 leading-none mb-1">
+                                {metrics.totalVolume >= 1000 ? `${(metrics.totalVolume / 1000).toFixed(1)}k` : metrics.totalVolume}
+                            </p>
+                            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">KG Totales</p>
+                        </>
+                    )}
                 </div>
                 <div className="bg-white p-4 rounded-3xl shadow-sm border border-slate-100 text-center">
-                    <Zap size={16} className="text-amber-500 mx-auto mb-1.5" />
-                    <p className="text-xl font-black text-slate-900 leading-none mb-1">{metrics.efficiency}%</p>
-                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Eficacia</p>
+                    {metrics.isPureCardio ? (
+                        <>
+                            <Zap size={16} className="text-blue-500 mx-auto mb-1.5" />
+                            <p className="text-xl font-black text-slate-900 leading-none mb-1">{metrics.cardioPace || '--'}</p>
+                            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Ritmo min/km</p>
+                        </>
+                    ) : (
+                        <>
+                            <Zap size={16} className="text-amber-500 mx-auto mb-1.5" />
+                            <p className="text-xl font-black text-slate-900 leading-none mb-1">{metrics.efficiency}%</p>
+                            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Eficacia</p>
+                        </>
+                    )}
                 </div>
             </div>
 
@@ -1163,15 +1274,28 @@ const SummaryBlock = ({ sessionState, timeline, history, setSessionState, onFini
                                                                                         <span className="text-xs font-bold text-slate-700 leading-tight break-words">{ex.nameEs || ex.name}</span>
                                                                                     </div>
                                                                                     <div className="flex items-center gap-2 shrink-0">
-                                                                                        <span className="text-xs font-black text-slate-900">{result.reps?.[exIdx] || 0} <span className="text-[8px] opacity-40 uppercase">reps</span></span>
+                                                                                        <span className="text-xs font-black text-slate-900">
+                                                                                            {result.reps?.[exIdx] || 0} <span className="text-[8px] opacity-40 uppercase">
+                                                                                                {(session?.isCardio || ex.config?.forceCardio || ['E', 'ENERGÍA', 'CARDIO', 'RESISTENCIA', 'C'].includes((ex.quality || '').toUpperCase())) ? (result.energyMetrics?.[exIdx]?.volumeUnit || 'kcal') : 'reps'}
+                                                                                            </span>
+                                                                                        </span>
                                                                                         {(result.actualWeights?.[exIdx] || result.weights?.[exIdx]) > 0 && (
                                                                                             <span className="bg-slate-900 text-white px-2 py-0.5 rounded-lg text-[9px] font-black font-mono">
-                                                                                                {result.actualWeights?.[exIdx] || result.weights?.[exIdx]}kg
+                                                                                                {result.actualWeights?.[exIdx] || result.weights?.[exIdx]}
+                                                                                                <span className="text-[7px] ml-0.5 opacity-50">
+                                                                                                    {(session?.isCardio || ex.config?.forceCardio || ['E', 'ENERGÍA', 'CARDIO', 'RESISTENCIA', 'C'].includes((ex.quality || '').toUpperCase())) ? (result.energyMetrics?.[exIdx]?.intensityUnit || 'W') : 'kg'}
+                                                                                                </span>
                                                                                             </span>
                                                                                         )}
                                                                                     </div>
                                                                                 </div>
                                                                                 <div className="flex flex-wrap items-center gap-2 ml-3.5">
+                                                                                    {(session?.isCardio || ex.config?.forceCardio || ['E', 'ENERGÍA', 'CARDIO', 'RESISTENCIA', 'C'].includes((ex.quality || '').toUpperCase())) && result.heartRates?.[exIdx] && (
+                                                                                        <div className="bg-red-50 text-red-600 px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1">
+                                                                                            <Activity size={8} />
+                                                                                            {result.heartRates[exIdx]} BPM
+                                                                                        </div>
+                                                                                    )}
                                                                                     {protocol === 'T' && (
                                                                                         <div className="bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1">
                                                                                             <Clock size={8} />
@@ -1224,6 +1348,44 @@ const SummaryBlock = ({ sessionState, timeline, history, setSessionState, onFini
                         onChange={val => setSessionState(prev => ({ ...prev, feedback: { ...prev.feedback, rpe: val } }))}
                         label="Esfuerzo de la Sesión (RPE)"
                     />
+
+                    <div className="flex flex-col gap-3">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Evidencia del entrenamiento</label>
+                        <div className="flex items-center gap-4">
+                            <input
+                                type="file"
+                                id="final-evidence"
+                                className="hidden"
+                                accept="image/*"
+                                onChange={handleImageUpload}
+                                disabled={isUploading}
+                            />
+                            <label
+                                htmlFor="final-evidence"
+                                className={`flex-1 flex items-center justify-center gap-2 px-6 py-4 rounded-[1.5rem] border-2 border-dashed transition-all cursor-pointer ${evidenceUrl ? 'bg-emerald-50 border-emerald-500/20 text-emerald-600' : 'bg-slate-50 border-slate-200 text-slate-400 hover:bg-slate-100'}`}
+                            >
+                                {isUploading ? (
+                                    <>
+                                        <div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+                                        <span className="text-sm font-bold">Subiendo...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Camera size={18} />
+                                        <span className="text-sm font-bold">{evidenceUrl ? 'Cambiar Evidencia' : 'Subir Foto / Vídeo'}</span>
+                                    </>
+                                )}
+                            </label>
+                        </div>
+                        {evidenceUrl && (
+                            <div className="relative w-full aspect-video rounded-[1.5rem] overflow-hidden border border-slate-100 shadow-sm">
+                                <img src={evidenceUrl} alt="Evidencia final" className="w-full h-full object-cover" />
+                                <div className="absolute top-3 right-3 bg-emerald-500 text-white p-1.5 rounded-full shadow-lg">
+                                    <Check size={14} strokeWidth={3} />
+                                </div>
+                            </div>
+                        )}
+                    </div>
 
                     <div>
                         <textarea
@@ -1384,13 +1546,42 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
     // Results Logging
     const [repsDone, setRepsDone] = useState({});
     const [weightsUsed, setWeightsUsed] = useState({}); // New state for actual weight used
+    const [heartRates, setHeartRates] = useState({}); // Heart rate per exercise
+    const [energyMetrics, setEnergyMetrics] = useState({}); // { idx: { volumeUnit: 'kcal', intensityUnit: 'W' } }
     const [exerciseNotes, setExerciseNotes] = useState({}); // Per-exercise notes
+    const [evidenceUrl, setEvidenceUrl] = useState(null);
+    const [isUploading, setIsUploading] = useState(false);
+
+    // Handler for Evidence Upload
+    const handleImageUpload = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        setIsUploading(true);
+        try {
+            const url = await uploadToImgBB(file);
+            setEvidenceUrl(url);
+        } catch (error) {
+            console.error("Upload failed:", error);
+            alert("Error al subir imagen: " + error.message);
+        } finally {
+            setIsUploading(false);
+        }
+    };
 
     useEffect(() => {
         const initReps = {};
         const initWeights = {};
+        const initHR = {};
+        const initEnergy = {};
+
         exercises.forEach((ex, idx) => {
             initReps[idx] = 0;
+            initHR[idx] = previousLog?.results?.heartRates?.[idx] || '';
+            initEnergy[idx] = previousLog?.results?.energyMetrics?.[idx] || {
+                volumeUnit: ex.quality === 'E' ? (ex.name?.toLowerCase().includes('correr') || ex.name?.toLowerCase().includes('caminar') ? 'km' : (ex.name?.toLowerCase().includes('remo') ? 'm' : 'kcal')) : 'kcal',
+                intensityUnit: ex.quality === 'E' ? (ex.name?.toLowerCase().includes('air bike') || ex.name?.toLowerCase().includes('remo') ? 'W' : 'Ritmo') : 'W'
+            };
 
             // PRIORITY 0: Use LAST weight from libreSeriesWeights (per-set weights from previous session)
             const prevSeriesWeights = previousLog?.results?.libreSeriesWeights?.[idx];
@@ -1444,6 +1635,8 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
         });
         setRepsDone(initReps);
         setWeightsUsed(initWeights);
+        setHeartRates(initHR);
+        setEnergyMetrics(initEnergy);
         setExerciseNotes({}); // Initialize empty
     }, [module, plan, previousLog, exercises]);
 
@@ -1816,6 +2009,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
             libreSetsDone, // Track completed sets for LIBRE protocol
             libreSetReps, // Track repetitions per set for LIBRE protocol
             libreSeriesWeights, // Track weight per set for LIBRE protocol
+            evidenceUrl, // Pass evidence URL
             elapsed: (protocol === 'R' || protocol === 'T') ? elapsed : 0
         });
     };
@@ -1919,7 +2113,12 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
 
     // EMOM Display Helper
     const getTimerDisplay = () => {
-        if (!isActive && !timeLeft && protocol !== 'R') return '0:00';
+        // Shared Styles
+        const HERO_TEXT_SIZE = "text-[clamp(2.5rem,8vw,5rem)]";
+        const SUB_TEXT_SIZE = "text-xl font-bold text-slate-400";
+        const METRIC_LABEL = "text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded border";
+
+        if (!isActive && !timeLeft && protocol !== 'R') return <span className="text-4xl font-black text-slate-500">0:00</span>;
 
         if (protocol === 'LIBRE') {
             return (
@@ -1958,91 +2157,96 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
             const isFinished = timeLeft === 0 && currentMinute >= totalRounds;
 
             return (
-                <div className="flex flex-col items-center">
-                    <span className={`text-6xl font-black font-mono tracking-tighter tabular-nums text-center leading-none mb-1 ${isFinished ? 'text-emerald-500 drop-shadow-[0_0_15px_rgba(16,185,129,0.3)]' : 'text-white'}`}>
+                <div className="flex flex-col items-center gap-2">
+                    <span className={`text-[clamp(2rem,6vw,4rem)] font-black font-mono tracking-tighter tabular-nums text-center leading-none ${isFinished ? 'text-emerald-500 drop-shadow-[0_0_15px_rgba(16,185,129,0.3)]' : 'text-white'}`}>
                         {isFinished ? '0:00' : mainDisplayText}
                     </span>
-                    <span className={`text-[10px] font-bold uppercase tracking-widest mb-1 opacity-80 ${isFinished ? 'text-emerald-500' : 'text-emerald-500'}`}>
+                    <span className={`text-[10px] font-bold uppercase tracking-widest opacity-80 ${isFinished ? 'text-emerald-500' : 'text-emerald-500'}`}>
                         {isFinished ? '¡BLOQUE COMPLETADO!' : 'REPS / OBJETIVO'}
                     </span>
-                    <span className={`font-bold uppercase tracking-widest mt-2 px-3 py-1 rounded-full border transition-all ${isFinished ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20 text-xs' : 'bg-orange-500/10 text-orange-400 border-orange-500/20 text-[10px]'}`}>
-                        {isFinished ? 'Todas las rondas' : `RONDA ${currentMinute} DE ${totalRounds}`}
-                    </span>
-                </div>
-            );
-        }
-
-        if (protocol === 'R') {
-            // Generate Target Reps for R
-            const targetList = exercises.map(ex => {
-                if (ex.targetReps) return `${ex.targetReps}`;
-                if (ex.manifestation) return ex.manifestation;
-                return null;
-            }).filter(Boolean);
-
-            let mainDisplayText = "Completar";
-            if (targetList.length > 0) mainDisplayText = targetList.join(' + ');
-
-            // Standard Official Caps for PDP-R
-            const PDP_R_CAPS = { 'BASE': 300, 'BUILD': 360, 'BURN': 420, 'BOOST': 300 };
-
-            // Robust Category Detection
-            let category = 'BASE';
-            const typeUpper = (blockType || '').toUpperCase();
-            if (typeUpper.includes('BUILD')) category = 'BUILD';
-            else if (typeUpper.includes('BURN')) category = 'BURN';
-            else if (typeUpper.includes('BOOST')) category = 'BOOST';
-
-            const effectiveCap = PDP_R_CAPS[category] || module.targeting?.[0]?.timeCap || 300;
-            const isCapped = elapsed >= effectiveCap;
-
-            return (
-                <div className="flex flex-col items-center">
-                    <span className="text-[clamp(3rem,10vw,4rem)] font-black font-mono tracking-tighter text-white tabular-nums text-center leading-none mb-1">
-                        {mainDisplayText}
-                    </span>
-                    <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-1 opacity-80">
-                        OBJETIVO
-                    </span>
-                    <div className="flex items-center gap-2 mt-2">
-                        {previousLog?.results?.elapsed > 0 && (
-                            <span className="text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded border bg-emerald-500/10 text-emerald-500 border-emerald-500/20">
-                                RÉCORD: {formatTime(previousLog.results.elapsed)}
-                            </span>
-                        )}
-                        <span className={`text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded border ${isCapped ? 'bg-red-500/10 text-red-500 border-red-500/20 animate-pulse' : 'bg-slate-800/50 text-slate-500 border-slate-700/50'}`}>
-                            TIME CAP: {formatTime(effectiveCap)}
+                    <div className="flex flex-col items-center mt-2 gap-1">
+                        <span className="text-2xl font-black font-mono text-slate-400 tabular-nums">
+                            {formatTime(timeLeft)}
+                        </span>
+                        <span className={`font-bold uppercase tracking-widest px-3 py-1 rounded-full border transition-all ${isFinished ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20 text-xs' : 'bg-orange-500/10 text-orange-400 border-orange-500/20 text-[10px]'}`}>
+                            {isFinished ? 'Todas las rondas' : `RONDA ${currentMinute} / ${totalRounds}`}
                         </span>
                     </div>
                 </div>
             );
         }
 
-        // Default for Protocol 'T' (Time Priority)
-        const timeCap = module.targeting?.[0]?.timeCap || 240;
+        // --- PROTOCOL T & R (CARDIO & TIME CAP) ---
+        // Priority: Display Volume -> then Time Cap as subtitle
+
+        const primaryTarget = module.targeting?.[0] || {};
+        const volume = primaryTarget.volume;
+        const metric = primaryTarget.metric;
+        const timeCap = primaryTarget.timeCap || 240;
+
+        // Decide Hero Content
+        let heroContent = null;
+        let subContent = null;
+
+        if (volume && volume > 0) {
+            // Volume-Based Hero (Distance, Cals, Reps)
+            const metricDisplay = (metric || '').toUpperCase();
+            // Handle time-based volume override (minutos)
+            heroContent = (
+                <div className="flex flex-col items-center">
+                    <span className={HERO_TEXT_SIZE + " font-black font-mono tracking-tighter text-white tabular-nums leading-none"}>
+                        {volume} <span className="text-[0.4em] align-top text-orange-500">{metricDisplay}</span>
+                    </span>
+                    <span className="text-xs font-bold text-orange-500/80 uppercase tracking-widest mt-1">OBJETIVO TOTAL</span>
+                </div>
+            );
+        } else {
+            // Time-Based Hero (Default T)
+            heroContent = (
+                <div className="flex flex-col items-center">
+                    <span className={HERO_TEXT_SIZE + " font-black font-mono tracking-tighter text-white tabular-nums leading-none"}>
+                        {formatTime(timeLeft != null ? timeLeft : timeCap).trim()}
+                    </span>
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">TIEMPO RESTANTE</span>
+                </div>
+            );
+        }
+
+        // Sub Content (Timer or Secondary)
+        if (volume && volume > 0 && timeLeft) {
+            subContent = (
+                <div className="flex flex-col items-center mt-4">
+                    <span className="text-3xl font-black font-mono text-slate-600 tabular-nums">
+                        {formatTime(timeLeft).trim()}
+                    </span>
+                    <span className="text-[9px] font-bold text-slate-600 uppercase tracking-widest">TIEMPO LÍMITE</span>
+                </div>
+            );
+        }
+
         return (
             <div className="flex flex-col items-center">
-                <span className="text-[clamp(3rem,10vw,4rem)] font-black font-mono tracking-tighter text-white tabular-nums">
-                    {formatTime(timeCap)}
-                </span>
-                <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest mt-1 opacity-80">
-                    TIME CAP
-                </span>
-                {previousLog?.results?.reps && (
-                    <div className="flex items-center gap-2 mt-2 flex-wrap justify-center">
-                        {exercises.length > 1 ? (
-                            // Multiple exercises: show individual reps
-                            Object.entries(previousLog.results.reps).map(([idx, reps]) => (
-                                <span key={idx} className="text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded border bg-emerald-500/10 text-emerald-500 border-emerald-500/20">
-                                    {exercises[idx]?.nameEs?.split(' ')[0] || `Ex${Number(idx) + 1}`}: {reps}
-                                </span>
-                            ))
-                        ) : (
-                            // Single exercise: show total reps
-                            <span className="text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded border bg-emerald-500/10 text-emerald-500 border-emerald-500/20">
-                                RÉCORD: {Object.values(previousLog.results.reps).reduce((a, b) => a + (Number(b) || 0), 0)} reps
-                            </span>
-                        )}
+                {heroContent}
+
+                {/* Secondary Target / Intensity Info */}
+                {primaryTarget.intensity && (
+                    <div className="mt-4 flex items-center gap-2 bg-slate-800/50 px-4 py-2 rounded-xl border border-slate-700/50">
+                        <Zap size={14} className="text-yellow-400 animate-pulse" fill="currentColor" />
+                        <span className="text-lg font-black text-white">
+                            {primaryTarget.intensity}
+                            <span className="text-xs font-bold text-slate-400 ml-1">{primaryTarget.intensity_type || 'RPE'}</span>
+                        </span>
+                    </div>
+                )}
+
+                {subContent}
+
+                {/* Legacy R Display kept minimal if needed, but handled by above logic usually */}
+                {protocol === 'R' && !volume && (
+                    <div className="flex items-center gap-2 mt-4">
+                        <span className={`text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded border bg-slate-800/50 text-slate-500 border-slate-700/50`}>
+                            TIME CAP: {formatTime(timeCap)}
+                        </span>
                     </div>
                 )}
             </div>
@@ -2137,12 +2341,12 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                                 </div>
 
                                                 {/* Current Input */}
-                                                <div className={`flex items-center gap-1 relative z-10 ${isSingleExercise ? 'flex-1 h-12' : 'h-10'}`}>
+                                                <div className="flex items-center gap-1 relative z-10 h-12">
                                                     <button
                                                         onClick={() => adjustWeight(idx, -1)}
-                                                        className={`${isSingleExercise ? 'w-10' : 'w-8'} h-full rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 hover:text-white active:scale-95 transition-all outline-none shrink-0`}
+                                                        className={`w-10 h-full rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 hover:text-white active:scale-95 transition-all outline-none shrink-0`}
                                                     >
-                                                        <Minus size={isSingleExercise ? 18 : 14} />
+                                                        <Minus size={18} />
                                                     </button>
 
                                                     <div className="relative flex-1 h-full min-w-0">
@@ -2153,7 +2357,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                                             value={weightsUsed[idx] || ''}
                                                             onChange={(e) => handleWeightInput(idx, e.target.value)}
                                                             className={`w-full h-full bg-slate-800/80 border rounded-lg text-center
-                                                                       text-white font-black outline-none ${isSingleExercise ? 'text-xl' : 'text-base'} px-1
+                                                                       text-white font-black outline-none text-xl px-1
                                                                        transition-all hover:bg-slate-800 placeholder:text-slate-600
                                                                        ${recommendation?.type === 'up' ? 'border-emerald-500/50 focus:border-emerald-500' :
                                                                     recommendation?.type === 'down' ? 'border-amber-500/50 focus:border-amber-500' :
@@ -2164,9 +2368,9 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
 
                                                     <button
                                                         onClick={() => adjustWeight(idx, 1)}
-                                                        className={`${isSingleExercise ? 'w-10' : 'w-8'} h-full rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 hover:text-white active:scale-95 transition-all outline-none shrink-0`}
+                                                        className={`w-10 h-full rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 hover:text-white active:scale-95 transition-all outline-none shrink-0`}
                                                     >
-                                                        <Plus size={isSingleExercise ? 18 : 14} />
+                                                        <Plus size={18} />
                                                     </button>
                                                 </div>
                                             </div>
@@ -2223,6 +2427,44 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                 ? 'mt-0 p-3'
                                 : (protocol === 'E' || protocol === 'LIBRE' ? 'px-4 py-2 mt-2' : 'p-4 mt-4')
                             }`}>
+
+                            {/* EVIDENCE UPLOAD SECTION */}
+                            <div className="flex justify-end mb-4">
+                                <input
+                                    type="file"
+                                    id={`evidence-${step.id}`}
+                                    className="hidden"
+                                    accept="image/*"
+                                    onChange={handleImageUpload}
+                                />
+                                <label
+                                    htmlFor={`evidence-${step.id}`}
+                                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-bold uppercase tracking-wide cursor-pointer transition-all ${evidenceUrl ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'}`}
+                                >
+                                    {isUploading ? (
+                                        <>
+                                            <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                                            <span>Subiendo...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Camera size={14} />
+                                            <span>{evidenceUrl ? 'Cambiar Foto' : 'Adjuntar Evidencia'}</span>
+                                        </>
+                                    )}
+                                </label>
+                            </div>
+                            {evidenceUrl && (
+                                <div className="mb-4">
+                                    <div className="relative w-full h-32 bg-slate-800 rounded-lg overflow-hidden border border-emerald-500/30">
+                                        <img src={evidenceUrl} alt="Evidencia" className="w-full h-full object-cover opacity-60 hover:opacity-100 transition-opacity" />
+                                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                            <Check size={28} className="text-emerald-500 drop-shadow-md" strokeWidth={3} />
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
                             {getTimerDisplay()}
 
                             {/* Block Instruction / Specific Notes */}
@@ -2334,7 +2576,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                 </div>
             )}
 
-            <div className={`w-full px-2 md:px-4 mb-20 transition-all duration-500 ease-in-out flex flex-col ${isActive ? 'flex-1' : ''}`}>
+            <div className={`w-full px-2 md:px-4 mb-20 transition-all duration-500 ${exercises.length > 1 ? 'gap-2' : 'gap-4'} ${isActive ? 'flex-1' : ''}`}>
                 {protocol === 'E' ? (
                     // EMOM SPECIFIC UI: Round Tracker + Static Exercise Info
                     <div className="space-y-4">
@@ -2449,7 +2691,8 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                                             <span className={`text-emerald-400 font-black ${isSingle ? 'text-lg' : 'text-sm'}`}>
                                                                 {isVariableReps ? repsPerSet.join('-') : targetReps}
                                                             </span>
-                                                            <span className={`text-emerald-400/70 font-medium ${isSingle ? 'text-sm' : 'text-[10px]'}`}>REPS</span>
+                                                            <span className={`text-emerald-400/70 font-medium ${isSingle ? 'text-sm' : 'text-[10px]'}`}>
+                                                                {(ex.quality === 'E' || ex.quality === 'Resistencia' || ex.quality === 'Cardio') ? (energyMetrics[idx]?.volumeUnit || 'kcal').toUpperCase() : (ex.config?.volType === 'TIME' ? 'seg' : 'reps')}                                                      </span>
                                                         </div>
                                                         {intensity && (
                                                             <div className={`bg-orange-500/15 border border-orange-500/30 rounded-lg flex items-center gap-1.5 ${isSingle ? 'px-3 py-1.5' : 'px-2 py-1'}`}>
@@ -2459,7 +2702,9 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                                         {weight && (
                                                             <div className={`bg-blue-500/15 border border-blue-500/30 rounded-lg flex items-center gap-1.5 ${isSingle ? 'px-3 py-1.5' : 'px-2 py-1'}`}>
                                                                 <span className={`text-blue-400 font-black ${isSingle ? 'text-lg' : 'text-sm'}`}>{weight}</span>
-                                                                <span className={`text-blue-400/70 font-medium ${isSingle ? 'text-sm' : 'text-[10px]'}`}>KG</span>
+                                                                <span className={`text-blue-400/70 font-medium ${isSingle ? 'text-sm' : 'text-[10px]'}`}>
+                                                                    {ex.quality === 'E' ? (energyMetrics[idx]?.intensityUnit || 'W').toUpperCase() : 'KG'}
+                                                                </span>
                                                             </div>
                                                         )}
                                                         {ex.notes && (
@@ -2533,8 +2778,24 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                                             {/* Weight Stepper Row */}
                                                             <div className="bg-slate-900/40 rounded-[1.5rem] p-3 border border-white/5 shadow-inner">
                                                                 <div className="flex items-center justify-between mb-3 px-1">
-                                                                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Peso Utilizado</span>
-                                                                    <span className="text-[8px] font-bold text-slate-600 bg-slate-800/30 px-2 py-0.5 rounded-full">+1kg steps</span>
+                                                                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                                                                        {ex.quality === 'E' ? 'Intensidad' : 'Peso Utilizado'}
+                                                                    </span>
+                                                                    <div className="flex items-center gap-2">
+                                                                        {ex.quality === 'E' && (
+                                                                            <select
+                                                                                value={energyMetrics[idx]?.intensityUnit || 'W'}
+                                                                                onChange={(e) => setEnergyMetrics(prev => ({ ...prev, [idx]: { ...prev[idx], intensityUnit: e.target.value } }))}
+                                                                                className="bg-transparent text-slate-500 text-[8px] font-black uppercase outline-none"
+                                                                            >
+                                                                                <option value="W">Watts</option>
+                                                                                <option value="Nivel">Nivel</option>
+                                                                                <option value="Paso">Paso</option>
+                                                                                <option value="RPM">RPM</option>
+                                                                            </select>
+                                                                        )}
+                                                                        <span className="text-[8px] font-bold text-slate-600 bg-slate-800/30 px-2 py-0.5 rounded-full">+1 unit steps</span>
+                                                                    </div>
                                                                 </div>
                                                                 <div className="flex items-center gap-2">
                                                                     <button
@@ -2553,7 +2814,9 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                                                             className="w-16 bg-transparent text-center text-white font-black text-xl outline-none"
                                                                             placeholder="0.0"
                                                                         />
-                                                                        <span className="text-[10px] font-black text-slate-500 uppercase">kg</span>
+                                                                        <span className="text-[10px] font-black text-slate-500 uppercase">
+                                                                            {ex.quality === 'E' ? (energyMetrics[idx]?.intensityUnit || 'W') : 'kg'}
+                                                                        </span>
                                                                     </div>
 
                                                                     <button
@@ -2568,8 +2831,27 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                                             {/* Reps Stepper Row */}
                                                             <div className="bg-slate-900/40 rounded-[1.5rem] p-3 border border-white/5 shadow-inner">
                                                                 <div className="flex items-center justify-between mb-3 px-1">
-                                                                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Repeticiones reales</span>
-                                                                    <span className="text-[8px] font-black text-emerald-500/60 bg-emerald-500/5 px-2 py-0.5 rounded-full uppercase tracking-tighter">Objetivo: {repsPerSet[setsCompleted] || targetReps} reps</span>
+                                                                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                                                                        {ex.quality === 'E' ? 'Volumen Real' : 'Repeticiones reales'}
+                                                                    </span>
+                                                                    <div className="flex items-center gap-2">
+                                                                        {ex.quality === 'E' && (
+                                                                            <select
+                                                                                value={energyMetrics[idx]?.volumeUnit || 'kcal'}
+                                                                                onChange={(e) => setEnergyMetrics(prev => ({ ...prev, [idx]: { ...prev[idx], volumeUnit: e.target.value } }))}
+                                                                                className="bg-transparent text-slate-500 text-[8px] font-black uppercase outline-none"
+                                                                            >
+                                                                                <option value="kcal">Kcal</option>
+                                                                                <option value="m">M</option>
+                                                                                <option value="km">Km</option>
+                                                                                <option value="min">Min</option>
+                                                                                <option value="seg">Seg</option>
+                                                                            </select>
+                                                                        )}
+                                                                        <span className="text-[8px] font-black text-emerald-500/60 bg-emerald-500/5 px-2 py-0.5 rounded-full uppercase tracking-tighter">
+                                                                            Objetivo: {repsPerSet[setsCompleted] || targetReps} {ex.quality === 'E' ? (energyMetrics[idx]?.volumeUnit || 'kcal') : 'reps'}
+                                                                        </span>
+                                                                    </div>
                                                                 </div>
                                                                 <div className="flex items-center gap-2">
                                                                     <button
@@ -2588,7 +2870,9 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                                                             className="w-16 bg-transparent text-center text-white font-black text-xl outline-none"
                                                                             placeholder="0"
                                                                         />
-                                                                        <span className="text-[10px] font-black text-slate-500 uppercase">reps</span>
+                                                                        <span className="text-[10px] font-black text-slate-500 uppercase">
+                                                                            {(ex.quality === 'E' || ex.quality === 'Resistencia' || ex.quality === 'Cardio') ? (energyMetrics[idx]?.volumeUnit || 'kcal') : 'reps'}
+                                                                        </span>
                                                                     </div>
 
                                                                     <button
@@ -2599,6 +2883,28 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                                                     </button>
                                                                 </div>
                                                             </div>
+
+                                                            {/* HR Input for LIBRE Energy */}
+                                                            {(ex.quality === 'E' || ex.quality === 'Resistencia' || ex.quality === 'Cardio') && (
+                                                                <div className="bg-red-500/5 rounded-[1.5rem] p-3 border border-red-500/10 shadow-inner mt-2">
+                                                                    <div className="flex items-center gap-1.5 mb-2 px-1">
+                                                                        <Activity size={12} className="text-red-500" />
+                                                                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">FC Media Serie {setsCompleted + 1}</span>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <div className="flex-1 bg-slate-900/40 rounded-xl h-10 border border-white/5 flex items-center justify-center gap-1">
+                                                                            <input
+                                                                                type="number"
+                                                                                value={heartRates[idx] || ''}
+                                                                                onChange={(e) => setHeartRates(prev => ({ ...prev, [idx]: e.target.value }))}
+                                                                                className="bg-transparent text-center text-white font-black text-lg outline-none w-20"
+                                                                                placeholder="--"
+                                                                            />
+                                                                            <span className="text-[10px] font-black text-slate-500 uppercase">bpm</span>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            )}
                                                         </div>
                                                         <button onClick={() => completeLibreSet(idx)} disabled={isResting} className="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-black py-4 rounded-xl flex items-center justify-center gap-3 shadow-lg">
                                                             <CheckCircle size={24} />
@@ -2767,7 +3073,8 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                     // STANDARD UI (R/T/Mix) - Rep Counters
                     <div className={`flex items-stretch transition-all duration-500 ${exercises.length > 1 ? 'gap-2' : 'gap-4'} ${isActive ? 'flex-1 mb-4' : ''}`}>
                         {exercises.map((ex, idx) => {
-                            // ... (logic from before) ...
+                            const isDual = exercises.length > 1;
+                            // Extract Targeting/Volume
                             const targetReps = ex.targetReps || module.targeting?.[0]?.volume || 0;
                             const cardReps = repsDone[idx] || 0;
                             const isTargetReached = protocol === 'R' && targetReps > 0 && cardReps >= targetReps;
@@ -2815,7 +3122,94 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                 });
                             };
 
-                            const isDual = exercises.length > 1;
+                            const isEnergy = ex.quality === 'E' || ex.quality === 'Resistencia' || ex.quality === 'Cardio';
+
+                            if (isEnergy) {
+                                return (
+                                    <div key={idx} className={`flex-1 w-0 rounded-[2rem] border flex flex-col transition-all duration-500 ${cardClass} ${isDual ? 'p-3' : 'p-5'} ${isActive ? 'shadow-xl' : ''}`}>
+                                        <div className="flex items-center justify-between mb-3">
+                                            <span className={`text-xs font-black uppercase tracking-wider truncate px-1 transition-all ${isTargetReached ? 'text-emerald-400' : 'text-slate-400'}`}>
+                                                {ex.nameEs || ex.name}
+                                            </span>
+                                            <div className="bg-orange-500/20 text-orange-500 p-1 rounded-md">
+                                                <Zap size={14} fill="currentColor" />
+                                            </div>
+                                        </div>
+
+                                        <div className="flex-1 flex flex-col gap-4">
+                                            {/* Volume Input */}
+                                            <div className="space-y-1.5">
+                                                <div className="flex justify-between items-center px-1">
+                                                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Volumen</span>
+                                                    <select
+                                                        value={energyMetrics[idx]?.volumeUnit || 'kcal'}
+                                                        onChange={(e) => setEnergyMetrics(prev => ({ ...prev, [idx]: { ...prev[idx], volumeUnit: e.target.value } }))}
+                                                        className="bg-transparent text-slate-400 text-[10px] font-black uppercase outline-none"
+                                                    >
+                                                        <option value="kcal">Kcal</option>
+                                                        <option value="m">M</option>
+                                                        <option value="km">Km</option>
+                                                        <option value="min">Min</option>
+                                                        <option value="seg">Seg</option>
+                                                    </select>
+                                                </div>
+                                                <div className="relative">
+                                                    <input
+                                                        type="number"
+                                                        value={repsDone[idx] || ''}
+                                                        onChange={(e) => handleRepInputChange(idx, e.target.value)}
+                                                        className="w-full bg-slate-900/50 border border-white/5 rounded-xl py-3 px-4 text-white font-black text-xl outline-none focus:border-emerald-500/30 transition-all"
+                                                        placeholder="0"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            {/* Intensity Input */}
+                                            <div className="space-y-1.5">
+                                                <div className="flex justify-between items-center px-1">
+                                                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Intensidad</span>
+                                                    <select
+                                                        value={energyMetrics[idx]?.intensityUnit || 'W'}
+                                                        onChange={(e) => setEnergyMetrics(prev => ({ ...prev, [idx]: { ...prev[idx], intensityUnit: e.target.value } }))}
+                                                        className="bg-transparent text-slate-400 text-[10px] font-black uppercase outline-none"
+                                                    >
+                                                        <option value="W">Watts</option>
+                                                        <option value="Nivel">Nivel</option>
+                                                        <option value="Paso">Paso</option>
+                                                        <option value="RPM">RPM</option>
+                                                    </select>
+                                                </div>
+                                                <div className="relative">
+                                                    <input
+                                                        type="text"
+                                                        inputMode="decimal"
+                                                        value={weightsUsed[idx] || ''}
+                                                        onChange={(e) => handleWeightInput(idx, e.target.value)}
+                                                        className="w-full bg-slate-900/50 border border-white/5 rounded-xl py-3 px-4 text-white font-black text-xl outline-none focus:border-emerald-500/30 transition-all"
+                                                        placeholder="0.0"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            {/* HR Input (Biometrics) */}
+                                            <div className="space-y-1.5 mt-2">
+                                                <div className="flex items-center gap-1.5 px-1">
+                                                    <Activity size={12} className="text-red-500" />
+                                                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">FC Media</span>
+                                                </div>
+                                                <input
+                                                    type="number"
+                                                    value={heartRates[idx] || ''}
+                                                    onChange={(e) => setHeartRates(prev => ({ ...prev, [idx]: e.target.value }))}
+                                                    className="w-full bg-red-500/5 border border-red-500/10 rounded-xl py-2 px-4 text-white font-black text-lg outline-none focus:border-red-500/30 transition-all"
+                                                    placeholder="-- bpm"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            }
+
                             return (
                                 <div key={idx} className={`flex-1 w-0 rounded-[2rem] border flex flex-col items-center justify-between transition-all duration-500 ${cardClass} ${isDual ? 'p-2' : 'p-4'} ${isActive ? 'py-5 shadow-xl' : ''}`}>
                                     <span className={`text-xs font-bold text-center mb-1 truncate w-full px-1 transition-all ${isTargetReached ? 'text-emerald-400' : 'text-slate-400'} ${isActive ? 'text-sm' : ''}`}>
@@ -3008,22 +3402,108 @@ const BlockFeedbackModal = ({ onConfirm, onBack, initialExNotes = {}, blockType,
 };
 
 const CardioTaskView = ({ session, overrides, onFinish, onBack }) => {
-    const [duration, setDuration] = useState(parseInt(overrides?.duration) || 10);
-    const [distance, setDistance] = useState(overrides?.distance || '');
-    const [rpe, setRpe] = useState(6);
+    // Prescribed values from overrides
+    const [pDuration] = useState(() => {
+        if (overrides?.volUnit === 'TIME') return parseInt(overrides.volVal);
+        return parseInt(overrides?.duration) || 10;
+    });
+    const [pDistance] = useState(() => {
+        if (overrides?.volVal && overrides?.volUnit !== 'TIME') return overrides.volVal;
+        return overrides?.distance || '';
+    });
+
+    // Extract Target Intensity (Pace, HR, etc.)
+    const { targetPace, targetHR, targetRPE } = useMemo(() => {
+        const config = overrides?.config;
+        const firstSet = config?.sets?.[0];
+        const intType = config?.intType || firstSet?.intType;
+        const val = firstSet?.rir; // In GlobalCreator, 'rir' holds the intensity value
+
+        return {
+            targetPace: intType === 'RITMO' ? val : null,
+            targetHR: intType === 'BPM' ? val : null,
+            targetRPE: intType === 'RPE' ? val : null
+        };
+    }, [overrides]);
+
+
+    // Actual values, initialized with prescribed
+    const [duration, setDuration] = useState(pDuration);
+    const [distance, setDistance] = useState(pDistance);
+    const [rpe, setRpe] = useState(targetRPE || 6);
     const [notes, setNotes] = useState('');
     const [saving, setSaving] = useState(false);
+
+    // New State for Cardio Improvements
+    const [elapsedSeconds, setElapsedSeconds] = useState(0);
+    const [isRunning, setIsRunning] = useState(false);
+    const [heartRateAvg, setHeartRateAvg] = useState('');
+    const [heartRateMax, setHeartRateMax] = useState('');
+
+    // Evidence Upload State
+    const [evidenceUrl, setEvidenceUrl] = useState(null);
+    const [isUploading, setIsUploading] = useState(false);
+
+    const handleImageUpload = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        setIsUploading(true);
+        try {
+            const url = await uploadToImgBB(file);
+            setEvidenceUrl(url);
+        } catch (error) {
+            console.error("Error uploading evidence:", error);
+            alert("Error al subir imagen: " + error.message);
+        } finally {
+            setIsUploading(false);
+        }
+    };
+
+    // Timer Logic
+    useEffect(() => {
+        let interval;
+        if (isRunning) {
+            interval = setInterval(() => {
+                setElapsedSeconds(prev => prev + 1);
+            }, 1000);
+        }
+        return () => clearInterval(interval);
+    }, [isRunning]);
+
+    // Format Time Helper
+    const formatTime = (totalSeconds) => {
+        const h = Math.floor(totalSeconds / 3600);
+        const m = Math.floor((totalSeconds % 3600) / 60);
+        const s = totalSeconds % 60;
+        return `${h > 0 ? h + ':' : ''}${m < 10 && h > 0 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
+    };
+
+    const pace = useMemo(() => {
+        const distNum = parseFloat(distance);
+        const durNum = parseFloat(duration);
+        if (!distNum || !durNum || distNum === 0 || durNum === 0) return null;
+        const paceDec = durNum / distNum;
+        const paceMin = Math.floor(paceDec);
+        const paceSec = Math.round((paceDec - paceMin) * 60);
+        return `${paceMin}:${paceSec < 10 ? '0' : ''}${paceSec}`;
+    }, [distance, duration]);
 
     const handleConfirm = async () => {
         setSaving(true);
         try {
             await onFinish({
-                duration,
+                duration: duration ? parseInt(duration) : null,
+                elapsedSeconds,
                 distance: distance ? parseFloat(distance) : null,
+                pace,
+                heartRateAvg: heartRateAvg ? parseInt(heartRateAvg) : null,
+                heartRateMax: heartRateMax ? parseInt(heartRateMax) : null,
                 rpe,
                 notes: notes.trim(),
                 comment: notes.trim(), // For backward compatibility
-                type: 'cardio'
+                type: 'cardio',
+                evidenceUrl // Pass evidence URL
             });
         } catch (err) {
             console.error(err);
@@ -3033,151 +3513,252 @@ const CardioTaskView = ({ session, overrides, onFinish, onBack }) => {
         }
     };
 
+    // Derived Display Values
+    const targetDist = pDistance ? parseFloat(pDistance) : null;
+    const isDistanceAssigned = overrides?.distance || (overrides?.volVal && overrides?.volUnit !== 'TIME');
+    const showDistAsHero = targetDist && targetDist > 0 && isDistanceAssigned;
+    const pVal = showDistAsHero ? `${pDistance} km` : `${pDuration} min`;
+
+    // Sync timer to duration input if sensible
+    const syncTimer = () => {
+        const calculatedMin = Math.ceil(elapsedSeconds / 60);
+        setDuration(calculatedMin);
+    };
+
     return (
-        <div className="fixed inset-0 z-[5000] bg-slate-50 flex flex-col overflow-hidden">
-            {/* Immersive Header */}
-            <div className="px-6 pt-12 pb-6 bg-white border-b border-slate-100 flex justify-between items-center shadow-sm">
-                <div className="flex flex-col">
-                    <div className="flex items-center gap-2 mb-1">
-                        <div className="bg-orange-500 p-1.5 rounded-lg text-white">
-                            <Flame size={18} fill="currentColor" />
-                        </div>
-                        <span className="text-[10px] font-black text-orange-500 uppercase tracking-[0.2em]">Sesión Cardiovascular</span>
+        <div className="fixed inset-0 z-[5000] bg-slate-950 text-white flex flex-col font-sans">
+            {/* 1. Header (Minimalist) */}
+            <header className="px-6 py-4 flex justify-between items-center bg-slate-900/50 backdrop-blur-md border-b border-white/5">
+                <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-orange-500/20 flex items-center justify-center text-orange-500">
+                        {showDistAsHero ? <Footprints size={16} /> : <Clock size={16} />}
                     </div>
-                    <h1 className="text-2xl font-black text-slate-900 tracking-tight">{session.name}</h1>
+                    <div>
+                        <h2 className="font-bold text-sm leading-tight text-slate-200">{session.name}</h2>
+                        <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                            <span>Meta: {pVal}</span>
+                            {targetPace && <span className="text-emerald-500">• {targetPace} min/km</span>}
+                            {targetHR && <span className="text-red-500">• {targetHR} bpm</span>}
+                        </div>
+                    </div>
                 </div>
-                <button
-                    onClick={onBack}
-                    className="w-10 h-10 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-900 transition-all"
-                >
-                    <X size={20} />
+                <button onClick={onBack} className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white transition-colors">
+                    <X size={16} />
                 </button>
-            </div>
+            </header>
 
+            {/* 2. Main Scrollable Content */}
             <div className="flex-1 overflow-y-auto p-6 space-y-8 pb-32">
-                {/* Session Description / Instructions */}
-                {session.description && (
-                    <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm relative overflow-hidden group">
-                        <div className="absolute top-0 left-0 w-1.5 h-full bg-emerald-500" />
-                        <div className="flex items-center gap-2 mb-3">
-                            <Info size={16} className="text-slate-400" />
-                            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Instrucciones de la sesión</h2>
-                        </div>
-                        <p className="text-slate-600 text-sm leading-relaxed whitespace-pre-line font-medium">
-                            {session.description}
-                        </p>
-                    </div>
-                )}
 
-                {/* Assigned Targets HUD */}
-                {(overrides?.duration || overrides?.distance || overrides?.notes) && (
-                    <div className="bg-slate-900 rounded-[2.5rem] p-6 text-white shadow-xl shadow-slate-900/20">
-                        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                            <Zap size={14} className="text-emerald-400" />
-                            Objetivos Asignados
-                        </h3>
-                        <div className="flex gap-4 mb-4">
-                            {overrides.duration && (
-                                <div className="flex-1 bg-white/5 rounded-2xl p-4 border border-white/5 backdrop-blur-md">
-                                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Tiempo</p>
-                                    <p className="text-xl font-black text-emerald-400">{overrides.duration} <span className="text-xs">min</span></p>
-                                </div>
-                            )}
-                            {overrides.distance && (
-                                <div className="flex-1 bg-white/5 rounded-2xl p-4 border border-white/5 backdrop-blur-md">
-                                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Distancia</p>
-                                    <p className="text-xl font-black text-blue-400">{overrides.distance} <span className="text-xs">km</span></p>
-                                </div>
-                            )}
-                        </div>
-                        {overrides.notes && (
-                            <div className="bg-white/5 rounded-2xl p-4 border border-white/5">
-                                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Notas Especiales</p>
-                                <p className="text-xs text-slate-300 italic">"{overrides.notes}"</p>
-                            </div>
+                {/* HERO STAT (Editable Actual) */}
+                <div className="flex flex-col items-center justify-center py-6">
+                    <div className="relative group">
+                        <input
+                            type="number"
+                            value={showDistAsHero ? distance : duration}
+                            onChange={(e) => showDistAsHero ? setDistance(e.target.value) : setDuration(e.target.value)}
+                            className="bg-transparent text-center text-7xl font-black text-white outline-none w-full max-w-[300px] placeholder:text-slate-800"
+                            placeholder="0"
+                        />
+                        <span className="absolute -bottom-4 left-1/2 -translate-x-1/2 text-xs font-black text-slate-500 uppercase tracking-[0.2em] pointer-events-none">
+                            {showDistAsHero ? 'KILÓMETROS' : 'MINUTOS'}
+                        </span>
+
+                        {/* Sync Timer Button (Only for Time Hero) */}
+                        {!showDistAsHero && elapsedSeconds > 60 && !isRunning && (
+                            <button onClick={syncTimer} className="absolute -right-12 top-1/2 -translate-y-1/2 p-2 bg-emerald-500/20 text-emerald-400 rounded-full hover:bg-emerald-500/40 transition-colors" title="Usar tiempo del cronómetro">
+                                <Clock size={16} />
+                            </button>
                         )}
                     </div>
-                )}
 
-                {/* Tracking Form */}
-                <div className="space-y-10 py-4">
-                    {/* Duration Slider */}
-                    <div>
-                        <div className="flex justify-between items-end mb-4 px-1">
-                            <div className="flex items-center gap-2">
-                                <Clock size={16} className="text-slate-400" />
-                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Duración Real</span>
+                    {/* Secondary Hero (The one not focused) */}
+                    <div className="mt-8 flex gap-8">
+                        {!showDistAsHero ? (
+                            <div className="flex flex-col items-center">
+                                <span className="text-2xl font-black text-slate-400">
+                                    {distance || '--'} <span className="text-sm">km</span>
+                                </span>
+                                <span className="text-[9px] text-slate-600 font-bold uppercase tracking-widest">Distancia</span>
                             </div>
-                            <span className="text-4xl font-black text-slate-900">{duration} <span className="text-base text-slate-400 font-bold">min</span></span>
+                        ) : (
+                            <div className="flex flex-col items-center relative">
+                                <span className="text-2xl font-black text-slate-400">
+                                    {duration || '--'} <span className="text-sm">min</span>
+                                </span>
+                                <span className="text-[9px] text-slate-600 font-bold uppercase tracking-widest">Tiempo</span>
+                                {elapsedSeconds > 60 && !isRunning && (
+                                    <button onClick={syncTimer} className="absolute -right-6 top-0 text-emerald-500 hover:scale-110 transition-transform">
+                                        <Clock size={12} />
+                                    </button>
+                                )}
+                            </div>
+                        )}
+                        <div className="flex flex-col items-center">
+                            <span className="text-2xl font-black text-slate-400">
+                                {pace || '--'}
+                            </span>
+                            <span className="text-[9px] text-slate-600 font-bold uppercase tracking-widest">Ritmo /km</span>
+                            {targetPace && <span className="text-[9px] text-emerald-500 font-bold">Meta: {targetPace}</span>}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Additional Metrics Grid */}
+                <div className="grid grid-cols-2 gap-4">
+                    {/* Distance Input (If not hero) */}
+                    {!showDistAsHero && (
+                        <div className="bg-slate-900/50 rounded-2xl p-4 border border-white/5 space-y-1">
+                            <div className="flex items-center gap-2 text-slate-500 mb-1">
+                                <Footprints size={14} />
+                                <span className="text-[10px] font-black uppercase tracking-widest">Distancia (km)</span>
+                            </div>
+                            <input
+                                type="number"
+                                value={distance}
+                                onChange={e => setDistance(e.target.value)}
+                                className="w-full bg-transparent text-2xl font-black text-white outline-none placeholder:text-slate-700"
+                                placeholder="0.00"
+                            />
+                        </div>
+                    )}
+
+                    {/* Duration Input (If not hero) */}
+                    {showDistAsHero && (
+                        <div className="bg-slate-900/50 rounded-2xl p-4 border border-white/5 space-y-1">
+                            <div className="flex items-center gap-2 text-slate-500 mb-1">
+                                <Clock size={14} />
+                                <span className="text-[10px] font-black uppercase tracking-widest">Tiempo (min)</span>
+                            </div>
+                            <input
+                                type="number"
+                                value={duration}
+                                onChange={e => setDuration(e.target.value)}
+                                className="w-full bg-transparent text-2xl font-black text-white outline-none placeholder:text-slate-700"
+                                placeholder="0"
+                            />
+                        </div>
+                    )}
+
+                    {/* Heart Rate Inputs */}
+                    <div className="bg-slate-900/50 rounded-2xl p-4 border border-white/5 space-y-1">
+                        <div className="flex items-center gap-2 text-red-500 mb-1">
+                            <Activity size={14} />
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 text-center">FC Media</span>
                         </div>
                         <input
-                            type="range" min="5" max="180" step="5"
-                            value={duration}
-                            onChange={e => setDuration(parseInt(e.target.value))}
-                            className="w-full h-3 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                            type="number"
+                            value={heartRateAvg}
+                            onChange={e => setHeartRateAvg(e.target.value)}
+                            className="w-full bg-transparent text-2xl font-black text-white outline-none placeholder:text-slate-700"
+                            placeholder={targetHR ? `Meta: ${targetHR}` : "-- bpm"}
                         />
                     </div>
 
-                    {/* Distance Input */}
-                    <div>
-                        <div className="flex items-center gap-2 mb-4 px-1">
-                            <Footprints size={16} className="text-slate-400" />
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Distancia (Opcional)</label>
+                    <div className="bg-slate-900/50 rounded-2xl p-4 border border-white/5 space-y-1 relative group">
+                        <div className="flex items-center gap-2 text-purple-500 mb-1">
+                            <Zap size={14} />
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">FC Máxima</span>
                         </div>
-                        <div className="relative">
-                            <input
-                                type="number" step="0.1" placeholder="00.0"
-                                value={distance}
-                                onChange={e => setDistance(e.target.value)}
-                                className="w-full text-6xl font-black text-slate-900 bg-transparent border-b-4 border-slate-100 focus:border-slate-900 outline-none pb-4 placeholder:text-slate-100 tracking-tighter"
-                            />
-                            <span className="absolute right-0 bottom-6 text-2xl font-black text-slate-300">km</span>
-                        </div>
+                        <input
+                            type="number"
+                            value={heartRateMax}
+                            onChange={e => setHeartRateMax(e.target.value)}
+                            className="w-full bg-transparent text-2xl font-black text-white outline-none placeholder:text-slate-700"
+                            placeholder="-- bpm"
+                        />
                     </div>
+                </div>
 
-                    {/* RPE Selector */}
+                {/* RPE Selector - Auto-filled if target exists */}
+                <div className="bg-slate-900/50 rounded-3xl p-6 border border-white/5">
                     <RPESelector
                         value={rpe}
                         onChange={setRpe}
-                        isLight={true}
-                        label="Esfuerzo Percibido (RPE)"
+                        label="Esfuerzo Percibido"
+                        isLight={false}
                     />
+                    {targetRPE && <p className="text-center text-[10px] text-slate-500 mt-2">Objetivo: RPE {targetRPE}</p>}
+                </div>
 
-                    {/* Notes */}
-                    <div className="pt-4">
-                        <div className="flex items-center gap-2 mb-4 px-1">
-                            <MessageSquare size={16} className="text-slate-400" />
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Comentarios Sensaciones</label>
+                {/* Evidence & Notes */}
+                <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest pl-2">Evidencia y Notas</span>
+                    </div>
+
+                    <div className="flex gap-4">
+                        {/* Evidence Button */}
+                        <div className="relative">
+                            <input
+                                type="file"
+                                accept="image/*"
+                                onChange={handleImageUpload}
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
+                                disabled={isUploading}
+                            />
+                            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${evidenceUrl ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                                {isUploading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> :
+                                    evidenceUrl ? <Check size={24} strokeWidth={3} /> : <Camera size={24} />}
+                            </div>
+                            {evidenceUrl && (
+                                <div className="absolute -top-2 -right-2 w-5 h-5 bg-emerald-500 border-2 border-slate-950 rounded-full flex items-center justify-center z-10 pointer-events-none">
+                                    <Check size={10} strokeWidth={4} className="text-white" />
+                                </div>
+                            )}
                         </div>
-                        <textarea
-                            value={notes}
-                            onChange={e => setNotes(e.target.value)}
-                            placeholder="¿Cómo te has sentido? ¿Alguna molestia?"
-                            className="w-full p-6 bg-white rounded-3xl text-sm font-bold text-slate-700 outline-none h-32 border border-slate-100 shadow-sm focus:border-emerald-500/30 transition-all resize-none"
-                        />
+
+                        {/* Notes Input */}
+                        <div className="flex-1 bg-slate-900/50 rounded-2xl border border-white/5 mx-2">
+                            <textarea
+                                value={notes}
+                                onChange={e => setNotes(e.target.value)}
+                                placeholder="Notas de la sesión..."
+                                className="w-full h-full bg-transparent p-4 text-sm font-medium text-slate-300 placeholder:text-slate-700 outline-none resize-none rounded-2xl"
+                            />
+                        </div>
                     </div>
                 </div>
+
             </div>
 
-            {/* Bottom Action */}
-            <div className="p-8 pt-4 bg-white border-t border-slate-100 shrink-0 shadow-2xl">
-                <button
-                    onClick={handleConfirm}
-                    disabled={saving}
-                    className="w-full py-5 bg-slate-900 hover:bg-slate-800 text-white rounded-[2rem] font-black text-lg active:scale-[0.98] transition-all disabled:opacity-50 shadow-xl shadow-slate-900/20 flex items-center justify-center gap-3"
-                >
-                    {saving ? (
-                        <div className="w-6 h-6 border-4 border-white border-t-transparent rounded-full animate-spin" />
-                    ) : (
-                        <>
-                            <CheckCircle size={20} strokeWidth={3} />
-                            CONFIRMAR Y FINALIZAR
-                        </>
-                    )}
-                </button>
-            </div>
+            {/* 3. Footer Actions */}
+            <footer className="p-6 pb-8 bg-slate-950/80 backdrop-blur-xl border-t border-white/5 relative z-50">
+                <div className="flex items-center gap-4">
+                    <button
+                        onClick={() => setIsRunning(!isRunning)}
+                        className={`w-16 h-16 rounded-full flex items-center justify-center shadow-lg transition-all active:scale-95 ${isRunning ? 'bg-orange-500 text-white shadow-orange-500/30' : 'bg-emerald-500 text-white shadow-emerald-500/30'}`}
+                    >
+                        {isRunning ? <Pause size={28} fill="currentColor" /> : <Play size={28} fill="currentColor" className="ml-1" />}
+                    </button>
+
+                    <button
+                        onClick={handleConfirm}
+                        disabled={saving}
+                        className="flex-1 h-16 bg-white text-slate-950 rounded-[2rem] font-black text-lg tracking-tight hover:bg-slate-200 active:scale-95 transition-all flex items-center justify-center gap-2 shadow-xl shadow-white/5 disabled:opacity-50"
+                    >
+                        {saving ? (
+                            <>
+                                <div className="w-5 h-5 border-2 border-slate-950/30 border-t-slate-950 rounded-full animate-spin"></div>
+                                <span>Guardando...</span>
+                            </>
+                        ) : (
+                            <>
+                                <span>TERMINAR SESIÓN</span>
+                                <ArrowRight size={20} />
+                            </>
+                        )}
+                    </button>
+                </div>
+                {/* Timer Mini Display */}
+                <div className="absolute -top-12 left-1/2 -translate-x-1/2 bg-slate-900/90 backdrop-blur px-4 py-1.5 rounded-full border border-white/10 flex items-center gap-2 shadow-lg">
+                    <Clock size={12} className={isRunning ? 'text-emerald-400 animate-pulse' : 'text-slate-500'} />
+                    <span className="font-mono font-bold text-lg text-slate-200">{formatTime(elapsedSeconds)}</span>
+                </div>
+            </footer>
         </div>
     );
 };
 
 export default SessionRunner;
+

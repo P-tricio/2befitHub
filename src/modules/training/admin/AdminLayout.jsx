@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { Dumbbell, Layers, Calendar, ClipboardList, ArrowLeft, Users, LogOut, Sparkles, MessageCircle } from 'lucide-react';
+import { Dumbbell, Layers, Calendar, ClipboardList, ArrowLeft, Users, LogOut, Sparkles, MessageCircle, Utensils } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 import AdminChatManager from './components/AdminChatManager';
 import NotificationBell from '../components/NotificationBell';
@@ -59,6 +59,7 @@ const AdminLayout = () => {
                     <AdminLink to="/training/admin" icon={Layers} label="Dashboard" end />
                     <AdminLink to="/training/admin/global-creator" icon={Sparkles} label="Editor Global" />
                     <AdminLink to="/training/admin/programs" icon={Calendar} label="Programas" />
+
                     <AdminLink to="/training/admin/forms" icon={ClipboardList} label="Control o Seguimiento" />
 
                     <button
@@ -140,6 +141,7 @@ const AdminLayout = () => {
                 <MobileLink to="/training/admin" icon={Layers} label="Home" end isMobileLandscape={isMobileLandscape} />
                 <MobileLink to="/training/admin/global-creator" icon={Sparkles} label="Editor" isMobileLandscape={isMobileLandscape} />
                 <MobileLink to="/training/admin/programs" icon={Calendar} label="Progr." isMobileLandscape={isMobileLandscape} />
+
 
                 <MobileLink to="/training/admin/forms" icon={ClipboardList} label="Control" isMobileLandscape={isMobileLandscape} />
 

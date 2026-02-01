@@ -15,7 +15,8 @@ import {
     BarChart3,
     Notebook,
     SquareCheck,
-    Dumbbell
+    Dumbbell,
+    Check
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -29,7 +30,7 @@ const ActivityLog = () => {
     const [filterPriority, setFilterPriority] = useState('all');
     const navigate = useNavigate();
 
-    const highPriorityCount = notifications.filter(n => n.priority === 'high').length;
+    const highPriorityCount = notifications.filter(n => n.priority === 'high' && !n.read).length;
 
     useEffect(() => {
         const unsub = TrainingDB.notifications.listen('admin', (data) => {
@@ -213,11 +214,24 @@ const ActivityLog = () => {
                                             </span>
                                         </div>
 
-                                        <p className="text-sm font-medium text-slate-500 whitespace-pre-line leading-relaxed">
+                                        <p className="text-sm font-medium text-slate-500 line-clamp-1">
                                             {noti.message}
                                         </p>
                                     </div>
-                                    <ChevronRight className="text-slate-200 group-hover:text-slate-400 transition-colors self-center" size={20} />
+                                    {noti.priority === 'high' && (
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                e.preventDefault();
+                                                TrainingDB.notifications.markAsRead(noti.id);
+                                            }}
+                                            className={`p-2.5 rounded-xl transition-all shrink-0 self-center z-10 active:scale-90 ${noti.read ? 'bg-slate-100 text-slate-400' : 'bg-emerald-100 text-emerald-600 hover:bg-emerald-200'}`}
+                                            title={noti.read ? 'Ya visto' : 'Marcar como visto'}
+                                        >
+                                            <Check size={18} strokeWidth={3} />
+                                        </button>
+                                    )}
+                                    <ChevronRight className="text-slate-200 group-hover:text-slate-400 transition-colors self-center shrink-0" size={20} />
                                 </div>
                             );
                         })}

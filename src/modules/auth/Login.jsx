@@ -8,10 +8,11 @@ const Login = () => {
     const [isLogin, setIsLogin] = useState(true);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [fullName, setFullName] = useState('');
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
     const [loading, setLoading] = useState(false);
-    const { login, signup, googleLogin } = useAuth();
+    const { login, signup, googleLogin, updateUserProfile } = useAuth();
     const navigate = useNavigate();
 
     const translateError = (err) => {
@@ -44,6 +45,9 @@ const Login = () => {
                 navigate('/');
             } else {
                 await signup(email, password);
+                if (fullName.trim()) {
+                    await updateUserProfile({ displayName: fullName });
+                }
                 // After successful registration, instead of entering, we show success and switch to login
                 setSuccess('¡Cuenta creada correctamente! Ya puedes iniciar sesión con tus credenciales.');
                 setIsLogin(true);
@@ -148,6 +152,28 @@ const Login = () => {
                     </AnimatePresence>
 
                     <form onSubmit={handleSubmit} className="space-y-4">
+                        {!isLogin && (
+                            <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: 'auto' }}
+                                exit={{ opacity: 0, height: 0 }}
+                                className="overflow-hidden"
+                            >
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Nombre Completo</label>
+                                <div className="relative mb-4">
+                                    <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+                                    <input
+                                        type="text"
+                                        required={!isLogin}
+                                        value={fullName}
+                                        onChange={(e) => setFullName(e.target.value)}
+                                        className="w-full pl-12 pr-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold text-slate-900 focus:border-emerald-500 focus:bg-white outline-none transition-all placeholder:text-slate-300"
+                                        placeholder="Tu Nombre"
+                                    />
+                                </div>
+                            </motion.div>
+                        )}
+
                         <div>
                             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Email</label>
                             <div className="relative">

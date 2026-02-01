@@ -7,6 +7,9 @@ import ProgramBuilder from './admin/ProgramBuilder';
 import ControlHub from './admin/ControlHub';
 import AdminDashboard from './admin/AdminDashboard';
 import ActivityLog from './admin/ActivityLog';
+import FoodLibrary from '../nutrition/admin/FoodLibrary';
+import RecipeEditor from '../nutrition/admin/RecipeEditor';
+
 
 // Note: ExerciseManager, ModuleBuilder, and SessionBuilder have been consolidated into GlobalCreator
 // Old paths redirect to global-creator for backward compatibility
@@ -20,12 +23,20 @@ const TrainingAdminRoutes = () => {
                 <Route path="exercises" element={<Navigate to="/training/admin/global-creator" replace />} />
                 <Route path="modules" element={<Navigate to="/training/admin/global-creator" replace />} />
                 <Route path="sessions" element={<Navigate to="/training/admin/global-creator" replace />} />
+
                 {/* Active routes */}
                 <Route path="global-creator" element={<GlobalCreator />} />
                 <Route path="programs" element={<ProgramBuilder />} />
                 <Route path="users" element={<UserManager />} />
                 <Route path="forms" element={<ControlHub />} />
                 <Route path="activity" element={<ActivityLog />} />
+
+                {/* Nutrition Routes */}
+                <Route path="nutrition/foods" element={<FoodLibrary />} />
+                <Route path="nutrition/recipes" element={<RecipeEditor />} />
+                {/* Redirection for old Nutrition Plans to Unified Programs */}
+                <Route path="nutrition/plans" element={<Navigate to="/training/admin/programs" replace />} />
+
             </Route>
         </Routes>
     );

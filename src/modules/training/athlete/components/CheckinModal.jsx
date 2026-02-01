@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format, subDays } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -399,20 +400,24 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
     const isCheckin = task.type === 'checkin' || task.type === 'tracking';
     const isFreeTraining = task.type === 'free_training';
 
-    return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+    return createPortal(
+        <div className="fixed inset-0 z-[5000] flex flex-col justify-end">
             <motion.div
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
                 onClick={() => onClose(false)}
             />
             <motion.div
-                initial={{ scale: 0.9, opacity: 0, y: 20 }}
-                animate={{ scale: 1, opacity: 1, y: 0 }}
-                exit={{ scale: 0.9, opacity: 0, y: 20 }}
-                className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl z-[110] overflow-hidden max-h-[95vh] flex flex-col"
+                initial={{ y: '100%' }}
+                animate={{ y: 0 }}
+                exit={{ y: '100%' }}
+                transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                className="relative w-full h-[95vh] bg-white rounded-t-3xl shadow-[0_-8px_30px_rgba(0,0,0,0.12)] overflow-hidden flex flex-col"
             >
-                <div className="p-6 pb-4 border-b border-slate-50 flex justify-between items-center bg-slate-50/50 shrink-0">
+                {/* Header - Sticky Top */}
+                <div className="p-6 pb-4 border-b border-slate-50 flex justify-between items-center bg-white z-10 shrink-0">
                     <div>
                         <h3 className="text-xl font-black text-slate-900 flex items-center gap-2">
                             {isNeat && 'Movimiento Extra'}
@@ -441,419 +446,422 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                                 <Trash2 size={18} />
                             </button>
                         )}
-                        <button onClick={() => onClose(false)} className="p-2 bg-white border border-slate-100 rounded-full hover:bg-slate-50 shadow-sm">
+                        <button onClick={() => onClose(false)} className="p-2 bg-slate-50 border border-slate-100 rounded-full hover:bg-slate-100 shadow-sm">
                             <X size={18} className="text-slate-400" />
                         </button>
                     </div>
                 </div>
 
-                <div className="p-6 space-y-8 overflow-y-auto">
-                    {/* --- CATEGORIZED HABITS (Integrated) --- */}
-                    {(isNeat || isNutrition) && (
-                        <div className="space-y-4">
-                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">
-                                {isNeat ? 'Mínimos de Movimiento' : (isRetroactive ? '¿Ayer cumpliste con tus hábitos de?' : 'Hábitos de Hoy')}
-                            </label>
-                            <div className="grid grid-cols-1 gap-2">
-                                {(() => {
-                                    let selectedCategories = task.config?.categories || (task.config?.category ? [task.config.category] : []);
+                {/* Scrollable Content */}
+                <div className="flex-1 overflow-y-auto bg-white">
+                    <div className="max-w-md mx-auto p-6 space-y-8 pb-32">
+                        {/* --- CATEGORIZED HABITS (Integrated) --- */}
+                        {(isNeat || isNutrition) && (
+                            <div className="space-y-4">
+                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">
+                                    {isNeat ? 'Mínimos de Movimiento' : (isRetroactive ? '¿Ayer cumpliste con tus hábitos de?' : 'Hábitos de Hoy')}
+                                </label>
+                                <div className="grid grid-cols-1 gap-2">
+                                    {(() => {
+                                        let selectedCategories = task.config?.categories || (task.config?.category ? [task.config.category] : []);
 
-                                    // Default category for NEAT is movement
-                                    if (isNeat && selectedCategories.length === 0) {
-                                        selectedCategories = ['movement'];
-                                    }
-
-                                    let habitsToShow = [];
-                                    if (selectedCategories.length > 0 && !selectedCategories.includes('general')) {
-                                        selectedCategories.forEach(cat => {
-                                            if (userMinimums[cat]) {
-                                                habitsToShow = [...habitsToShow, ...(userMinimums[cat] || [])];
-                                            }
-                                        });
-                                    } else {
-                                        habitsToShow = [
-                                            ...(task.config?.habits || []),
-                                            ...userMinimums.nutrition,
-                                            ...userMinimums.movement,
-                                            ...userMinimums.health,
-                                            ...userMinimums.uncategorized
-                                        ];
-                                    }
-
-                                    // Helper to de-duplicate habits by name (normalized)
-                                    const uniqueHabits = (arr) => {
-                                        const seen = new Set();
-                                        return arr.filter(h => {
-                                            const name = typeof h === 'string' ? h : h.name;
-                                            if (!name) return false;
-                                            const normalized = name.toLowerCase().trim().replace(/\.+$/, "");
-                                            if (seen.has(normalized)) return false;
-                                            seen.add(normalized);
-                                            return true;
-                                        });
-                                    };
-
-                                    return uniqueHabits(habitsToShow).map(habit => {
-                                        const habitName = typeof habit === 'string' ? habit : habit.name;
-                                        const habitTarget = typeof habit === 'string' ? 7 : (habit.target || 7);
-                                        const status = habitsResults[habitName];
-                                        const isWeekly = task.config?.isWeeklyReporting;
-
-                                        if (isWeekly) {
-                                            const daysCount = parseInt(status) || 0;
-                                            const isGoalMet = daysCount >= habitTarget;
-                                            return (
-                                                <div key={habitName} className="p-5 rounded-[2rem] border border-slate-100 bg-white shadow-sm space-y-4">
-                                                    <div className="flex justify-between items-center mb-1">
-                                                        <div className="flex flex-col">
-                                                            <span className="font-black text-sm text-slate-900">{habitName}</span>
-                                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Meta: {habitTarget} {habitTarget === 1 ? 'día' : 'días'}</span>
-                                                        </div>
-                                                        <div className="flex items-center gap-2">
-                                                            {isGoalMet && <div className="p-1 bg-emerald-500 text-white rounded-full"><Check size={10} strokeWidth={4} /></div>}
-                                                            <span className={`text-xl font-black ${isGoalMet ? 'text-emerald-500' : 'text-indigo-600'}`}>{daysCount}<span className="text-[10px] text-slate-300 ml-1">días</span></span>
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex justify-between gap-1">
-                                                        {[0, 1, 2, 3, 4, 5, 6, 7].map(num => (
-                                                            <button
-                                                                key={num}
-                                                                onClick={() => setHabitsResults(prev => ({ ...prev, [habitName]: num }))}
-                                                                className={`flex-1 h-10 rounded-xl font-bold text-xs transition-all ${daysCount === num ? 'bg-indigo-500 text-white shadow-lg scale-110' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}
-                                                            >
-                                                                {num}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            );
+                                        // Default category for NEAT is movement
+                                        if (isNeat && selectedCategories.length === 0) {
+                                            selectedCategories = ['movement'];
                                         }
 
-                                        return (
-                                            <div
-                                                key={habitName}
-                                                className={`flex items-center justify-between p-4 rounded-3xl border transition-all 
-                                                    ${status === true ? 'bg-emerald-50 border-emerald-200 text-emerald-700 shadow-sm' : ''}
-                                                    ${status === false ? 'bg-red-50 border-red-200 text-red-700 shadow-sm' : ''}
-                                                    ${status === null || status === undefined ? 'bg-white border-slate-100 text-slate-500' : ''}
-                                                `}
-                                            >
-                                                <span className="font-black text-sm">{habitName}</span>
+                                        let habitsToShow = [];
+                                        if (selectedCategories.length > 0 && !selectedCategories.includes('general')) {
+                                            selectedCategories.forEach(cat => {
+                                                if (userMinimums[cat]) {
+                                                    habitsToShow = [...habitsToShow, ...(userMinimums[cat] || [])];
+                                                }
+                                            });
+                                        } else {
+                                            habitsToShow = [
+                                                ...(task.config?.habits || []),
+                                                ...userMinimums.nutrition,
+                                                ...userMinimums.movement,
+                                                ...userMinimums.health,
+                                                ...userMinimums.uncategorized
+                                            ];
+                                        }
 
-                                                <div className="flex gap-2">
-                                                    <button
-                                                        onClick={() => setHabitsResults(prev => ({ ...prev, [habitName]: false }))}
-                                                        className={`w-10 h-10 rounded-2xl border-2 flex items-center justify-center transition-all ${status === false ? 'bg-red-500 border-red-500 text-white shadow-lg scale-110' : 'bg-white border-slate-100 text-slate-300 hover:border-red-200'}`}
-                                                    >
-                                                        <X size={16} strokeWidth={4} />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => setHabitsResults(prev => ({ ...prev, [habitName]: true }))}
-                                                        className={`w-10 h-10 rounded-2xl border-2 flex items-center justify-center transition-all ${status === true ? 'bg-emerald-500 border-emerald-500 text-white shadow-lg scale-110' : 'bg-white border-slate-100 text-slate-300 hover:border-emerald-200'}`}
-                                                    >
-                                                        <Check size={16} strokeWidth={4} />
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        );
-                                    });
-                                })()}
-                            </div>
-                        </div>
-                    )}
+                                        // Helper to de-duplicate habits by name (normalized)
+                                        const uniqueHabits = (arr) => {
+                                            const seen = new Set();
+                                            return arr.filter(h => {
+                                                const name = typeof h === 'string' ? h : h.name;
+                                                if (!name) return false;
+                                                const normalized = name.toLowerCase().trim().replace(/\.+$/, "");
+                                                if (seen.has(normalized)) return false;
+                                                seen.add(normalized);
+                                                return true;
+                                            });
+                                        };
 
-                    {/* --- NEAT / ACTIVITY FORM --- */}
-                    {isNeat && (
-                        <div className="space-y-8">
-                            <div className="flex gap-2">
-                                {[
-                                    { id: 'steps', label: 'Pasos', icon: <Footprints size={20} /> },
-                                    { id: 'time', label: 'Tiempo (min)', icon: <Clock size={20} /> }
-                                ].map(type => (
-                                    <button
-                                        key={type.id}
-                                        onClick={() => handleActivityTypeChange(type.id)}
-                                        className={`flex-1 flex flex-col items-center gap-2 py-5 rounded-3xl border-2 transition-all ${activityType === type.id ? 'bg-slate-900 border-slate-900 text-white shadow-xl' : 'bg-white border-slate-100 text-slate-400 hover:border-emerald-200'}`}
-                                    >
-                                        {type.icon}
-                                        <span className="text-[10px] font-black uppercase tracking-wider">{type.label}</span>
-                                    </button>
-                                ))}
-                            </div>
+                                        return uniqueHabits(habitsToShow).map(habit => {
+                                            const habitName = typeof habit === 'string' ? habit : habit.name;
+                                            const habitTarget = typeof habit === 'string' ? 7 : (habit.target || 7);
+                                            const status = habitsResults[habitName];
+                                            const isWeekly = task.config?.isWeeklyReporting;
 
-                            <div>
-                                <div className="flex justify-between items-end mb-4 px-1">
-                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Registrar</span>
-                                    <span className="text-4xl font-black text-slate-900">{duration} <span className="text-base text-slate-400 font-bold">{activityType === 'steps' ? 'pasos' : 'min'}</span></span>
-                                </div>
-                                <input
-                                    type="range"
-                                    min={activityType === 'steps' ? "0" : "5"}
-                                    max={activityType === 'steps' ? "30000" : "180"}
-                                    step={activityType === 'steps' ? "500" : "5"}
-                                    value={duration}
-                                    onChange={e => setDuration(parseInt(e.target.value))}
-                                    className="w-full h-3 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                                />
-                            </div>
-                        </div>
-                    )}
-
-                    {/* --- FREE TRAINING FORM --- */}
-                    {isFreeTraining && (
-                        <div className="space-y-8">
-                            <div className="flex gap-2">
-                                {[
-                                    { id: 'gym', label: 'Fuerza', icon: <Dumbbell size={20} /> },
-                                    { id: 'cardio', label: 'Cardio', icon: <Flame size={20} /> },
-                                    { id: 'other', label: 'Otros', icon: <Zap size={20} /> }
-                                ].map(type => (
-                                    <button
-                                        key={type.id}
-                                        onClick={() => {
-                                            setActivityType(type.id);
-                                            if (type.id !== activityType) {
-                                                setDuration(0);
-                                                setRpe(null);
-                                            }
-                                        }}
-                                        className={`flex-1 flex flex-col items-center gap-2 py-5 rounded-3xl border-2 transition-all ${activityType === type.id ? 'bg-slate-900 border-slate-900 text-white shadow-xl' : 'bg-white border-slate-100 text-slate-400 hover:border-emerald-200'}`}
-                                    >
-                                        {type.icon}
-                                        <span className="text-[10px] font-black uppercase tracking-wider">{type.label}</span>
-                                    </button>
-                                ))}
-                            </div>
-
-                            <div>
-                                <div className="flex justify-between items-end mb-4 px-1">
-                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Duración</span>
-                                    <span className="text-4xl font-black text-slate-900">{duration} <span className="text-base text-slate-400 font-bold">min</span></span>
-                                </div>
-                                <input
-                                    type="range"
-                                    min="5"
-                                    max="180"
-                                    step="5"
-                                    value={duration}
-                                    onChange={e => setDuration(parseInt(e.target.value))}
-                                    className="w-full h-3 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                                />
-                            </div>
-
-                            <RPESelector
-                                value={rpe}
-                                onChange={setRpe}
-                                isLight={true}
-                                label="Esfuerzo (RPE)"
-                            />
-                        </div>
-                    )}
-
-                    {/* --- CHECKIN & TRACKING FORM --- */}
-                    {isCheckin && (
-                        <div className="space-y-10">
-                            {(task.config?.weight !== false) && (
-                                <div>
-                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Peso Corporal</label>
-                                    <div className="relative">
-                                        <input
-                                            type="number"
-                                            value={weight}
-                                            onChange={e => setWeight(e.target.value)}
-                                            placeholder="00.0"
-                                            className="w-full text-7xl font-black text-slate-900 bg-transparent border-b-4 border-slate-50 focus:border-slate-900 outline-none pb-4 placeholder:text-slate-100 tracking-tighter"
-                                        />
-                                        <span className="absolute right-0 bottom-6 text-2xl font-black text-slate-300">kg</span>
-                                    </div>
-                                </div>
-                            )}
-
-                            {task.config?.photos !== false && (
-                                <div>
-                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Progreso Visual</label>
-                                    <div className="grid grid-cols-3 gap-3">
-                                        {['front', 'side', 'back'].map((side) => (
-                                            <label key={side} className="aspect-[3/4.5] rounded-3xl border-2 border-dashed border-slate-200 hover:border-slate-900 hover:bg-slate-50 transition-all flex flex-col items-center justify-center cursor-pointer relative overflow-hidden bg-white shadow-sm active:scale-95">
-                                                {photos[side] ? (
-                                                    <img
-                                                        src={URL.createObjectURL(photos[side])}
-                                                        className="absolute inset-0 w-full h-full object-cover"
-                                                    />
-                                                ) : photoUrls[side] ? (
-                                                    <img
-                                                        src={photoUrls[side]}
-                                                        className="absolute inset-0 w-full h-full object-cover"
-                                                    />
-                                                ) : (
-                                                    <div className="flex flex-col items-center gap-2">
-                                                        <div className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-300">
-                                                            <Camera size={20} />
+                                            if (isWeekly) {
+                                                const daysCount = parseInt(status) || 0;
+                                                const isGoalMet = daysCount >= habitTarget;
+                                                return (
+                                                    <div key={habitName} className="p-5 rounded-[2rem] border border-slate-100 bg-white shadow-sm space-y-4">
+                                                        <div className="flex justify-between items-center mb-1">
+                                                            <div className="flex flex-col">
+                                                                <span className="font-black text-sm text-slate-900">{habitName}</span>
+                                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Meta: {habitTarget} {habitTarget === 1 ? 'día' : 'días'}</span>
+                                                            </div>
+                                                            <div className="flex items-center gap-2">
+                                                                {isGoalMet && <div className="p-1 bg-emerald-500 text-white rounded-full"><Check size={10} strokeWidth={4} /></div>}
+                                                                <span className={`text-xl font-black ${isGoalMet ? 'text-emerald-500' : 'text-indigo-600'}`}>{daysCount}<span className="text-[10px] text-slate-300 ml-1">días</span></span>
+                                                            </div>
                                                         </div>
-                                                        <span className="text-[8px] uppercase font-black text-slate-400 tracking-widest">
-                                                            {side === 'front' ? 'Frente' : side === 'side' ? 'Perfil' : 'Espalda'}
-                                                        </span>
-                                                    </div>
-                                                )}
-                                                <input
-                                                    type="file"
-                                                    accept="image/*"
-                                                    className="hidden"
-                                                    onChange={(e) => handleImageSelect(e, side)}
-                                                />
-                                            </label>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-
-                            {task.config?.metrics !== false && (
-                                <div className="pt-4">
-                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 text-center">Biometría (cm)</label>
-                                    <div className="grid grid-cols-2 gap-y-8 gap-x-6">
-                                        <div className="space-y-1">
-                                            <label className="block text-[10px] font-black text-slate-300 uppercase pl-1">Cintura</label>
-                                            <input
-                                                type="number"
-                                                value={waist}
-                                                onChange={e => setWaist(e.target.value)}
-                                                className="w-full text-4xl font-black text-slate-900 bg-transparent border-b-2 border-slate-50 focus:border-slate-900 outline-none py-2 transition-colors"
-                                            />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="block text-[10px] font-black text-slate-300 uppercase pl-1">Cadera</label>
-                                            <input
-                                                type="number"
-                                                value={hip}
-                                                onChange={e => setHip(e.target.value)}
-                                                className="w-full text-4xl font-black text-slate-900 bg-transparent border-b-2 border-slate-50 focus:border-slate-900 outline-none py-2 transition-colors"
-                                            />
-                                        </div>
-                                        {customMetrics.map((metric) => (
-                                            <div key={metric} className="space-y-1">
-                                                <label className="block text-[10px] font-black text-slate-300 uppercase pl-1">{metric}</label>
-                                                <input
-                                                    type="number"
-                                                    value={customValues[metric] || ''}
-                                                    onChange={e => handleCustomMetricChange(metric, e.target.value)}
-                                                    className="w-full text-4xl font-black text-slate-900 bg-transparent border-b-2 border-slate-50 focus:border-slate-900 outline-none py-2 transition-colors"
-                                                />
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Custom Form Runner */}
-                            {formDefinition && (
-                                <div className="pt-10 border-t border-slate-50 space-y-8">
-                                    <div>
-                                        <h4 className="text-xl font-black text-slate-900 tracking-tight">{formDefinition.name}</h4>
-                                        {formDefinition.description && <p className="text-xs text-slate-500 font-bold uppercase mt-1 tracking-widest">{formDefinition.description}</p>}
-                                    </div>
-
-                                    <div className="space-y-6">
-                                        {formDefinition.fields?.map(field => (
-                                            <div key={field.id} className="space-y-3">
-                                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">{field.label}</label>
-
-                                                {field.type === 'text' && (
-                                                    <input
-                                                        type="text"
-                                                        value={formAnswers[field.id] || ''}
-                                                        onChange={e => setFormAnswers(prev => ({ ...prev, [field.id]: e.target.value }))}
-                                                        className="w-full p-5 bg-slate-50 border border-slate-100 rounded-[1.8rem] text-slate-800 font-bold outline-none focus:border-slate-900 transition-colors"
-                                                        placeholder="Tu respuesta..."
-                                                    />
-                                                )}
-
-                                                {field.type === 'number' && (
-                                                    <input
-                                                        type="number"
-                                                        value={formAnswers[field.id] || ''}
-                                                        onChange={e => setFormAnswers(prev => ({ ...prev, [field.id]: e.target.value }))}
-                                                        className="w-full p-5 bg-slate-50 border border-slate-100 rounded-[1.8rem] text-slate-800 font-bold outline-none focus:border-slate-900 transition-colors"
-                                                        placeholder="0"
-                                                    />
-                                                )}
-
-                                                {field.type === 'boolean' && (
-                                                    <div className="flex gap-2">
-                                                        {['Sí', 'No'].map(opt => (
-                                                            <button
-                                                                key={opt}
-                                                                onClick={() => setFormAnswers(prev => ({ ...prev, [field.id]: opt }))}
-                                                                className={`flex-1 py-4 rounded-[1.5rem] font-black text-xs uppercase tracking-widest border transition-all ${formAnswers[field.id] === opt ? 'bg-slate-900 text-white border-slate-900 shadow-lg' : 'bg-white text-slate-400 border-slate-100'}`}
-                                                            >
-                                                                {opt}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                )}
-
-                                                {field.type === 'select' && (
-                                                    <select
-                                                        value={formAnswers[field.id] || ''}
-                                                        onChange={e => setFormAnswers(prev => ({ ...prev, [field.id]: e.target.value }))}
-                                                        className="w-full p-5 bg-slate-50 border border-slate-100 rounded-[1.8rem] text-slate-800 font-black outline-none appearance-none"
-                                                    >
-                                                        <option value="">Seleccionar...</option>
-                                                        {field.options?.split(',').map(opt => (
-                                                            <option key={opt.trim()} value={opt.trim()}>{opt.trim()}</option>
-                                                        ))}
-                                                    </select>
-                                                )}
-
-                                                {field.type === 'scale' && (
-                                                    <div className="space-y-2">
-                                                        <div className="flex justify-between px-1">
-                                                            <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">
-                                                                0 = {field.options?.split(',')[0]?.trim() || 'Nada'}
-                                                            </span>
-                                                            <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">
-                                                                10 = {field.options?.split(',')[1]?.trim() || 'Mucho'}
-                                                            </span>
-                                                        </div>
-                                                        <div className="flex flex-wrap gap-2 justify-center pb-2">
-                                                            {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(val => (
+                                                        <div className="flex justify-between gap-1">
+                                                            {[0, 1, 2, 3, 4, 5, 6, 7].map(num => (
                                                                 <button
-                                                                    key={val}
-                                                                    onClick={() => setFormAnswers(prev => ({ ...prev, [field.id]: val }))}
-                                                                    className={`
-                                                                        w-10 h-10 rounded-xl text-sm font-black transition-all
-                                                                        ${parseInt(formAnswers[field.id]) === val
-                                                                            ? 'bg-slate-900 text-white shadow-lg scale-110'
-                                                                            : 'bg-slate-50 text-slate-400 hover:bg-slate-100'
-                                                                        }
-                                                                    `}
+                                                                    key={num}
+                                                                    onClick={() => setHabitsResults(prev => ({ ...prev, [habitName]: num }))}
+                                                                    className={`flex-1 h-10 rounded-xl font-bold text-xs transition-all ${daysCount === num ? 'bg-indigo-500 text-white shadow-lg scale-110' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}
                                                                 >
-                                                                    {val}
+                                                                    {num}
                                                                 </button>
                                                             ))}
                                                         </div>
                                                     </div>
-                                                )}
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    )}
+                                                );
+                                            }
 
-                    {/* --- SHARED NOTES --- */}
-                    <div className="pt-4">
-                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1 mb-2">Observaciones Extra</label>
-                        <textarea
-                            value={notes}
-                            onChange={e => setNotes(e.target.value)}
-                            placeholder="¿Algún comentario para tu entrenador?"
-                            className="w-full p-5 bg-slate-50 rounded-[1.8rem] text-sm font-bold text-slate-700 outline-none h-28 border border-slate-50 focus:border-slate-200 transition-colors resize-none"
-                        />
+                                            return (
+                                                <div
+                                                    key={habitName}
+                                                    className={`flex items-center justify-between p-4 rounded-3xl border transition-all 
+                                                    ${status === true ? 'bg-emerald-50 border-emerald-200 text-emerald-700 shadow-sm' : ''}
+                                                    ${status === false ? 'bg-red-50 border-red-200 text-red-700 shadow-sm' : ''}
+                                                    ${status === null || status === undefined ? 'bg-white border-slate-100 text-slate-500' : ''}
+                                                `}
+                                                >
+                                                    <span className="font-black text-sm">{habitName}</span>
+
+                                                    <div className="flex gap-2">
+                                                        <button
+                                                            onClick={() => setHabitsResults(prev => ({ ...prev, [habitName]: false }))}
+                                                            className={`w-10 h-10 rounded-2xl border-2 flex items-center justify-center transition-all ${status === false ? 'bg-red-500 border-red-500 text-white shadow-lg scale-110' : 'bg-white border-slate-100 text-slate-300 hover:border-red-200'}`}
+                                                        >
+                                                            <X size={16} strokeWidth={4} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setHabitsResults(prev => ({ ...prev, [habitName]: true }))}
+                                                            className={`w-10 h-10 rounded-2xl border-2 flex items-center justify-center transition-all ${status === true ? 'bg-emerald-500 border-emerald-500 text-white shadow-lg scale-110' : 'bg-white border-slate-100 text-slate-300 hover:border-emerald-200'}`}
+                                                        >
+                                                            <Check size={16} strokeWidth={4} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        });
+                                    })()}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* --- NEAT / ACTIVITY FORM --- */}
+                        {isNeat && (
+                            <div className="space-y-8">
+                                <div className="flex gap-2">
+                                    {[
+                                        { id: 'steps', label: 'Pasos', icon: <Footprints size={20} /> },
+                                        { id: 'time', label: 'Tiempo (min)', icon: <Clock size={20} /> }
+                                    ].map(type => (
+                                        <button
+                                            key={type.id}
+                                            onClick={() => handleActivityTypeChange(type.id)}
+                                            className={`flex-1 flex flex-col items-center gap-2 py-5 rounded-3xl border-2 transition-all ${activityType === type.id ? 'bg-slate-900 border-slate-900 text-white shadow-xl' : 'bg-white border-slate-100 text-slate-400 hover:border-emerald-200'}`}
+                                        >
+                                            {type.icon}
+                                            <span className="text-[10px] font-black uppercase tracking-wider">{type.label}</span>
+                                        </button>
+                                    ))}
+                                </div>
+
+                                <div>
+                                    <div className="flex justify-between items-end mb-4 px-1">
+                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Registrar</span>
+                                        <span className="text-4xl font-black text-slate-900">{duration} <span className="text-base text-slate-400 font-bold">{activityType === 'steps' ? 'pasos' : 'min'}</span></span>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min={activityType === 'steps' ? "0" : "5"}
+                                        max={activityType === 'steps' ? "30000" : "180"}
+                                        step={activityType === 'steps' ? "500" : "5"}
+                                        value={duration}
+                                        onChange={e => setDuration(parseInt(e.target.value))}
+                                        className="w-full h-3 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                                    />
+                                </div>
+                            </div>
+                        )}
+
+                        {/* --- FREE TRAINING FORM --- */}
+                        {isFreeTraining && (
+                            <div className="space-y-8">
+                                <div className="flex gap-2">
+                                    {[
+                                        { id: 'gym', label: 'Fuerza', icon: <Dumbbell size={20} /> },
+                                        { id: 'cardio', label: 'Cardio', icon: <Flame size={20} /> },
+                                        { id: 'other', label: 'Otros', icon: <Zap size={20} /> }
+                                    ].map(type => (
+                                        <button
+                                            key={type.id}
+                                            onClick={() => {
+                                                setActivityType(type.id);
+                                                if (type.id !== activityType) {
+                                                    setDuration(0);
+                                                    setRpe(null);
+                                                }
+                                            }}
+                                            className={`flex-1 flex flex-col items-center gap-2 py-5 rounded-3xl border-2 transition-all ${activityType === type.id ? 'bg-slate-900 border-slate-900 text-white shadow-xl' : 'bg-white border-slate-100 text-slate-400 hover:border-emerald-200'}`}
+                                        >
+                                            {type.icon}
+                                            <span className="text-[10px] font-black uppercase tracking-wider">{type.label}</span>
+                                        </button>
+                                    ))}
+                                </div>
+
+                                <div>
+                                    <div className="flex justify-between items-end mb-4 px-1">
+                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Duración</span>
+                                        <span className="text-4xl font-black text-slate-900">{duration} <span className="text-base text-slate-400 font-bold">min</span></span>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min="5"
+                                        max="180"
+                                        step="5"
+                                        value={duration}
+                                        onChange={e => setDuration(parseInt(e.target.value))}
+                                        className="w-full h-3 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                                    />
+                                </div>
+
+                                <RPESelector
+                                    value={rpe}
+                                    onChange={setRpe}
+                                    isLight={true}
+                                    label="Esfuerzo (RPE)"
+                                />
+                            </div>
+                        )}
+
+                        {/* --- CHECKIN & TRACKING FORM --- */}
+                        {isCheckin && (
+                            <div className="space-y-10">
+                                {(task.config?.weight !== false) && (
+                                    <div>
+                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Peso Corporal</label>
+                                        <div className="relative">
+                                            <input
+                                                type="number"
+                                                value={weight}
+                                                onChange={e => setWeight(e.target.value)}
+                                                placeholder="00.0"
+                                                className="w-full text-7xl font-black text-slate-900 bg-transparent border-b-4 border-slate-50 focus:border-slate-900 outline-none pb-4 placeholder:text-slate-100 tracking-tighter"
+                                            />
+                                            <span className="absolute right-0 bottom-6 text-2xl font-black text-slate-300">kg</span>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {task.config?.photos !== false && (
+                                    <div>
+                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Progreso Visual</label>
+                                        <div className="grid grid-cols-3 gap-3">
+                                            {['front', 'side', 'back'].map((side) => (
+                                                <label key={side} className="aspect-[3/4.5] rounded-3xl border-2 border-dashed border-slate-200 hover:border-slate-900 hover:bg-slate-50 transition-all flex flex-col items-center justify-center cursor-pointer relative overflow-hidden bg-white shadow-sm active:scale-95">
+                                                    {photos[side] ? (
+                                                        <img
+                                                            src={URL.createObjectURL(photos[side])}
+                                                            className="absolute inset-0 w-full h-full object-cover"
+                                                        />
+                                                    ) : photoUrls[side] ? (
+                                                        <img
+                                                            src={photoUrls[side]}
+                                                            className="absolute inset-0 w-full h-full object-cover"
+                                                        />
+                                                    ) : (
+                                                        <div className="flex flex-col items-center gap-2">
+                                                            <div className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-300">
+                                                                <Camera size={20} />
+                                                            </div>
+                                                            <span className="text-[8px] uppercase font-black text-slate-400 tracking-widest">
+                                                                {side === 'front' ? 'Frente' : side === 'side' ? 'Perfil' : 'Espalda'}
+                                                            </span>
+                                                        </div>
+                                                    )}
+                                                    <input
+                                                        type="file"
+                                                        accept="image/*"
+                                                        className="hidden"
+                                                        onChange={(e) => handleImageSelect(e, side)}
+                                                    />
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {task.config?.metrics !== false && (
+                                    <div className="pt-4">
+                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 text-center">Biometría (cm)</label>
+                                        <div className="grid grid-cols-2 gap-y-8 gap-x-6">
+                                            <div className="space-y-1">
+                                                <label className="block text-[10px] font-black text-slate-300 uppercase pl-1">Cintura</label>
+                                                <input
+                                                    type="number"
+                                                    value={waist}
+                                                    onChange={e => setWaist(e.target.value)}
+                                                    className="w-full text-4xl font-black text-slate-900 bg-transparent border-b-2 border-slate-50 focus:border-slate-900 outline-none py-2 transition-colors"
+                                                />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="block text-[10px] font-black text-slate-300 uppercase pl-1">Cadera</label>
+                                                <input
+                                                    type="number"
+                                                    value={hip}
+                                                    onChange={e => setHip(e.target.value)}
+                                                    className="w-full text-4xl font-black text-slate-900 bg-transparent border-b-2 border-slate-50 focus:border-slate-900 outline-none py-2 transition-colors"
+                                                />
+                                            </div>
+                                            {customMetrics.map((metric) => (
+                                                <div key={metric} className="space-y-1">
+                                                    <label className="block text-[10px] font-black text-slate-300 uppercase pl-1">{metric}</label>
+                                                    <input
+                                                        type="number"
+                                                        value={customValues[metric] || ''}
+                                                        onChange={e => handleCustomMetricChange(metric, e.target.value)}
+                                                        className="w-full text-4xl font-black text-slate-900 bg-transparent border-b-2 border-slate-50 focus:border-slate-900 outline-none py-2 transition-colors"
+                                                    />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Custom Form Runner */}
+                                {formDefinition && (
+                                    <div className="pt-10 border-t border-slate-50 space-y-8">
+                                        <div>
+                                            <h4 className="text-xl font-black text-slate-900 tracking-tight">{formDefinition.name}</h4>
+                                            {formDefinition.description && <p className="text-xs text-slate-500 font-bold uppercase mt-1 tracking-widest">{formDefinition.description}</p>}
+                                        </div>
+
+                                        <div className="space-y-6">
+                                            {formDefinition.fields?.map(field => (
+                                                <div key={field.id} className="space-y-3">
+                                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">{field.label}</label>
+
+                                                    {field.type === 'text' && (
+                                                        <input
+                                                            type="text"
+                                                            value={formAnswers[field.id] || ''}
+                                                            onChange={e => setFormAnswers(prev => ({ ...prev, [field.id]: e.target.value }))}
+                                                            className="w-full p-5 bg-slate-50 border border-slate-100 rounded-[1.8rem] text-slate-800 font-bold outline-none focus:border-slate-900 transition-colors"
+                                                            placeholder="Tu respuesta..."
+                                                        />
+                                                    )}
+
+                                                    {field.type === 'number' && (
+                                                        <input
+                                                            type="number"
+                                                            value={formAnswers[field.id] || ''}
+                                                            onChange={e => setFormAnswers(prev => ({ ...prev, [field.id]: e.target.value }))}
+                                                            className="w-full p-5 bg-slate-50 border border-slate-100 rounded-[1.8rem] text-slate-800 font-bold outline-none focus:border-slate-900 transition-colors"
+                                                            placeholder="0"
+                                                        />
+                                                    )}
+
+                                                    {field.type === 'boolean' && (
+                                                        <div className="flex gap-2">
+                                                            {['Sí', 'No'].map(opt => (
+                                                                <button
+                                                                    key={opt}
+                                                                    onClick={() => setFormAnswers(prev => ({ ...prev, [field.id]: opt }))}
+                                                                    className={`flex-1 py-4 rounded-[1.5rem] font-black text-xs uppercase tracking-widest border transition-all ${formAnswers[field.id] === opt ? 'bg-slate-900 text-white border-slate-900 shadow-lg' : 'bg-white text-slate-400 border-slate-100'}`}
+                                                                >
+                                                                    {opt}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    )}
+
+                                                    {field.type === 'select' && (
+                                                        <select
+                                                            value={formAnswers[field.id] || ''}
+                                                            onChange={e => setFormAnswers(prev => ({ ...prev, [field.id]: e.target.value }))}
+                                                            className="w-full p-5 bg-slate-50 border border-slate-100 rounded-[1.8rem] text-slate-800 font-black outline-none appearance-none"
+                                                        >
+                                                            <option value="">Seleccionar...</option>
+                                                            {field.options?.split(',').map(opt => (
+                                                                <option key={opt.trim()} value={opt.trim()}>{opt.trim()}</option>
+                                                            ))}
+                                                        </select>
+                                                    )}
+
+                                                    {field.type === 'scale' && (
+                                                        <div className="space-y-2">
+                                                            <div className="flex justify-between px-1">
+                                                                <span className="text-[8px] font-bold text-slate-300 uppercase tracking-widest">
+                                                                    0 = {field.options?.split(',')[0]?.trim() || 'Nada'}
+                                                                </span>
+                                                                <span className="text-[8px] font-bold text-slate-300 uppercase tracking-widest">
+                                                                    10 = {field.options?.split(',')[1]?.trim() || 'Mucho'}
+                                                                </span>
+                                                            </div>
+                                                            <div className="flex items-center justify-between gap-0.5 sm:gap-1">
+                                                                {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(val => (
+                                                                    <button
+                                                                        key={`${field.id}-${val}`}
+                                                                        onClick={() => setFormAnswers(prev => ({ ...prev, [field.id]: val }))}
+                                                                        className={`
+                                                                        flex-1 min-w-[24px] h-10 rounded-xl text-[10px] font-black transition-all
+                                                                        ${parseInt(formAnswers[field.id]) === val
+                                                                                ? 'bg-slate-900 text-white shadow-lg scale-110 z-10'
+                                                                                : 'bg-slate-50 text-slate-400 hover:bg-slate-100'
+                                                                            }
+                                                                    `}
+                                                                    >
+                                                                        {val}
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* --- SHARED NOTES --- */}
+                        <div className="pt-4">
+                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1 mb-2">Observaciones Extra</label>
+                            <textarea
+                                value={notes}
+                                onChange={e => setNotes(e.target.value)}
+                                placeholder="¿Algún comentario para tu entrenador?"
+                                className="w-full p-5 bg-slate-50 rounded-[1.8rem] text-sm font-bold text-slate-700 outline-none h-28 border border-slate-50 focus:border-slate-200 transition-colors resize-none"
+                            />
+                        </div>
                     </div>
                 </div>
 
-                <div className="p-8 pt-4 shrink-0 bg-white border-t border-slate-50">
+                <div className="p-8 pt-4 shrink-0 bg-white border-t border-slate-50 z-20 max-w-md mx-auto w-full">
                     <button
                         onClick={handleSave}
                         disabled={saving}
@@ -874,7 +882,8 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                     </button>
                 </div>
             </motion.div>
-        </div>
+        </div>,
+        document.body
     );
 };
 

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, ChevronLeft, ChevronRight, ChevronDown, Plus, X, Search, Check, Dumbbell, Footprints, ClipboardList, Utensils, Layers, MoreVertical, Trash2, Copy, Edit2, ArrowRight, Copy as DuplicateIcon, Scale, Ruler, Camera, Settings2, FileText, Zap, CheckSquare, Package, ListFilter, Clock, MessageCircle, History } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TrainingDB } from '../services/db';
+import { NutritionDB } from '../../nutrition/services/nutritionDB';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, getDay, addDays, startOfDay, startOfWeek, endOfWeek } from 'date-fns';
 import { es } from 'date-fns/locale';
 import SessionResultsModal from '../components/SessionResultsModal';
@@ -13,7 +14,9 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
     const [schedule, setSchedule] = useState({}); // { "YYYY-MM-DD": sessionId }
     const [sessions, setSessions] = useState([]);
     const [groups, setGroups] = useState([]);
+
     const [programs, setPrograms] = useState([]);
+    const [nutritionDays, setNutritionDays] = useState([]);
 
     // Drawers State
     const [sessionPickerOpen, setSessionPickerOpen] = useState(false);
@@ -56,10 +59,11 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
     };
 
     const loadData = async () => {
-        const [sessData, progData, groupData, userData] = await Promise.all([
+        const [sessData, progData, groupData, nutritionData, userData] = await Promise.all([
             TrainingDB.sessions.getAll(),
             TrainingDB.programs.getAll(),
             TrainingDB.groups.getAll(),
+            NutritionDB.days.getAll(),
             // Reload user to get latest schedule
             // In MVP we might pass schedule as prop, but let's fetch to be safe
             TrainingDB.users.getAll().then(users => users.find(u => u.id === user.id))
@@ -68,6 +72,7 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
         setSessions(sessData);
         setPrograms(progData);
         setGroups(groupData);
+        setNutritionDays(nutritionData || []);
         // Ensure schedule is compatible (migrating string -> array if needed)
         const rawSchedule = userData?.schedule || {};
         const normalized = {};
@@ -112,6 +117,7 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
             case 'session': return <Dumbbell size={16} />;
             case 'neat': return <Footprints size={16} />;
             case 'nutrition': return <CheckSquare size={16} />;
+            case 'nutrition_day': return <Utensils size={16} />;
             case 'tracking':
             case 'checkin':
                 if (task.config?.formId) return <FileText size={16} />;
@@ -126,6 +132,7 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
             case 'session': return sessions.find(s => s.id === task.sessionId)?.name || 'Sesión de Entrenamiento';
             case 'neat': return task.title || 'Actividad NEAT';
             case 'nutrition': return task.title || (task.config?.category ? `Hábitos ${task.config.category}` : 'Hábitos');
+            case 'nutrition_day': return task.name || task.config?.name || 'Plan de Nutrición';
             case 'tracking':
                 if (task.config?.formId) {
                     const form = availableForms.find(f => f.id === task.config.formId);
@@ -136,6 +143,8 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
             default: return 'Tarea';
         }
     };
+
+
 
     // --- Actions ---
     const appendTask = async (date, newTask) => {
@@ -191,7 +200,7 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
             const startDate = selectedDate;
             const newScheduleItems = {};
 
-            Object.entries(program.schedule).forEach(([slotId, sessionId]) => {
+            Object.entries(program.schedule).forEach(([slotId, tasksInSlot]) => {
                 const [wStr, dStr] = slotId.split('-');
                 const weekNum = parseInt(wStr.replace('w', '')) - 1;
                 const dayNum = parseInt(dStr.replace('d', ''));
@@ -201,14 +210,27 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
                 const dateKey = format(targetDate, 'yyyy-MM-dd');
 
                 const currentTasks = newScheduleItems[dateKey] || schedule[dateKey] || [];
-                const sessionIds = Array.isArray(sessionId) ? sessionId : [sessionId];
 
-                const newTasksForDay = sessionIds.map(sid => ({
-                    id: crypto.randomUUID(),
-                    type: 'session',
-                    sessionId: sid,
-                    admin_assigned: true
-                }));
+                // Normalize to array
+                const sourceTasks = Array.isArray(tasksInSlot) ? tasksInSlot : [tasksInSlot];
+
+                const newTasksForDay = sourceTasks.map(task => {
+                    // Handle Legacy: if task is just a string/ID, assume it's a session
+                    if (typeof task === 'string') {
+                        return {
+                            id: crypto.randomUUID(),
+                            type: 'session',
+                            sessionId: task,
+                            admin_assigned: true
+                        };
+                    }
+                    // Handle New Format: Task object
+                    return {
+                        ...task,
+                        id: crypto.randomUUID(),
+                        admin_assigned: true
+                    };
+                });
 
                 newScheduleItems[dateKey] = [...currentTasks, ...newTasksForDay];
             });
@@ -779,6 +801,7 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
                         sessions={sessions}
                         groups={groups}
                         programs={programs}
+                        nutritionDays={nutritionDays}
                         availableForms={availableForms}
                         taskToEdit={editingTask}
                         onClose={() => {
@@ -796,8 +819,9 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
                                 type,
                                 title: type === 'neat' ? 'Objetivo Movimiento'
                                     : (type === 'nutrition' ? (config.category ? `Hábitos: ${config.category}` : 'Hábitos')
-                                        : (type === 'free_training' ? 'Entrenamiento Libre'
-                                            : 'Seguimiento')),
+                                        : (type === 'nutrition_day' ? (config.name || 'Nutrición del Día')
+                                            : (type === 'free_training' ? 'Entrenamiento Libre'
+                                                : 'Seguimiento'))),
                                 completed: false,
                                 config: config,
                                 admin_assigned: true
@@ -927,6 +951,7 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
                         date={previewTask.date}
                         availableForms={availableForms}
                         sessions={sessions}
+                        nutritionDays={nutritionDays}
                         onClose={() => setPreviewTask(null)}
                         onEdit={() => {
                             setEditingTask(previewTask.task);
@@ -1027,9 +1052,9 @@ const DayDetailModal = ({ date, tasks, onClose, onAddSession, onAddProgram, onAd
                                     <div className={`
                                         w-10 h-10 rounded-full flex items-center justify-center text-white shrink-0
                                         ${task.status === 'completed' ? 'bg-emerald-500 shadow-md shadow-emerald-500/10' : (
-                                            task.type === 'session' ? 'bg-slate-900' :
-                                                task.type === 'neat' ? 'bg-emerald-500' :
-                                                    task.type === 'nutrition' ? 'bg-orange-500' :
+                                            (task.type === 'nutrition' || task.type === 'nutrition_day') ? 'bg-orange-500' :
+                                                task.type === 'session' ? 'bg-slate-900' :
+                                                    task.type === 'neat' ? 'bg-emerald-500' :
                                                         task.type === 'scheduled_message' ? 'bg-pink-500' :
                                                             'bg-blue-500'
                                         )}
@@ -1046,15 +1071,16 @@ const DayDetailModal = ({ date, tasks, onClose, onAddSession, onAddProgram, onAd
                                             )}
                                         </div>
                                         <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                                            {task.status === 'completed' ? 'Completada' : (
+                                            {task.status === 'completed' ? (task.summary || 'Completada') : (
                                                 task.type === 'session' ? (() => {
                                                     const details = getSessionDetails(task.session?.id || task.sessionId);
                                                     return `${details.blocks} bloques • ~${details.duration} min`;
                                                 })() : (
                                                     task.type === 'scheduled_message' ? `Para las ${task.config?.scheduledTime || '09:00'}` :
                                                         task.type === 'nutrition' ? 'Hábitos' :
-                                                            task.type === 'neat' ? 'Movimiento' :
-                                                                task.type === 'tracking' ? 'Seguimiento' : task.type
+                                                            task.type === 'nutrition_day' ? 'Plan Nutricional' :
+                                                                task.type === 'neat' ? 'Movimiento' :
+                                                                    task.type === 'tracking' ? 'Seguimiento' : task.type
                                                 )
                                             )}
                                         </div>
@@ -1095,7 +1121,7 @@ const DayDetailModal = ({ date, tasks, onClose, onAddSession, onAddProgram, onAd
 };
 
 // Add Task Modal with Accordion
-const AddTaskModal = ({ user, date, sessions, groups, programs, availableForms, taskToEdit, onClose, onAssignSession, onAssignProgram, onAssignGeneric, onUpdateTask, onOpenForms, getTaskName }) => {
+const AddTaskModal = ({ user, date, sessions, groups, programs, nutritionDays = [], availableForms, taskToEdit, onClose, onAssignSession, onAssignProgram, onAssignGeneric, onUpdateTask, onOpenForms, getTaskName }) => {
     const [expanded, setExpanded] = useState(taskToEdit ? taskToEdit.type : null);
     const [search, setSearch] = useState('');
     const [selectedSessionForConfig, setSelectedSessionForConfig] = useState(null);
@@ -1103,6 +1129,60 @@ const AddTaskModal = ({ user, date, sessions, groups, programs, availableForms, 
     const [expandedGroups, setExpandedGroups] = useState({});
 
     const toggle = (id) => { setSearch(''); setExpanded(expanded === id ? null : id); };
+
+    // PRELOAD CARDIO DATA
+    useEffect(() => {
+        if (selectedSessionForConfig) {
+            const overridesData = { notes: selectedSessionForConfig.description || '' };
+
+            // Analyze checks for multi-set/multi-block structure
+            // We look for all cardio blocks in the session
+            const cardioBlocks = (selectedSessionForConfig.blocks || []).filter(b => {
+                const ex = b.exercises?.[0];
+                if (!ex) return false;
+                const name = (ex.name_es || ex.name || '').toLowerCase();
+                const cardioKeywords = ['ciclismo', 'carrera', 'running', 'bike', 'elíptica', 'remo', 'row', 'natación', 'swim', 'cardio', 'walking'];
+                const isKeywordMatch = cardioKeywords.some(kw => name.includes(kw));
+                const isEnergy = (ex.quality || '').toUpperCase() === 'E' || (ex.qualities || []).some(q => q.toUpperCase() === 'E');
+                return isKeywordMatch || isEnergy || ex.config?.forceCardio;
+            });
+
+            if (cardioBlocks.length > 1) {
+                // Multi-set session (e.g. 4x1000m defined as 4 blocks)
+                overridesData.sets = cardioBlocks.map(block => {
+                    const ex = block.exercises[0];
+                    const set = ex.config?.sets?.[0] || {};
+                    let vVal = set.volume;
+                    if (set.volType === 'TIME') vVal = Math.round(vVal / 60);
+
+                    return {
+                        volVal: vVal || (block.params?.rounds || block.params?.timeCap / 60 || ''),
+                        volUnit: set.volType || 'TIME',
+                        intVal: set.intensity || '',
+                        intUnit: set.intType || 'RPE'
+                    };
+                });
+            } else if (cardioBlocks.length === 1) {
+                // Single block
+                const ex = cardioBlocks[0].exercises[0];
+                const set = ex.config?.sets?.[0] || {};
+                let vVal = set.volume;
+                if (set.volType === 'TIME') vVal = Math.round(vVal / 60);
+
+                overridesData.volVal = vVal || (selectedSessionForConfig.duration || '');
+                overridesData.volUnit = set.volType || 'TIME';
+                overridesData.intVal = set.intensity || '';
+                overridesData.intUnit = set.intType || 'RPE';
+                if (ex.notes) overridesData.notes = ex.notes;
+            } else {
+                // Fallback
+                overridesData.volVal = selectedSessionForConfig.duration || '';
+                overridesData.volUnit = 'TIME';
+            }
+
+            setOverrides(overridesData);
+        }
+    }, [selectedSessionForConfig]);
 
     return (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
@@ -1251,41 +1331,166 @@ const AddTaskModal = ({ user, date, sessions, groups, programs, availableForms, 
                                 </div>
 
                                 <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                                    <div className="p-4 bg-orange-50 rounded-2xl border border-orange-100">
-                                        <p className="text-[10px] font-black text-orange-600 uppercase tracking-widest mb-2">Ajustes Rápidos de Cardio</p>
-                                        <div className="grid grid-cols-2 gap-3">
-                                            <div>
-                                                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Duración (min)</label>
-                                                <input
-                                                    type="number"
-                                                    className="w-full p-3 bg-white border border-orange-200 rounded-xl text-lg font-black font-mono text-orange-900 outline-none focus:ring-2 focus:ring-orange-500/20"
-                                                    placeholder="--"
-                                                    value={overrides.duration || ''}
-                                                    onChange={e => setOverrides(prev => ({ ...prev, duration: e.target.value }))}
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Distancia (km)</label>
-                                                <input
-                                                    type="number"
-                                                    step="0.1"
-                                                    className="w-full p-3 bg-white border border-orange-200 rounded-xl text-lg font-black font-mono text-orange-900 outline-none focus:ring-2 focus:ring-orange-500/20"
-                                                    placeholder="--"
-                                                    value={overrides.distance || ''}
-                                                    onChange={e => setOverrides(prev => ({ ...prev, distance: e.target.value }))}
-                                                />
-                                            </div>
+                                    <div className="p-5 bg-orange-50/50 rounded-[28px] border border-orange-100/50 shadow-sm">
+                                        <div className="flex justify-between items-center mb-4">
+                                            <p className="text-[10px] font-black text-orange-600 uppercase tracking-widest">Ajustes Rápidos de Carga</p>
+                                            {overrides.sets && <span className="text-[10px] font-bold text-orange-400 bg-orange-100 px-2 py-1 rounded-full">{overrides.sets.length} SERIES</span>}
                                         </div>
-                                        <p className="text-[10px] text-orange-700/60 mt-2 leading-tight">
+
+                                        {overrides.sets ? (
+                                            // MULTI-SET LIST VIEW
+                                            <div className="space-y-3">
+                                                {overrides.sets.map((set, idx) => (
+                                                    <div key={idx} className="flex gap-2 items-center bg-white p-2 rounded-xl border border-orange-100/50">
+                                                        <span className="text-[10px] font-black text-slate-300 w-4 text-center">{idx + 1}</span>
+
+                                                        {/* Volume */}
+                                                        <div className="flex-1 flex gap-1">
+                                                            <input
+                                                                type="number"
+                                                                className="w-full bg-slate-50 rounded-lg px-2 py-1 text-sm font-black text-slate-700 outline-none focus:bg-orange-50 focus:text-orange-700 transition-colors text-right"
+                                                                placeholder="Vol"
+                                                                value={set.volVal || ''}
+                                                                onChange={e => {
+                                                                    const newSets = [...overrides.sets];
+                                                                    newSets[idx].volVal = e.target.value;
+                                                                    setOverrides(prev => ({ ...prev, sets: newSets }));
+                                                                }}
+                                                            />
+                                                            <div className="relative w-16">
+                                                                <select
+                                                                    value={set.volUnit || 'TIME'}
+                                                                    onChange={e => {
+                                                                        const newSets = [...overrides.sets];
+                                                                        newSets[idx].volUnit = e.target.value;
+                                                                        setOverrides(prev => ({ ...prev, sets: newSets }));
+                                                                    }}
+                                                                    className="w-full h-full bg-slate-50 rounded-lg text-[9px] font-bold text-slate-500 uppercase outline-none appearance-none pl-1 pr-3"
+                                                                >
+                                                                    <option value="TIME">MIN</option>
+                                                                    <option value="KM">KM</option>
+                                                                    <option value="METROS">M</option>
+                                                                    <option value="KCAL">KCA</option>
+                                                                </select>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="w-px h-6 bg-slate-100 mx-1"></div>
+
+                                                        {/* Intensity */}
+                                                        <div className="flex-1 flex gap-1">
+                                                            <input
+                                                                type="number"
+                                                                className="w-full bg-slate-50 rounded-lg px-2 py-1 text-sm font-black text-slate-700 outline-none focus:bg-orange-50 focus:text-orange-700 transition-colors text-right"
+                                                                placeholder="Int"
+                                                                value={set.intVal || ''}
+                                                                onChange={e => {
+                                                                    const newSets = [...overrides.sets];
+                                                                    newSets[idx].intVal = e.target.value;
+                                                                    setOverrides(prev => ({ ...prev, sets: newSets }));
+                                                                }}
+                                                            />
+                                                            <div className="relative w-16">
+                                                                <select
+                                                                    value={set.intUnit || 'RPE'}
+                                                                    onChange={e => {
+                                                                        const newSets = [...overrides.sets];
+                                                                        newSets[idx].intUnit = e.target.value;
+                                                                        setOverrides(prev => ({ ...prev, sets: newSets }));
+                                                                    }}
+                                                                    className="w-full h-full bg-slate-50 rounded-lg text-[9px] font-bold text-slate-500 uppercase outline-none appearance-none pl-1 pr-3"
+                                                                >
+                                                                    <option value="RPE">RPE</option>
+                                                                    <option value="BPM">BPM</option>
+                                                                    <option value="WATTS">W</option>
+                                                                    <option value="RITMO">PAC</option>
+                                                                </select>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            // SINGLE SET CARD VIEW (Existing)
+                                            <div className="space-y-4">
+                                                {/* Volume Row */}
+                                                <div className="grid grid-cols-[1fr_80px] gap-2">
+                                                    <div className="space-y-1.5">
+                                                        <label className="block text-[10px] font-black text-slate-400 uppercase ml-1">Volumen</label>
+                                                        <input
+                                                            type="number"
+                                                            step="any"
+                                                            className="w-full p-4 bg-white border border-slate-100 rounded-2xl text-xl font-black font-mono text-slate-900 outline-none focus:border-orange-400 focus:ring-4 focus:ring-orange-500/5 transition-all placeholder:text-slate-200"
+                                                            placeholder="--"
+                                                            value={overrides.volVal || ''}
+                                                            onChange={e => setOverrides(prev => ({ ...prev, volVal: e.target.value }))}
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <label className="block text-[10px] font-black text-slate-400 uppercase ml-1">Unidad</label>
+                                                        <div className="relative">
+                                                            <select
+                                                                value={overrides.volUnit || 'TIME'}
+                                                                onChange={e => setOverrides(prev => ({ ...prev, volUnit: e.target.value }))}
+                                                                className="w-full h-[60px] p-2 bg-white border border-slate-100 rounded-2xl text-[10px] font-black uppercase text-slate-600 outline-none focus:border-orange-400 appearance-none text-center cursor-pointer"
+                                                            >
+                                                                <option value="TIME">MIN</option>
+                                                                <option value="KM">KM</option>
+                                                                <option value="METROS">M</option>
+                                                                <option value="KCAL">KCAL</option>
+                                                                <option value="REPS">REPS</option>
+                                                            </select>
+                                                            <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none" />
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Intensity Row */}
+                                                <div className="grid grid-cols-[1fr_80px] gap-2">
+                                                    <div className="space-y-1.5">
+                                                        <label className="block text-[10px] font-black text-slate-400 uppercase ml-1">Intensidad</label>
+                                                        <input
+                                                            type="number"
+                                                            step="any"
+                                                            className="w-full p-4 bg-white border border-slate-100 rounded-2xl text-xl font-black font-mono text-slate-900 outline-none focus:border-orange-400 focus:ring-4 focus:ring-orange-500/5 transition-all placeholder:text-slate-200"
+                                                            placeholder="--"
+                                                            value={overrides.intVal || ''}
+                                                            onChange={e => setOverrides(prev => ({ ...prev, intVal: e.target.value }))}
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <label className="block text-[10px] font-black text-slate-400 uppercase ml-1">Unidad</label>
+                                                        <div className="relative">
+                                                            <select
+                                                                value={overrides.intUnit || 'RPE'}
+                                                                onChange={e => setOverrides(prev => ({ ...prev, intUnit: e.target.value }))}
+                                                                className="w-full h-[60px] p-2 bg-white border border-slate-100 rounded-2xl text-[10px] font-black uppercase text-slate-600 outline-none focus:border-orange-400 appearance-none text-center cursor-pointer"
+                                                            >
+                                                                <option value="RPE">RPE</option>
+                                                                <option value="BPM">BPM</option>
+                                                                <option value="WATTS">W</option>
+                                                                <option value="RITMO">PACE</option>
+                                                                <option value="NIVEL">LVL</option>
+                                                                <option value="PESO">KG</option>
+                                                                <option value="%">%</option>
+                                                            </select>
+                                                            <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none" />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <p className="text-[10px] text-orange-700/60 mt-4 leading-tight font-medium italic">
                                             * Estos valores sobrescribirán los objetivos predeterminados de la sesión para este atleta.
                                         </p>
                                     </div>
 
-                                    <div>
-                                        <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">Nota para el Atleta</label>
+                                    <div className="space-y-2">
+                                        <label className="block text-[10px] font-black text-slate-400 uppercase ml-1">Nota para el Atleta</label>
                                         <textarea
                                             placeholder="Instrucciones específicas (ej: Mantener Z2, sprints al final...)"
-                                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:border-slate-900 min-h-[100px] resize-none"
+                                            className="w-full p-5 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold text-slate-700 outline-none focus:border-slate-300 focus:bg-white transition-all min-h-[120px] resize-none placeholder:text-slate-300"
                                             value={overrides.notes || ''}
                                             onChange={e => setOverrides(prev => ({ ...prev, notes: e.target.value }))}
                                         />
@@ -1301,6 +1506,7 @@ const AddTaskModal = ({ user, date, sessions, groups, programs, availableForms, 
                                                 onAssignSession(selectedSessionForConfig.id, overrides);
                                             }
                                             setSelectedSessionForConfig(null);
+                                            setOverrides({});
                                         }}
                                         className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-lg shadow-slate-900/20 active:scale-95 transition-all"
                                     >
@@ -1319,7 +1525,7 @@ const AddTaskModal = ({ user, date, sessions, groups, programs, availableForms, 
                         >
                             <div className="flex items-center gap-3">
                                 <Layers size={20} className="text-purple-600" />
-                                <span>Programa / Macro</span>
+                                <span>Programas</span>
                             </div>
                             <ChevronRight size={20} className={`transition-transform ${expanded === 'program' ? 'rotate-90' : ''}`} />
                         </button>
@@ -1346,6 +1552,51 @@ const AddTaskModal = ({ user, date, sessions, groups, programs, availableForms, 
                                             {p.name} <span className="text-slate-400 text-xs ml-2">({p.weeks} sem)</span>
                                         </button>
                                     ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* NUTRITION DAYS */}
+                    <div className="border border-slate-200 rounded-2xl overflow-hidden transition-all">
+                        <button
+                            onClick={() => toggle('nutrition_day')}
+                            className={`w-full p-4 flex items-center justify-between font-bold text-slate-800 hover:bg-slate-50 ${expanded === 'nutrition_day' ? 'bg-slate-50' : ''}`}
+                        >
+                            <div className="flex items-center gap-3">
+                                <Utensils size={20} className="text-orange-500" />
+                                <span>Nutrición (Días)</span>
+                            </div>
+                            <ChevronRight size={20} className={`transition-transform ${expanded === 'nutrition_day' ? 'rotate-90' : ''}`} />
+                        </button>
+                        {expanded === 'nutrition_day' && (
+                            <div className="p-4 border-t border-slate-200 bg-slate-50 animate-in slide-in-from-top-2 duration-200">
+                                <div className="bg-white p-2 rounded-xl flex items-center gap-2 border border-slate-200 mb-2">
+                                    <Search size={16} className="text-slate-400" />
+                                    <input
+                                        type="text"
+                                        placeholder="Buscar día de nutrición..."
+                                        className="w-full bg-transparent outline-none text-sm"
+                                        value={search}
+                                        onChange={(e) => setSearch(e.target.value)}
+                                        autoFocus
+                                    />
+                                </div>
+                                <div className="max-h-60 overflow-y-auto space-y-1">
+                                    {nutritionDays.filter(n => n.id).filter(n => n.name.toLowerCase().includes(search.toLowerCase())).map(n => (
+                                        <button
+                                            key={n.id}
+                                            onClick={() => onAssignGeneric('nutrition_day', { dayId: n.id, name: n.name })}
+                                            className="w-full text-left p-3 rounded-lg hover:bg-orange-50 hover:text-orange-700 text-sm font-medium transition-colors"
+                                        >
+                                            {n.name} <span className="text-slate-400 text-xs ml-2">({(n.meals || []).length} comidas)</span>
+                                        </button>
+                                    ))}
+                                    {nutritionDays.length === 0 && (
+                                        <div className="p-4 text-center text-xs text-slate-400">
+                                            No hay días de nutrición disponibles.
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         )}
@@ -1395,15 +1646,14 @@ const AddTaskModal = ({ user, date, sessions, groups, programs, availableForms, 
                         isEdit={!!taskToEdit}
                     />
 
-                    <GenericTaskSection
-                        id="free_training"
-                        label="Entrenamiento Libre"
-                        icon={<Dumbbell size={20} className="text-slate-600" />}
-                        expanded={expanded === 'free_training'}
-                        toggle={() => toggle('free_training')}
-                        onAssign={(config) => taskToEdit ? onUpdateTask(taskToEdit.id, config) : onAssignGeneric('free_training', config)}
-                        initialConfig={taskToEdit?.type === 'free_training' ? taskToEdit.config : null}
-                    />
+                    <div className="pt-2 flex justify-center">
+                        <button
+                            onClick={() => onAssignGeneric('free_training', {})}
+                            className="text-[10px] font-bold text-slate-400 hover:text-slate-600 bg-slate-50 hover:bg-slate-100 px-4 py-2 rounded-full transition-colors"
+                        >
+                            + Añadir Entrenamiento Libre
+                        </button>
+                    </div>
                 </div>
             </motion.div>
         </div>
@@ -1618,7 +1868,7 @@ const GenericTaskSection = ({ id, label, icon, expanded, toggle, onAssign, avail
     );
 };
 
-const TaskPreviewModal = ({ task, date, availableForms, sessions, onClose, onEdit, onDelete }) => {
+const TaskPreviewModal = ({ task, date, availableForms, sessions, nutritionDays = [], onClose, onEdit, onDelete }) => {
     const config = task.config || {};
     const type = task.type;
 
@@ -1626,6 +1876,7 @@ const TaskPreviewModal = ({ task, date, availableForms, sessions, onClose, onEdi
         if (type === 'session') return <Dumbbell size={24} />;
         if (type === 'neat') return <Footprints size={24} />;
         if (type === 'nutrition') return <CheckSquare size={24} />;
+        if (type === 'nutrition_day') return <Utensils size={24} />;
         if (type === 'tracking' || type === 'checkin') return <ClipboardList size={24} />;
         if (type === 'scheduled_message') return <MessageCircle size={24} />;
         return <ClipboardList size={24} />;
@@ -1633,6 +1884,7 @@ const TaskPreviewModal = ({ task, date, availableForms, sessions, onClose, onEdi
 
     const getTaskName = () => {
         if (type === 'session') return sessions.find(s => s.id === task.sessionId)?.name || 'Sesión';
+        if (type === 'nutrition_day') return task.name || (task.config?.name) || 'Plan de Nutrición';
         if (task.config?.formId) {
             const form = availableForms.find(f => f.id === task.config.formId);
             return form ? `Formulario: ${form.name}` : (task.title || 'Formulario');
@@ -1740,6 +1992,84 @@ const TaskPreviewModal = ({ task, date, availableForms, sessions, onClose, onEdi
                                 </div>
                             </div>
                         )}
+
+                        {type === 'nutrition_day' && (() => {
+                            const dayId = task.dayId || config.dayId;
+                            const day = nutritionDays.find(d => d.id === dayId);
+
+                            if (!day) return (
+                                <div className="p-4 bg-orange-50 rounded-2xl border border-orange-100 text-center text-orange-800 text-sm font-bold">
+                                    Plan de nutrición no encontrado
+                                </div>
+                            );
+
+                            return (
+                                <div className="space-y-4">
+                                    <div className="p-4 bg-orange-50 rounded-2xl border border-orange-100 flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center text-orange-600">
+                                                <Utensils size={20} />
+                                            </div>
+                                            <div>
+                                                <p className="text-[10px] font-black text-orange-400 uppercase tracking-widest">Plan</p>
+                                                <p className="font-black text-orange-900">{day.name}</p>
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-[10px] font-black text-orange-400 uppercase tracking-widest">Comidas</p>
+                                            <p className="font-black text-orange-900 text-xl">{day.meals?.length || 0}</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-3">
+                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Resumen de Comidas</p>
+                                        {day.meals?.map((meal, idx) => (
+                                            <div key={idx} className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                                                <div className="flex justify-between items-center mb-1">
+                                                    <span className="text-xs font-bold text-slate-700">{meal.name}</span>
+                                                    <span className="text-[10px] font-bold text-slate-400 uppercase">{meal.time || 'Flexible'}</span>
+                                                </div>
+                                                <div className="text-[11px] text-slate-500 space-y-1">
+                                                    {(meal.items || []).length > 0 ? (
+                                                        (meal.items || []).map((i, itemIdx) => (
+                                                            <div key={itemIdx} className="flex justify-between items-start">
+                                                                <span>{i.name}</span>
+                                                                <span className="font-bold text-slate-400 whitespace-nowrap ml-2">
+                                                                    {i.quantity || i.amount} {i.unit}
+                                                                </span>
+                                                            </div>
+                                                        ))
+                                                    ) : (
+                                                        <span className="italic">Sin alimentos</span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {day.macros && (
+                                        <div className="grid grid-cols-4 gap-2 pt-2">
+                                            <div className="bg-slate-900 p-2 rounded-xl text-center">
+                                                <div className="text-[8px] font-black text-slate-400 uppercase">KCAL</div>
+                                                <div className="text-xs font-black text-white">{day.macros.calories || 0}</div>
+                                            </div>
+                                            <div className="bg-slate-50 p-2 rounded-xl text-center border border-slate-100">
+                                                <div className="text-[8px] font-black text-slate-400 uppercase">PROT</div>
+                                                <div className="text-xs font-black text-slate-700">{day.macros.protein || 0}g</div>
+                                            </div>
+                                            <div className="bg-slate-50 p-2 rounded-xl text-center border border-slate-100">
+                                                <div className="text-[8px] font-black text-slate-400 uppercase">CARB</div>
+                                                <div className="text-xs font-black text-slate-700">{day.macros.carbs || 0}g</div>
+                                            </div>
+                                            <div className="bg-slate-50 p-2 rounded-xl text-center border border-slate-100">
+                                                <div className="text-[8px] font-black text-slate-400 uppercase">GRAS</div>
+                                                <div className="text-xs font-black text-slate-700">{day.macros.fats || 0}g</div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })()}
 
                         {type === 'session' && (() => {
                             const session = sessions.find(s => s.id === task.sessionId);

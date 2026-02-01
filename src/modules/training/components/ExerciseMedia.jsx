@@ -92,7 +92,7 @@ const ExerciseMedia = ({
                 URL.revokeObjectURL(activeBlobUrl);
             }
         };
-    }, [exercise, youtubeId, shouldLazyLoad, isHovered, isPlaying]);
+    }, [exercise.mediaUrl, exercise.gifUrl, exercise.imageStart, exercise.source, exercise.id, youtubeId, shouldLazyLoad, isHovered, isPlaying]);
 
     // Auto-GIF Animation loop
     useEffect(() => {

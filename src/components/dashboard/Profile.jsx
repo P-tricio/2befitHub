@@ -10,6 +10,10 @@ const Profile = () => {
     const [isEditing, setIsEditing] = React.useState(false);
     const [newName, setNewName] = React.useState('');
     const [newPhotoURL, setNewPhotoURL] = React.useState('');
+    const [birthDate, setBirthDate] = React.useState('');
+    const [sex, setSex] = React.useState('');
+    const [height, setHeight] = React.useState('');
+    const [weight, setWeight] = React.useState('');
 
     const [uploading, setUploading] = React.useState(false);
 
@@ -26,7 +30,30 @@ const Profile = () => {
     const handleStartEdit = () => {
         setNewName(user.displayName || '');
         setNewPhotoURL(user.photoURL || '');
+        setBirthDate(user.birthDate || '');
+        setSex(user.sex || 'male');
+        setHeight(user.height || '');
+        setWeight(user.weight || '');
         setIsEditing(true);
+    };
+
+    const calculateAge = (dateString) => {
+        if (!dateString) return null;
+        const today = new Date();
+        const birth = new Date(dateString);
+        let age = today.getFullYear() - birth.getFullYear();
+        const monthDiff = today.getMonth() - birth.getMonth();
+        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+            age--;
+        }
+        return age;
+    };
+
+    const isBirthdayToday = (dateString) => {
+        if (!dateString) return false;
+        const today = new Date();
+        const birth = new Date(dateString);
+        return today.getMonth() === birth.getMonth() && today.getDate() === birth.getDate();
     };
 
     const handleFileUpload = async (e) => {
@@ -52,7 +79,11 @@ const Profile = () => {
         try {
             await updateUserProfile({
                 displayName: newName,
-                photoURL: newPhotoURL.trim() || null
+                photoURL: newPhotoURL.trim() || null,
+                birthDate: birthDate,
+                sex: sex,
+                height: height,
+                weight: weight
             });
             setIsEditing(false);
         } catch (error) {
@@ -73,7 +104,6 @@ const Profile = () => {
                             onError={(e) => {
                                 e.target.onerror = null;
                                 e.target.style.display = 'none';
-                                // This assumes sibling is the fallback div
                             }}
                         />
                     ) : null}
@@ -107,6 +137,49 @@ const Profile = () => {
                             onChange={(e) => setNewName(e.target.value)}
                         />
 
+                        <div className="grid grid-cols-2 gap-2 w-full">
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-bold text-slate-400 uppercase">Fecha Nacimiento</label>
+                                <input
+                                    type="date"
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 font-bold text-slate-900 outline-none focus:border-emerald-500 text-center"
+                                    value={birthDate}
+                                    onChange={(e) => setBirthDate(e.target.value)}
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-bold text-slate-400 uppercase">Sexo</label>
+                                <select
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 font-bold text-slate-900 outline-none focus:border-emerald-500 text-center appearance-none"
+                                    value={sex}
+                                    onChange={(e) => setSex(e.target.value)}
+                                >
+                                    <option value="male">Hombre</option>
+                                    <option value="female">Mujer</option>
+                                </select>
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-bold text-slate-400 uppercase">Altura (cm)</label>
+                                <input
+                                    type="number"
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 font-bold text-slate-900 outline-none focus:border-emerald-500 text-center"
+                                    placeholder="cm"
+                                    value={height}
+                                    onChange={(e) => setHeight(e.target.value)}
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-bold text-slate-400 uppercase">Peso (kg)</label>
+                                <input
+                                    type="number"
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 font-bold text-slate-900 outline-none focus:border-emerald-500 text-center"
+                                    placeholder="kg"
+                                    value={weight}
+                                    onChange={(e) => setWeight(e.target.value)}
+                                />
+                            </div>
+                        </div>
+
                         <div className="flex gap-2 w-full mt-2">
                             <button
                                 onClick={() => setIsEditing(false)}
@@ -124,15 +197,22 @@ const Profile = () => {
                         </div>
                     </div>
                 ) : (
-                    <h1 className="text-2xl font-black text-slate-900 mb-1">{user.displayName || 'Atleta 2BeFit'}</h1>
+                    <>
+                        <h1 className="text-2xl font-black text-slate-900 mb-1">
+                            {user.displayName || 'Atleta 2BeFit'}
+                            {isBirthdayToday(user.birthDate) && <span className="ml-2">🎂</span>}
+                        </h1>
+                        {(user.birthDate || user.height || user.weight) && (
+                            <div className="flex items-center gap-3 text-sm text-slate-500 font-bold mt-1">
+                                {user.birthDate && <span>{calculateAge(user.birthDate)} años</span>}
+                                {user.height && <span>{user.height} cm</span>}
+                                {user.weight && <span>{user.weight} kg</span>}
+                            </div>
+                        )}
+                        <p className="text-slate-400 font-medium">{user.email}</p>
+                    </>
                 )}
-
-                <p className="text-slate-400 font-medium">{user.email}</p>
-
-
             </header>
-
-
 
             {/* Menu Options */}
             <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
@@ -140,12 +220,12 @@ const Profile = () => {
                     <ProfileLink icon={User} label="Editar datos y foto" onClick={handleStartEdit} />
                     <ProfileLink icon={Award} label="Historial de Logros" onClick={() => navigate('/training/history')} />
 
-                    {/* Admin Panel Button - Only for admins (or dev override) */}
+                    {/* Admin Panel Button - Only for admins */}
                     {(user.role === 'admin' || user.email === 'pabloadrian91@gmail.com') && (
                         <ProfileLink
                             icon={ShieldCheck}
                             label="Panel de Administración"
-                            onClick={() => navigate('/training/admin/users')}
+                            onClick={() => navigate('/training/admin')}
                             className="bg-indigo-50/50"
                         />
                     )}
@@ -185,7 +265,7 @@ const StatCard = ({ label, value }) => (
 const ProfileLink = ({ icon: Icon, label, onClick, className }) => (
     <button onClick={onClick} className={`w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors group ${className}`}>
         <div className="flex items-center gap-4">
-            <div className={`p-2 rounded-lg transition-colors shadow-sm ${className ? 'bg-indigo-50 text-indigo-500 group-hover:bg-indigo-100' : 'bg-slate-50 text-slate-400 group-hover:bg-white group-hover:text-emerald-500'}`}>
+            <div className={`p-2 rounded-lg transition-colors shadow-sm pointer-events-none ${className ? 'bg-indigo-50 text-indigo-500 group-hover:bg-indigo-100' : 'bg-slate-50 text-slate-400 group-hover:bg-white group-hover:text-emerald-500'}`}>
                 <Icon size={20} />
             </div>
             <span className={`font-bold group-hover:text-slate-900 ${className ? 'text-indigo-600' : 'text-slate-700'}`}>{label}</span>

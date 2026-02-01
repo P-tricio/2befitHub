@@ -30,6 +30,12 @@ export const generateSessionAnalysis = (results, timeline, history = {}) => {
         return 'BASE';
     };
 
+    let totalHR = 0;
+    let hrCount = 0;
+    let maxHR = 0;
+    let cardioPace = null;
+    let isPureCardio = false;
+
     Object.entries(results).forEach(([stepIndex, res]) => {
         const step = timeline[stepIndex];
         if (!step || step.type !== 'WORK' || !step.module) return;
@@ -53,6 +59,63 @@ export const generateSessionAnalysis = (results, timeline, history = {}) => {
             return;
         }
 
+        // 2. Handle Global Cardio Sessions
+        if (res.type === 'cardio') {
+            isPureCardio = true;
+            const hrAvg = res.heartRateAvg;
+            const hrMax = res.heartRateMax;
+            const pace = res.pace;
+            cardioPace = pace;
+
+            if (hrAvg) {
+                totalHR += hrAvg;
+                hrCount++;
+            }
+            if (hrMax > maxHR) maxHR = hrMax;
+
+            if (hrAvg) {
+                if (hrAvg > 170) {
+                    insights.push({
+                        type: 'down',
+                        athleteMsg: "Intensidad de cardio muy elevada. Cuidado con el sobreesfuerzo.",
+                        coachInsight: "FC Media > 170 bpm. Intensidad alta (Z4/Z5). Verificar fatiga."
+                    });
+                } else if (hrAvg > 140) {
+                    insights.push({
+                        type: 'up',
+                        athleteMsg: "¡Excelente motor! Trabajo cardiovascular muy eficiente.",
+                        coachInsight: "FC Media en rango aeróbico óptimo (140-170 bpm)."
+                    });
+                } else {
+                    insights.push({
+                        type: 'keep',
+                        athleteMsg: "Buen trabajo de base aeróbica.",
+                        coachInsight: "FC Media < 140 bpm. Trabajo de resistencia base o recuperación."
+                    });
+                }
+            }
+
+            if (pace) {
+                insights.push({
+                    type: 'keep',
+                    athleteMsg: `Ritmo medio registrado: ${pace} min/km.`,
+                    coachInsight: `Referencia de rendimiento: ${pace} min/km.`
+                });
+            }
+            return;
+        }
+
+        // Accumulate HR for hybrid/energy exercises
+        if (res.heartRates) {
+            Object.values(res.heartRates).forEach(hr => {
+                const val = parseInt(hr);
+                if (val > 0) {
+                    totalHR += val;
+                    hrCount++;
+                    if (val > maxHR) maxHR = val;
+                }
+            });
+        }
         // --- Logic for PDP-T (Time-based "Techo y Suelo") ---
         if (protocol === 'T') {
             exercises.forEach((ex, idx) => {
@@ -317,17 +380,53 @@ export const generateSessionAnalysis = (results, timeline, history = {}) => {
                         adjustment: 0
                     });
                 }
+
+                // Add energy/biometric insights for EMOM if present
+                const hr = res.heartRates?.[idx];
+                if (hr && parseInt(hr) > 165) {
+                    insights.push({
+                        type: 'down',
+                        exerciseName: ex.nameEs || ex.name,
+                        athleteMsg: "Pulso muy alto en este EMOM. El coach revisará los descansos.",
+                        coachInsight: `FC Media detectada: ${hr} bpm. Posible falta de recuperación entre rondas.`
+                    });
+                }
             });
         }
 
-        // --- Fallback for LIBRE or legacy ---
+        // --- Fallback for LIBRE or specialized ENERGY ---
         else {
             exercises.forEach((ex, idx) => {
                 const repsDone = res.reps?.[idx] || 0;
                 const weightUsed = parseFloat(res.actualWeights?.[idx] || res.weights?.[idx] || 0);
-                if (repsDone > 0) {
-                    totalVolume += repsDone * weightUsed;
+                const energy = res.energyMetrics?.[idx];
+                const hr = res.heartRates?.[idx];
+
+                if (repsDone > 0 || (energy && (res.reps?.[idx] > 0))) {
                     completedExercises++;
+
+                    if (ex.quality === 'E') {
+                        // Energy specific insights
+                        insights.push({
+                            type: 'keep',
+                            moduleId: moduleId,
+                            exerciseId: ex.id,
+                            exerciseName: ex.nameEs || ex.name,
+                            athleteMsg: `¡Buen trabajo de energía en ${ex.nameEs || ex.name}!`,
+                            coachInsight: `Rendimiento Energía: ${repsDone} ${energy?.volumeUnit || 'kcal'} a ${weightUsed} ${energy?.intensityUnit || 'W'}.`
+                        });
+
+                        if (hr && parseInt(hr) > 160) {
+                            insights.push({
+                                type: 'down',
+                                exerciseName: ex.nameEs || ex.name,
+                                athleteMsg: "Esfuerzo cardiovascular alto detectado.",
+                                coachInsight: `FC Media en bloque de energía: ${hr} bpm.`
+                            });
+                        }
+                    } else if (repsDone > 0) {
+                        totalVolume += repsDone * weightUsed;
+                    }
                 }
             });
         }
@@ -350,7 +449,11 @@ export const generateSessionAnalysis = (results, timeline, history = {}) => {
         metrics: {
             totalVolume: Math.round(totalVolume),
             completedExercises,
-            efficiency: isNaN(efficiency) ? 0 : efficiency
+            efficiency: isNaN(efficiency) ? 0 : efficiency,
+            avgHR: hrCount > 0 ? Math.round(totalHR / hrCount) : null,
+            maxHR: maxHR > 0 ? maxHR : null,
+            cardioPace,
+            isPureCardio
         }
     };
 };

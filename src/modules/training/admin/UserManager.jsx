@@ -117,20 +117,19 @@ const UserManager = () => {
     return (
         <>
             <div className="max-w-7xl mx-auto relative p-6">
-                <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
-                    <div>
-                        <h1 className="text-4xl font-black text-slate-900 tracking-tight">Atletas</h1>
-                        <p className="text-slate-500 text-sm font-medium mt-1">Gestión centralizada de miembros y planificación.</p>
-                    </div>
-
-                    <div className="relative w-full md:w-80 group">
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-slate-900 transition-colors" size={20} />
+                <header className="flex items-center gap-4 mb-4">
+                    <h1 className="text-xl font-black text-slate-900 tracking-tight shrink-0">Atletas</h1>
+                    <span className="text-[10px] font-black bg-slate-900 text-white px-2 py-0.5 rounded-full shrink-0">
+                        {filteredUsers.length}
+                    </span>
+                    <div className="relative flex-1 group">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                         <input
                             type="text"
-                            placeholder="Buscar por nombre o email..."
+                            placeholder="Buscar..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full pl-12 pr-6 py-3.5 bg-white border border-slate-200 rounded-[20px] text-sm font-medium outline-none focus:border-slate-900 focus:ring-4 focus:ring-slate-900/5 transition-all shadow-sm"
+                            className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium outline-none focus:border-slate-900 transition-all"
                         />
                     </div>
                 </header>
@@ -272,54 +271,49 @@ const UserManager = () => {
                 </div>
 
                 {/* Mobile Card View */}
-                <div className="md:hidden space-y-4">
+                <div className="md:hidden space-y-2">
                     {filteredUsers.map(user => (
                         <div
                             key={user.id}
                             onClick={() => setSelectedUser(user)}
-                            className="bg-white p-5 rounded-[28px] border border-slate-100 shadow-sm active:scale-[0.97] transition-all"
+                            className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm active:scale-[0.98] transition-all"
                         >
-                            <div className="flex justify-between items-center mb-5">
-                                <div className="flex items-center gap-4">
-                                    <div className="w-14 h-14 rounded-2xl bg-slate-900 text-white flex items-center justify-center font-black text-xl overflow-hidden shadow-lg shadow-slate-900/10 shrink-0">
-                                        {user.photoURL ? (
-                                            <img src={user.photoURL} alt={user.displayName} className="w-full h-full object-cover" />
-                                        ) : (
-                                            user.displayName?.[0] || 'U'
-                                        )}
-                                    </div>
-                                    <div className="min-w-0">
-                                        <div className="font-black text-slate-900 text-base truncate">{user.displayName}</div>
-                                        <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider truncate max-w-[150px]">{user.email}</div>
-                                    </div>
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center font-black text-sm overflow-hidden shrink-0">
+                                    {user.photoURL ? (
+                                        <img src={user.photoURL} alt={user.displayName} className="w-full h-full object-cover" />
+                                    ) : (
+                                        user.displayName?.[0] || 'U'
+                                    )}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <div className="font-bold text-slate-900 text-sm truncate">{user.displayName}</div>
+                                    <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider truncate">{user.email}</div>
                                 </div>
                                 <button
                                     onClick={(e) => {
                                         e.stopPropagation();
                                         handleToggleStatus(user);
                                     }}
-                                    className={`
-                                px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all
-                                ${user.status === 'inactive'
-                                            ? 'bg-rose-50 text-rose-500 border-rose-100'
-                                            : 'bg-emerald-50 text-emerald-600 border-emerald-100'
-                                        }
-                            `}
+                                    className={`px-2 py-1 rounded-full text-[8px] font-black uppercase tracking-wide border shrink-0 ${user.status === 'inactive'
+                                        ? 'bg-rose-50 text-rose-500 border-rose-100'
+                                        : 'bg-emerald-50 text-emerald-600 border-emerald-100'
+                                        }`}
                                 >
-                                    {user.status === 'inactive' ? 'Inactivo' : 'Activo'}
+                                    {user.status === 'inactive' ? 'Inact.' : 'Activo'}
                                 </button>
                             </div>
 
-                            <div className="flex items-center gap-2 pt-4 border-t border-slate-50">
+                            <div className="flex items-center gap-2 mt-2 pt-2 border-t border-slate-50">
                                 <button
                                     onClick={(e) => {
                                         e.stopPropagation();
                                         setSelectedUser(user);
                                         setInitialTab('planning');
                                     }}
-                                    className="flex-1 bg-slate-900 text-white py-3 rounded-2xl text-[10px] font-black uppercase tracking-[0.1em] hover:bg-slate-800 transition-all flex items-center justify-center gap-2 shadow-lg shadow-slate-900/20"
+                                    className="flex-1 bg-slate-900 text-white py-2 rounded-lg text-[9px] font-black uppercase tracking-wide flex items-center justify-center gap-1.5"
                                 >
-                                    <Calendar size={16} />
+                                    <Calendar size={12} />
                                     Gestionar
                                 </button>
                                 <button
@@ -327,9 +321,9 @@ const UserManager = () => {
                                         e.stopPropagation();
                                         setChatUser(user);
                                     }}
-                                    className="p-3 bg-indigo-600 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-900/20 active:scale-95 transition-all"
+                                    className="p-2 bg-indigo-600 text-white rounded-lg"
                                 >
-                                    <MessageCircle size={20} />
+                                    <MessageCircle size={16} />
                                 </button>
                                 <div className="relative">
                                     <button
@@ -337,20 +331,20 @@ const UserManager = () => {
                                             e.stopPropagation();
                                             setActiveMenuId(activeMenuId === user.id ? null : user.id);
                                         }}
-                                        className={`p-3 border border-slate-100 rounded-2xl transition-all ${activeMenuId === user.id ? 'bg-slate-100 text-slate-900 border-slate-200' : 'text-slate-400 hover:bg-slate-50'}`}
+                                        className={`p-2 border border-slate-100 rounded-lg transition-all ${activeMenuId === user.id ? 'bg-slate-100 text-slate-900' : 'text-slate-400'}`}
                                     >
-                                        <MoreVertical size={20} />
+                                        <MoreVertical size={16} />
                                     </button>
                                     {activeMenuId === user.id && (
-                                        <div className="absolute right-0 bottom-full mb-3 w-48 bg-white rounded-2xl shadow-2xl border border-slate-100 py-2 z-20 text-left animate-in fade-in slide-in-from-bottom-2 duration-200" onClick={(e) => e.stopPropagation()}>
+                                        <div className="absolute right-0 bottom-full mb-2 w-40 bg-white rounded-xl shadow-2xl border border-slate-100 py-1 z-20 text-left" onClick={(e) => e.stopPropagation()}>
                                             <button
                                                 onClick={() => {
                                                     setSelectedUser(user);
                                                     setInitialTab('metrics');
                                                 }}
-                                                className="w-full text-left px-4 py-3 text-xs font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest flex items-center gap-3"
+                                                className="w-full text-left px-3 py-2 text-[10px] font-black text-slate-600 hover:bg-slate-50 uppercase tracking-wide flex items-center gap-2"
                                             >
-                                                <Activity size={16} />
+                                                <Activity size={12} />
                                                 Seguimiento
                                             </button>
                                             <button
@@ -358,29 +352,19 @@ const UserManager = () => {
                                                     setSelectedUser(user);
                                                     setInitialTab('history');
                                                 }}
-                                                className="w-full text-left px-4 py-3 text-xs font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest flex items-center gap-3"
+                                                className="w-full text-left px-3 py-2 text-[10px] font-black text-slate-600 hover:bg-slate-50 uppercase tracking-wide flex items-center gap-2"
                                             >
-                                                <Trophy size={16} />
+                                                <Trophy size={12} />
                                                 Historial
-                                            </button>
-                                            <button
-                                                onClick={() => {
-                                                    setChatUser(user);
-                                                    setActiveMenuId(null);
-                                                }}
-                                                className="w-full text-left px-4 py-3 text-xs font-black text-slate-600 hover:bg-slate-50 transition-colors uppercase tracking-widest flex items-center gap-3 border-t border-slate-50"
-                                            >
-                                                <MessageCircle size={16} />
-                                                Chat Directo
                                             </button>
                                             <button
                                                 onClick={() => {
                                                     setNotificationUser(user);
                                                     setActiveMenuId(null);
                                                 }}
-                                                className="w-full text-left px-4 py-3 text-xs font-black text-indigo-600 hover:bg-slate-50 transition-colors uppercase tracking-widest flex items-center gap-3 border-t border-slate-50"
+                                                className="w-full text-left px-3 py-2 text-[10px] font-black text-indigo-600 hover:bg-slate-50 uppercase tracking-wide flex items-center gap-2 border-t border-slate-50"
                                             >
-                                                <Bell size={16} />
+                                                <Bell size={12} />
                                                 Enviar Aviso
                                             </button>
                                             <button
@@ -388,9 +372,9 @@ const UserManager = () => {
                                                     handleDeleteUser(user);
                                                     setActiveMenuId(null);
                                                 }}
-                                                className="w-full text-left px-4 py-3 text-xs font-black text-rose-500 hover:bg-rose-50 transition-colors uppercase tracking-widest flex items-center gap-3 border-t border-slate-50"
+                                                className="w-full text-left px-3 py-2 text-[10px] font-black text-rose-500 hover:bg-rose-50 uppercase tracking-wide flex items-center gap-2 border-t border-slate-50"
                                             >
-                                                <Trash2 size={16} />
+                                                <Trash2 size={12} />
                                                 Eliminar
                                             </button>
                                         </div>

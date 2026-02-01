@@ -100,6 +100,23 @@ export const AuthProvider = ({ children }) => {
                         };
                         await setDoc(userRef, newUserData);
                         setCurrentUser({ ...user, ...newUserData });
+
+                        // Notify admin about new user registration
+                        try {
+                            const notifRef = doc(db, 'notifications', `admin-newuser-${user.uid}`);
+                            await setDoc(notifRef, {
+                                userId: 'admin',
+                                type: 'new_user',
+                                title: '¡Nuevo Usuario!',
+                                message: `${user.displayName || user.email} se ha registrado en la app.`,
+                                priority: 'high',
+                                read: false,
+                                createdAt: serverTimestamp(),
+                                data: { newUserId: user.uid, email: user.email }
+                            });
+                        } catch (notifError) {
+                            console.warn("Failed to notify admin:", notifError);
+                        }
                     }
                 } catch (error) {
                     console.error("Error fetching user data:", error);

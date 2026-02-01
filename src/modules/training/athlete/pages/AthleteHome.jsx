@@ -11,6 +11,8 @@ import ChatDrawer from '../../components/ChatDrawer';
 import NotificationBell from '../../components/NotificationBell';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format, getDay } from 'date-fns';
+import NutritionDayView from '../../../nutrition/user/NutritionDayView';
+
 
 const AthleteHome = () => {
     const { currentUser } = useAuth();
@@ -21,6 +23,7 @@ const AthleteHome = () => {
     const [checkinTask, setCheckinTask] = useState(null);
     const [addTaskModal, setAddTaskModal] = useState(false);
     const [sessionResultsTask, setSessionResultsTask] = useState(null);
+    const [nutritionDayTask, setNutritionDayTask] = useState(null);
     const [userCustomMetrics, setUserCustomMetrics] = useState([]);
     const [userMinimums, setUserMinimums] = useState(null);
     const [habitFrequency, setHabitFrequency] = useState('daily');
@@ -100,7 +103,11 @@ const AthleteHome = () => {
 
             if (isWeekly && isSunday) {
                 // Weekly reporting only on Sundays
-                if (!tasks.some(t => t.type === 'nutrition')) {
+                // Check for Real Weekly Task ID
+                const realWeeklyId = 'real-habits-weekly-' + todayKey;
+                const hasWeeklyTask = tasks.some(t => t.id === realWeeklyId);
+
+                if (!hasWeeklyTask) {
                     tasks.push({
                         id: 'virtual-habits-weekly-' + todayKey,
                         type: 'nutrition',
@@ -112,7 +119,10 @@ const AthleteHome = () => {
             } else if (!isWeekly) {
                 // Only show "Yesterday's Reflection" task in the dashboard
                 // Real-time tracking for "Today" and history is available in the standalone Habits screen.
-                const hasReflectionTask = tasks.some(t => t.type === 'nutrition' && t.config?.retroactive);
+
+                // Check for Real Reflection Task ID
+                const realReflectionId = 'real-habits-yesterday-' + todayKey;
+                const hasReflectionTask = tasks.some(t => t.id === realReflectionId);
 
                 if (!hasReflectionTask) {
                     tasks.push({
@@ -129,7 +139,16 @@ const AthleteHome = () => {
             }
         }
 
-        return tasks;
+        // Sort: Pending first, then Completed. Secondary sort by Title to keep stable.
+        return tasks.sort((a, b) => {
+            if (a.status === b.status) {
+                // Keep virtual tasks at top if pending
+                if (a.is_virtual && !b.is_virtual) return -1;
+                if (!a.is_virtual && b.is_virtual) return 1;
+                return (a.title || '').localeCompare(b.title || '');
+            }
+            return a.status === 'completed' ? 1 : -1;
+        });
     };
 
     // Scheduled Messages Delivery Effect
@@ -380,12 +399,50 @@ const AthleteHome = () => {
                                     );
                                 }
 
+
+
+                                // Handle Nutrition Day Task
+                                if (task.type === 'nutrition_day') {
+                                    const isCompleted = task.status === 'completed';
+                                    return (
+                                        <button
+                                            key={task.id || index}
+                                            onClick={() => setNutritionDayTask(task)}
+                                            className={`w-full p-4 rounded-[1.8rem] shadow-sm border flex items-center justify-between transition-all text-left ${isCompleted ? 'bg-white border-emerald-100/50' : 'bg-white border-slate-100 hover:border-emerald-200'}`}
+                                        >
+                                            <div className="flex items-center gap-4">
+                                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-colors shrink-0 ${isCompleted ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/10' : 'bg-amber-50 text-amber-500'}`}>
+                                                    {isCompleted ? <Check size={20} strokeWidth={3} /> : <Utensils size={20} />}
+                                                </div>
+                                                <div>
+                                                    <div className="flex items-center gap-2">
+                                                        <h3 className={`font-black ${isCompleted ? 'text-slate-400 line-through decoration-emerald-500/20' : 'text-slate-800'}`}>
+                                                            {task.title || 'Nutrición del Día'}
+                                                        </h3>
+                                                        {isCompleted && <span className="px-2 py-0.5 bg-emerald-50 text-emerald-600 text-[7px] font-black rounded-full uppercase tracking-widest">OK</span>}
+                                                    </div>
+                                                    <p className={`text-[10px] font-black uppercase tracking-widest ${isCompleted ? 'text-emerald-500' : 'text-slate-400'}`}>
+                                                        {isCompleted ? 'Registrado' : 'Ver Plan Dieta'}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            {!isCompleted && <ChevronDown size={18} className="text-slate-200" />}
+                                        </button>
+                                    );
+                                }
+
                                 // Non-session tasks (Clickable to Check-in)
                                 const isCompleted = task.status === 'completed';
                                 return (
                                     <button
                                         key={task.id || index}
-                                        onClick={() => setCheckinTask(task)}
+                                        onClick={() => {
+                                            if (task.type === 'nutrition_day' || task.type === 'nutrition_planning') {
+                                                setNutritionDayTask(task);
+                                            } else {
+                                                setCheckinTask(task);
+                                            }
+                                        }}
                                         className={`w-full p-4 rounded-[1.8rem] shadow-sm border flex items-center justify-between transition-all text-left ${isCompleted ? 'bg-white border-emerald-100/50' : 'bg-white border-slate-100 hover:border-emerald-200'
                                             }`}
                                     >
@@ -393,13 +450,15 @@ const AthleteHome = () => {
                                             <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-colors shrink-0 ${isCompleted ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/10' :
                                                 task.type === 'neat' ? 'bg-emerald-50 text-emerald-500' :
                                                     task.type === 'nutrition' ? 'bg-amber-50 text-amber-500' :
-                                                        task.type === 'free_training' ? 'bg-slate-100 text-slate-600' :
-                                                            'bg-blue-50 text-blue-500'
+                                                        (task.type === 'nutrition_day' || task.type === 'nutrition_planning') ? 'bg-orange-50 text-orange-500' :
+                                                            task.type === 'free_training' ? 'bg-slate-100 text-slate-600' :
+                                                                'bg-blue-50 text-blue-500'
                                                 }`}>
                                                 {isCompleted ? <Check size={20} strokeWidth={3} /> : (
                                                     <>
                                                         {task.type === 'neat' && <Footprints size={20} />}
                                                         {task.type === 'nutrition' && <CheckSquare size={20} />}
+                                                        {(task.type === 'nutrition_day' || task.type === 'nutrition_planning') && <Utensils size={20} />}
                                                         {(task.type === 'tracking' || task.type === 'checkin') && <ClipboardList size={20} />}
                                                         {task.type === 'free_training' && <Dumbbell size={20} />}
                                                     </>
@@ -500,6 +559,19 @@ const AthleteHome = () => {
                         />
                     )}
                 </AnimatePresence >
+
+                {/* Nutrition Day View Modal */}
+                <AnimatePresence>
+                    {nutritionDayTask && (
+                        <NutritionDayView
+                            userId={currentUser.uid}
+                            date={format(new Date(), 'yyyy-MM-dd')}
+                            dayId={nutritionDayTask.config?.dayId || nutritionDayTask.dayId}
+                            taskId={nutritionDayTask.id}
+                            onClose={() => setNutritionDayTask(null)}
+                        />
+                    )}
+                </AnimatePresence>
             </div >
 
             <ChatDrawer
