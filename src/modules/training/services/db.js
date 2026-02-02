@@ -323,7 +323,7 @@ export const TrainingDB = {
                 updatedAt: serverTimestamp()
             });
         },
-        async updateSessionTaskInSchedule(userId, date, sessionId, updateData) {
+        async updateSessionTaskInSchedule(userId, date, sessionId, updateData, taskId = null) {
             const ref = doc(db, 'users', userId);
             const snap = await getDoc(ref);
             if (!snap.exists()) return;
@@ -334,28 +334,47 @@ export const TrainingDB = {
 
             // 1. Try exact date first
             let dailyTasks = schedule[date] || [];
-            let taskIndex = Array.isArray(dailyTasks) ? dailyTasks.findIndex(t => t.type === 'session' && String(t.sessionId) === targetId) : -1;
+            let taskIndex = -1;
+
+            // Priority: Try to find by Task ID first if provided
+            if (taskId) {
+                taskIndex = Array.isArray(dailyTasks) ? dailyTasks.findIndex(t => t.id === taskId) : -1;
+            }
+
+            // Fallback: Find by Session ID
+            if (taskIndex === -1) {
+                taskIndex = Array.isArray(dailyTasks) ? dailyTasks.findIndex(t => t.type === 'session' && String(t.sessionId) === targetId) : -1;
+            }
+
             let targetDate = date;
 
             // 2. Fallback: Search the entire schedule if not found on current date
             if (taskIndex === -1) {
-                console.log(`[updateSessionTaskInSchedule] Session ${targetId} not found on ${date}. Searching entire schedule...`);
+                console.log(`[updateSessionTaskInSchedule] Task not found on ${date}. Searching entire schedule... (Session: ${targetId}, Task: ${taskId})`);
                 const allEntries = Object.entries(schedule);
                 for (const [d, tasks] of allEntries) {
                     if (!Array.isArray(tasks)) continue;
-                    const idx = tasks.findIndex(t => t.type === 'session' && String(t.sessionId) === targetId);
+
+                    let idx = -1;
+                    if (taskId) {
+                        idx = tasks.findIndex(t => t.id === taskId);
+                    }
+                    if (idx === -1) {
+                        idx = tasks.findIndex(t => t.type === 'session' && String(t.sessionId) === targetId);
+                    }
+
                     if (idx !== -1) {
                         targetDate = d;
-                        dailyTasks = [...tasks];
+                        dailyTasks = [...tasks]; // Create a copy of the day's tasks
                         taskIndex = idx;
-                        console.log(`[updateSessionTaskInSchedule] Found session ${targetId} on ${targetDate}`);
+                        console.log(`[updateSessionTaskInSchedule] Found matched task on ${targetDate}`);
                         break;
                     }
                 }
             }
 
             if (taskIndex === -1) {
-                console.warn('[updateSessionTaskInSchedule] Task not found for sessionId:', sessionId);
+                console.warn('[updateSessionTaskInSchedule] Task not found for sessionId:', sessionId, 'taskId:', taskId);
                 return;
             }
 

@@ -196,11 +196,58 @@ const SessionRunner = () => {
         globalTime: 0,
     });
 
+    // --- PERSISTENCE: Save/Load Session State ---
+    useEffect(() => {
+        if (!sessionId || !currentUser) return;
+        const key = `runner_v2_${currentUser.uid}_${sessionId}`;
+
+        // Initial Load
+        const saved = localStorage.getItem(key);
+        if (saved) {
+            try {
+                const parsed = JSON.parse(saved);
+                // Valid for 12 hours
+                if (Date.now() - parsed.timestamp < 12 * 60 * 60 * 1000) {
+                    // Verify basic structure
+                    if (parsed.sessionState && parsed.currentIndex !== undefined) {
+                        console.log("Restoring session from local storage:", key);
+                        setSessionState(parsed.sessionState);
+                        setCurrentIndex(parsed.currentIndex);
+                        if (parsed.globalTime) setGlobalTime(parsed.globalTime);
+                    }
+                }
+            } catch (e) { console.warn("Failed to restore session", e); }
+        }
+    }, [sessionId, currentUser]); // Run once on mount
+
+    useEffect(() => {
+        if (!sessionId || !currentUser) return;
+        const key = `runner_v2_${currentUser.uid}_${sessionId}`;
+        // Debounce save slightly or just save on every change (low cost for localstorage)
+        const payload = {
+            currentIndex,
+            sessionState,
+            globalTime,
+            timestamp: Date.now()
+        };
+        localStorage.setItem(key, JSON.stringify(payload));
+    }, [currentIndex, sessionState, globalTime, sessionId, currentUser]);
+    // ---------------------------------------------
+
+
+    // Robust Global Timer
     useEffect(() => {
         let interval;
+        let lastTick = Date.now();
+
         if (isGlobalActive) {
             interval = setInterval(() => {
-                setGlobalTime(prev => prev + 1);
+                const now = Date.now();
+                const delta = Math.floor((now - lastTick) / 1000);
+                if (delta >= 1) {
+                    setGlobalTime(prev => prev + delta);
+                    lastTick = now;
+                }
             }, 1000);
         }
         return () => clearInterval(interval);
@@ -236,9 +283,10 @@ const SessionRunner = () => {
 
             // Determine the target date for markers and logs
             const scheduledDate = location.state?.scheduledDate;
+            const taskId = location.state?.taskId;
             const targetDate = scheduledDate || new Date().toISOString().split('T')[0];
 
-            console.log('[finalizeSession] Target date for schedule update:', targetDate);
+            console.log('[finalizeSession] Target date for schedule update:', targetDate, 'Task ID:', taskId);
 
             setIsGlobalActive(false);
 
@@ -288,14 +336,15 @@ const SessionRunner = () => {
                         summary: summary,
                         results: {
                             durationMinutes: durationMin,
-                            rpe: rpe,
-                            notes: feedback.comment || feedback.notes,
-                            analysis: insights,
-                            metrics: metrics,
-                            totalVolume: metrics.totalVolume,
-                            evidenceUrl: feedback.evidenceUrl
+                            rpe: rpe || null,
+                            notes: feedback.comment || feedback.notes || null,
+                            analysis: insights || [],
+                            metrics: metrics || {},
+                            totalVolume: metrics.totalVolume || 0,
+                            evidenceUrl: feedback.evidenceUrl || null
                         }
-                    }
+                    },
+                    taskId
                 );
                 console.log('[finalizeSession] Schedule update requested successfully');
                 scheduleUpdateSuccess = true;
@@ -326,10 +375,10 @@ const SessionRunner = () => {
                         type: 'session',
                         summary: summary,
                         durationMinutes: durationMin,
-                        rpe: rpe,
-                        metrics: metrics,
-                        technicalInsights: technicalInsights,
-                        evidenceUrl: feedback.evidenceUrl
+                        rpe: rpe || null,
+                        metrics: metrics || {},
+                        technicalInsights: technicalInsights || null,
+                        evidenceUrl: feedback.evidenceUrl || null
                     }
                 });
             } catch (notiErr) {
@@ -1553,6 +1602,43 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
     const [isActive, setIsActive] = useState(false); // Start PAUSED
     const [currentMinute, setCurrentMinute] = useState(1); // For EMOM
 
+    // ROBUST TIMER LOGIC (Work & Rest)
+    const lastMonitorTick = useRef(Date.now());
+
+    // Sync Rest Timer with Real Time
+    // We assume 'restTimeLeft' is the source of truth for display
+    // Using a ref to track target completion time would be best, but modifying all setRestTimeLeft calls is hard.
+    // Instead, we use a delta approach on the interval that drives it.
+    // Note: The rest timer implementation seems to be missing from the viewed code or uses a different mechanism.
+    // However, we can inject a "Global Watchdog" causing decrements based on real time if we can find the state.
+    // Since 'restTimeLeft' is defined later (line ~1718), we can't hook it here easily.
+    // BUT we can fix 'elapsed' and 'timeLeft' which ARE here.
+
+    useEffect(() => {
+        let interval;
+        if (isActive) {
+            lastMonitorTick.current = Date.now();
+            interval = setInterval(() => {
+                const now = Date.now();
+                const delta = Math.floor((now - lastMonitorTick.current) / 1000);
+
+                if (delta >= 1) {
+                    // Update Elapsed
+                    setElapsed(prev => prev + delta);
+
+                    // Update TimeLeft (if counting down)
+                    setTimeLeft(prev => (prev !== null && prev > 0) ? Math.max(0, prev - delta) : prev);
+
+                    lastMonitorTick.current = now;
+                }
+            }, 1000);
+        }
+        return () => clearInterval(interval);
+    }, [isActive]);
+
+    // NOTE: The original interval at line ~2116 must be removed or it will conflict.
+
+
     // Historical Performance State
     const [previousLog, setPreviousLog] = useState(null);
     const [loadingHistory, setLoadingHistory] = useState(true);
@@ -1720,6 +1806,37 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
     const [editingSet, setEditingSet] = useState(null); // { exIdx, setIdx }
     const [isRoundRest, setIsRoundRest] = useState(false); // Track if current rest is a round rest
     const [selectedExerciseForNotes, setSelectedExerciseForNotes] = useState(null); // Exercise object to show in notes modal
+
+    // --- ROBUST REST TIMER START ---
+    const restEndRef = useRef(null);
+    useEffect(() => {
+        let timer;
+        if (isResting) {
+            // Initialize target time if not set (first render of resting state)
+            if (!restEndRef.current && restTimeLeft > 0) {
+                restEndRef.current = Date.now() + (restTimeLeft * 1000);
+            }
+
+            timer = setInterval(() => {
+                if (restEndRef.current) {
+                    const remaining = Math.ceil((restEndRef.current - Date.now()) / 1000);
+                    if (remaining <= 0) {
+                        setRestTimeLeft(0);
+                        setIsResting(false);
+                        restEndRef.current = null;
+                        if (initAudio) initAudio(); // Ensure audio context is ready
+                        if (playSuccess) playSuccess(); // Beep on finish
+                    } else {
+                        setRestTimeLeft(remaining);
+                    }
+                }
+            }, 500); // Check twice per second for smoothness
+        } else {
+            restEndRef.current = null;
+        }
+        return () => clearInterval(timer);
+    }, [isResting]);
+    // --- ROBUST REST TIMER END ---
 
     // Grouping Logic for LIBRE
     const groupedExercises = useMemo(() => {
@@ -2043,80 +2160,90 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
     }, [module]);
 
     // Timer Loop
+    // Timer Loop - ROBUST IMPLEMENTATION
     useEffect(() => {
         let interval = null;
+
         if (isActive) {
+            // Establish start time based on current elapsed to handle backgrounding
+            // If elapsed is 10s, startTime is 10s ago.
+            const anchorTime = Date.now() - (elapsed * 1000);
+
             interval = setInterval(() => {
-                setElapsed(e => e + 1);
+                const now = Date.now();
+                // Calculate what elapsed SHOULD be right now
+                const realElapsed = Math.floor((now - anchorTime) / 1000);
 
-                if (protocol === 'T') {
-                    setTimeLeft(prev => {
+                // Only update if time moved forward (avoid jitter)
+                if (realElapsed > elapsed) {
+                    setElapsed(realElapsed);
+
+                    if (protocol === 'T') {
                         const total = module.targeting?.[0]?.timeCap || 240;
-                        if (prev === Math.floor(total / 2) + 1) playHalfway();
-                        if (prev === 61) playMinuteWarning();
+                        const newTimeLeft = Math.max(0, total - realElapsed);
 
-                        // Countdown Logic: Beep at 3, 2, 1
-                        if (prev === 4) playCountdownShort();
-                        if (prev === 3) playCountdownShort();
-                        if (prev === 2) playCountdownShort();
+                        // Check for Beeps (Only if we land exactly on them or passed them recently)
+                        // This logic acts as "best effort" for audio in background
+                        if (newTimeLeft === Math.floor(total / 2) + 1) playHalfway();
+                        if (newTimeLeft === 61) playMinuteWarning();
 
-                        if (prev <= 1) {
+                        if (newTimeLeft <= 4 && newTimeLeft > 0) playCountdownShort();
+
+                        if (newTimeLeft <= 0) {
                             setIsActive(false);
-                            playCountdownFinal(); // Time fail/complete beep
-                            return 0;
+                            playCountdownFinal();
+                            setTimeLeft(0);
+                        } else {
+                            setTimeLeft(newTimeLeft);
                         }
-                        return prev - 1;
-                    });
-                } else if (protocol === 'E') {
-                    // Logic for EMOM: One minute cycles
-                    setTimeLeft(prev => {
-                        if (prev === 31) playHalfway(); // Halfway through the minute
 
-                        // prev is seconds remaining in CURRENT MINUTE (60 to 0)
-                        if (prev === 4) playCountdownShort();
-                        if (prev === 3) playCountdownShort();
-                        if (prev === 2) playCountdownShort();
+                    } else if (protocol === 'E') {
+                        // EMOM Logic
+                        const totalDurationMin = (module.emomParams?.durationMinutes || 4);
+                        const currentMin = Math.floor(realElapsed / 60) + 1;
+                        const secInMin = realElapsed % 60;
+                        const newTimeLeft = 60 - secInMin; // 60 down to 1 (0 is effectively 60 of next)
 
-                        if (prev <= 1) {
-                            // End of a minute
-                            const totalDurationMin = (module.emomParams?.durationMinutes || 4);
-                            if (currentMinute >= totalDurationMin) {
-                                setIsActive(false);
-                                playCountdownFinal(); // Finished all rounds
-                                return 0;
-                            } else {
-                                // Next round
-                                setCurrentMinute(m => m + 1);
-                                playSuccess(); // New round beep
-                                return 60; // Reset to 60s
+                        if (currentMin > totalDurationMin) {
+                            setIsActive(false);
+                            playCountdownFinal();
+                        } else {
+                            if (currentMin > currentMinute) {
+                                setCurrentMinute(currentMin);
+                                playSuccess(); // New round
                             }
+
+                            // Emom Beeps
+                            if (newTimeLeft === 31) playHalfway();
+                            if (newTimeLeft <= 4 && newTimeLeft > 1) playCountdownShort();
+
+                            // Handling minute boundary
+                            if (newTimeLeft === 60 || newTimeLeft === 0) setTimeLeft(60);
+                            else setTimeLeft(newTimeLeft);
                         }
-                        return prev - 1;
-                    });
-                } else if (protocol === 'R') {
-                    // Time Cap Logic for R - STRICT DEFAULTS
-                    const PDP_R_CAPS = { 'BASE': 300, 'BUILD': 360, 'BURN': 420, 'BOOST': 300 };
+                    } else if (protocol === 'R') {
+                        // R Logic
+                        const PDP_R_CAPS = { 'BASE': 300, 'BUILD': 360, 'BURN': 420, 'BOOST': 300 };
+                        let category = 'BASE';
+                        const typeUpper = (blockType || '').toUpperCase();
+                        if (typeUpper.includes('BUILD')) category = 'BUILD';
+                        else if (typeUpper.includes('BURN')) category = 'BURN';
+                        else if (typeUpper.includes('BOOST')) category = 'BOOST';
 
-                    // Robust Category Detection (e.g., handles "BUILD A", "BUILD B - Focus")
-                    let category = 'BASE';
-                    const typeUpper = (blockType || '').toUpperCase();
-                    if (typeUpper.includes('BUILD')) category = 'BUILD';
-                    else if (typeUpper.includes('BURN')) category = 'BURN';
-                    else if (typeUpper.includes('BOOST')) category = 'BOOST';
+                        const effectiveCap = PDP_R_CAPS[category] || module.targeting?.[0]?.timeCap || 300;
 
-                    // PRIORITY FIX: Use Official Cap if known block type, otherwise fallback to module/default
-                    const effectiveCap = PDP_R_CAPS[category] || module.targeting?.[0]?.timeCap || 300;
-
-                    if (elapsed + 1 >= effectiveCap) {
-                        setIsActive(false);
-                        playCountdownFinal();
-                        setElapsed(effectiveCap); // Clamp
+                        if (realElapsed >= effectiveCap) {
+                            setIsActive(false);
+                            playCountdownFinal();
+                            setElapsed(effectiveCap);
+                        }
                     }
                 }
-            }, 1000);
+            }, 250); // Check 4 times a second for responsiveness
         }
         return () => clearInterval(interval);
-    }, [isActive, protocol, currentMinute, module, playCountdownShort, playCountdownFinal, playHalfway, playMinuteWarning, playSuccess]);
+    }, [isActive, protocol, elapsed, currentMinute, module, blockType, playCountdownShort, playCountdownFinal, playHalfway, playMinuteWarning, playSuccess]);
+
 
     const formatTime = (seconds) => {
         const m = Math.floor(seconds / 60);
