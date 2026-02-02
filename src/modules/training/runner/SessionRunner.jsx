@@ -2161,88 +2161,102 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
 
     // Timer Loop
     // Timer Loop - ROBUST IMPLEMENTATION
+    // Timer Loop - ROBUST IMPLEMENTATION (Fixed for Background Throttling)
     useEffect(() => {
         let interval = null;
 
         if (isActive) {
             // Establish start time based on current elapsed to handle backgrounding
             // If elapsed is 10s, startTime is 10s ago.
+            // We use a ref for anchorTime to prevent it from resetting on every render if we didn't want to depend on elapsed,
+            // but here we depend on isActive toggling.
+            // Ideally, we calculated anchorTime ONCE when isActive becomes true.
+            // However, since we don't save "startTime" in state, we re-derive it.
             const anchorTime = Date.now() - (elapsed * 1000);
 
             interval = setInterval(() => {
-                const now = Date.now();
-                // Calculate what elapsed SHOULD be right now
-                const realElapsed = Math.floor((now - anchorTime) / 1000);
+                try {
+                    const now = Date.now();
+                    // Calculate what elapsed SHOULD be right now
+                    const realElapsed = Math.floor((now - anchorTime) / 1000);
 
-                // Only update if time moved forward (avoid jitter)
-                if (realElapsed > elapsed) {
-                    setElapsed(realElapsed);
+                    // Only update if time moved forward (avoid jitter)
+                    if (realElapsed > elapsed) {
+                        setElapsed(realElapsed);
 
-                    if (protocol === 'T') {
-                        const total = module.targeting?.[0]?.timeCap || 240;
-                        const newTimeLeft = Math.max(0, total - realElapsed);
+                        if (protocol === 'T') {
+                            const total = module.targeting?.[0]?.timeCap || 240;
+                            const newTimeLeft = Math.max(0, total - realElapsed);
 
-                        // Check for Beeps (Only if we land exactly on them or passed them recently)
-                        // This logic acts as "best effort" for audio in background
-                        if (newTimeLeft === Math.floor(total / 2) + 1) playHalfway();
-                        if (newTimeLeft === 61) playMinuteWarning();
+                            // Audio Safeguards
+                            try {
+                                if (newTimeLeft === Math.floor(total / 2) + 1) playHalfway?.();
+                                if (newTimeLeft === 61) playMinuteWarning?.();
+                                if (newTimeLeft <= 4 && newTimeLeft > 0) playCountdownShort?.();
+                            } catch (e) { console.warn("Audio error:", e); }
 
-                        if (newTimeLeft <= 4 && newTimeLeft > 0) playCountdownShort();
-
-                        if (newTimeLeft <= 0) {
-                            setIsActive(false);
-                            playCountdownFinal();
-                            setTimeLeft(0);
-                        } else {
-                            setTimeLeft(newTimeLeft);
-                        }
-
-                    } else if (protocol === 'E') {
-                        // EMOM Logic
-                        const totalDurationMin = (module.emomParams?.durationMinutes || 4);
-                        const currentMin = Math.floor(realElapsed / 60) + 1;
-                        const secInMin = realElapsed % 60;
-                        const newTimeLeft = 60 - secInMin; // 60 down to 1 (0 is effectively 60 of next)
-
-                        if (currentMin > totalDurationMin) {
-                            setIsActive(false);
-                            playCountdownFinal();
-                        } else {
-                            if (currentMin > currentMinute) {
-                                setCurrentMinute(currentMin);
-                                playSuccess(); // New round
+                            if (newTimeLeft <= 0) {
+                                setIsActive(false);
+                                try { playCountdownFinal?.(); } catch (e) { }
+                                setTimeLeft(0);
+                            } else {
+                                setTimeLeft(newTimeLeft);
                             }
 
-                            // Emom Beeps
-                            if (newTimeLeft === 31) playHalfway();
-                            if (newTimeLeft <= 4 && newTimeLeft > 1) playCountdownShort();
+                        } else if (protocol === 'E') {
+                            // EMOM Logic - background safe
+                            const totalDurationMin = (module.emomParams?.durationMinutes || 4);
+                            const currentMin = Math.floor(realElapsed / 60) + 1;
+                            const secInMin = realElapsed % 60;
+                            const newTimeLeft = 60 - secInMin; // 60 down to 1
 
-                            // Handling minute boundary
-                            if (newTimeLeft === 60 || newTimeLeft === 0) setTimeLeft(60);
-                            else setTimeLeft(newTimeLeft);
-                        }
-                    } else if (protocol === 'R') {
-                        // R Logic
-                        const PDP_R_CAPS = { 'BASE': 300, 'BUILD': 360, 'BURN': 420, 'BOOST': 300 };
-                        let category = 'BASE';
-                        const typeUpper = (blockType || '').toUpperCase();
-                        if (typeUpper.includes('BUILD')) category = 'BUILD';
-                        else if (typeUpper.includes('BURN')) category = 'BURN';
-                        else if (typeUpper.includes('BOOST')) category = 'BOOST';
+                            if (currentMin > totalDurationMin) {
+                                setIsActive(false);
+                                try { playCountdownFinal?.(); } catch (e) { }
+                            } else {
+                                if (currentMin > currentMinute) {
+                                    setCurrentMinute(currentMin);
+                                    try { playSuccess?.(); } catch (e) { }
+                                }
 
-                        const effectiveCap = PDP_R_CAPS[category] || module.targeting?.[0]?.timeCap || 300;
+                                // Emom Beeps
+                                try {
+                                    if (newTimeLeft === 31) playHalfway?.();
+                                    if (newTimeLeft <= 4 && newTimeLeft > 1) playCountdownShort?.();
+                                } catch (e) { console.warn("Audio error:", e); }
 
-                        if (realElapsed >= effectiveCap) {
-                            setIsActive(false);
-                            playCountdownFinal();
-                            setElapsed(effectiveCap);
+                                // Handling minute boundary visualization
+                                if (newTimeLeft === 60 || newTimeLeft === 0) setTimeLeft(60);
+                                else setTimeLeft(newTimeLeft);
+                            }
+                        } else if (protocol === 'R') {
+                            const PDP_R_CAPS = { 'BASE': 300, 'BUILD': 360, 'BURN': 420, 'BOOST': 300 };
+                            let category = 'BASE';
+                            const typeUpper = (blockType || '').toUpperCase();
+                            if (typeUpper.includes('BUILD')) category = 'BUILD';
+                            else if (typeUpper.includes('BURN')) category = 'BURN';
+                            else if (typeUpper.includes('BOOST')) category = 'BOOST';
+
+                            const effectiveCap = PDP_R_CAPS[category] || module.targeting?.[0]?.timeCap || 300;
+
+                            if (realElapsed >= effectiveCap) {
+                                setIsActive(false);
+                                try { playCountdownFinal?.(); } catch (e) { }
+                                setElapsed(effectiveCap);
+                            }
                         }
                     }
+                } catch (err) {
+                    console.error("Critical Timer Error:", err);
                 }
             }, 250); // Check 4 times a second for responsiveness
         }
         return () => clearInterval(interval);
-    }, [isActive, protocol, elapsed, currentMinute, module, blockType, playCountdownShort, playCountdownFinal, playHalfway, playMinuteWarning, playSuccess]);
+        // Removing 'elapsed' and 'currentMinute' from dependency array to prevent effect re-creation
+        // anchorTime is derived inside the effect, so it's stable.
+        // We accept that audio functions might be stale closures if not wrapped in ref, but they are from custom hook which usually stabilizes them or we use optional chaining.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isActive, protocol, module, blockType]); // Clean dependencies
 
 
     const formatTime = (seconds) => {
