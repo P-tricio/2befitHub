@@ -690,6 +690,7 @@ const SessionRunner = () => {
                         {/* SUMMARY UI */}
                         {currentStep.type === 'SUMMARY' && (
                             <SummaryBlock
+                                session={session}
                                 sessionState={sessionState}
                                 timeline={timeline}
                                 history={history}
@@ -1002,7 +1003,7 @@ const CollapsiblePlanningBlock = ({ module, onSelectExercise }) => {
     );
 };
 
-const SummaryBlock = ({ sessionState, timeline, history, setSessionState, onFinish, globalTime, isProcessing }) => {
+const SummaryBlock = ({ session, sessionState, timeline, history, setSessionState, onFinish, globalTime, isProcessing }) => {
     const { insights, metrics } = generateSessionAnalysis(sessionState.results || {}, timeline, history);
     const [expandedAdjustments, setExpandedAdjustments] = useState(true);
     const [expandedWork, setExpandedWork] = useState(true);

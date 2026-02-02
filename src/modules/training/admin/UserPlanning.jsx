@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, ChevronLeft, ChevronRight, ChevronDown, Plus, X, Search, Check, Dumbbell, Footprints, ClipboardList, Utensils, Layers, MoreVertical, Trash2, Copy, Edit2, ArrowRight, Copy as DuplicateIcon, Scale, Ruler, Camera, Settings2, FileText, Zap, CheckSquare, Package, ListFilter, Clock, MessageCircle, History } from 'lucide-react';
+import { TaskPicker } from '../components/TaskPicker';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TrainingDB } from '../services/db';
 import { NutritionDB } from '../../nutrition/services/nutritionDB';
@@ -8,6 +9,7 @@ import { es } from 'date-fns/locale';
 import SessionResultsModal from '../components/SessionResultsModal';
 import TaskResultsModal from '../components/TaskResultsModal';
 import FormCreator from './FormCreator';
+import DayEditor from '../../nutrition/admin/DayEditor';
 
 const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
     const [currentDate, setCurrentDate] = useState(new Date());
@@ -43,6 +45,7 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
     const [previewTask, setPreviewTask] = useState(null);
     const [isFormCreatorOpen, setIsFormCreatorOpen] = useState(false);
     const [availableForms, setAvailableForms] = useState([]);
+    const [dayEditorOpen, setDayEditorOpen] = useState(false);
 
     useEffect(() => {
         loadData();
@@ -145,6 +148,64 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
     };
 
 
+
+    const handleTaskPickerAssign = (payload) => {
+        if (!selectedDate) {
+            alert('Por favor, selecciona primero un día en el calendario.');
+            return;
+        }
+
+        const { type, ...config } = payload;
+
+        if (type === 'session') {
+            handleAssignSession(payload.sessionId);
+        } else if (type === 'program') {
+            handleAssignProgram(payload.programId);
+        } else if (type === 'nutrition_day') {
+            appendTask(selectedDate, {
+                id: crypto.randomUUID(),
+                type: 'nutrition_day',
+                name: payload.name,
+                dayId: payload.dayId,
+                config: {},
+                admin_assigned: true
+            });
+        } else if (type === 'create_nutrition_day') {
+            setDayEditorOpen(true);
+        } else if (type === 'free_training') {
+            appendTask(selectedDate, {
+                id: crypto.randomUUID(),
+                type: 'free_training',
+                title: 'Entrenamiento Libre',
+                completed: false,
+                config: {},
+                admin_assigned: true
+            });
+        } else {
+            // Generic tasks: neat, nutrition, tracking, scheduled_message
+            let title = '';
+            switch (type) {
+                case 'neat': title = 'Objetivo Movimiento'; break;
+                case 'nutrition':
+                    title = config.categories?.length > 0
+                        ? `Hábitos: ${config.categories.map(c => c === 'nutrition' ? 'Alim.' : (c === 'movement' ? 'Mov.' : 'Salud')).join(', ')}`
+                        : 'Hábitos';
+                    break;
+                case 'tracking': title = 'Seguimiento'; break;
+                case 'scheduled_message': title = 'Mensaje Programado'; break;
+                default: title = 'Tarea';
+            }
+
+            appendTask(selectedDate, {
+                id: crypto.randomUUID(),
+                type,
+                title,
+                completed: false,
+                config: config,
+                admin_assigned: true
+            });
+        }
+    };
 
     // --- Actions ---
     const appendTask = async (date, newTask) => {
@@ -252,7 +313,11 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
     };
 
     const handleDateNumberClick = (day) => {
-        handleDateContentClick(day);
+        setSelectedDate(day);
+        // On mobile, open day detail (to see all tasks) or on desktop select for library
+        if (window.innerWidth < 1024) {
+            setDayDetailOpen(true);
+        }
     };
 
     const handleDateContentClick = (day) => {
@@ -559,7 +624,7 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
                                             >
                                                 <span className={`
                                                     text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full
-                                                    ${isToday ? 'bg-emerald-500 text-white' : 'text-slate-700'}
+                                                    ${isToday ? 'bg-emerald-500 text-white' : (isSameDay(day, selectedDate) ? 'bg-slate-900 text-white' : 'text-slate-700')}
                                                 `}>
                                                     {format(day, 'd')}
                                                 </span>
@@ -582,46 +647,41 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
                                                         onDragEnd={(e, info) => handleTaskDragEnd(e, info, task, day)}
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            handleDateContentClick(day);
-                                                        }} // Open day detail when clicking a task
+                                                            if (task.status === 'completed') {
+                                                                if (task.type === 'session') setSessionResultsTask(task);
+                                                                else setTaskResultsTask(task);
+                                                            } else {
+                                                                handleDateContentClick(day);
+                                                            }
+                                                        }} // Direct access to results if completed
                                                         className={`
-                                                            flex items-center gap-1 px-1 py-0.5 overflow-hidden cursor-grab active:cursor-grabbing touch-none rounded-md mb-0.5
-                                                            ${task.status === 'completed' ? 'bg-emerald-600 text-white shadow-sm ring-1 ring-white/20' : (
-                                                                task.type === 'session' ? 'bg-orange-500 text-white' :
-                                                                    task.type === 'neat' ? 'bg-emerald-500 text-white' :
-                                                                        task.type === 'nutrition' ? 'bg-amber-500 text-white' :
-                                                                            'bg-blue-500 text-white'
+                                                            flex items-center gap-1.5 px-2 py-1 overflow-hidden cursor-grab active:cursor-grabbing touch-none rounded-md mb-0.5 transition-all
+                                                            ${task.status === 'completed' ? 'bg-emerald-500 text-white shadow-md ring-1 ring-white/20' : (
+                                                                task.type === 'session' ? 'bg-orange-500 text-white shadow-sm' :
+                                                                    task.type === 'neat' ? 'bg-emerald-500 text-white shadow-sm' :
+                                                                        task.type === 'nutrition' ? 'bg-amber-500 text-white shadow-sm' :
+                                                                            'bg-blue-500 text-white shadow-sm'
                                                             )}
+                                                            hover:brightness-110 active:scale-[0.98]
                                                         `}
                                                     >
-                                                        <div className="shrink-0 opacity-100">
-                                                            {task.status === 'completed' ? <Check size={10} className="text-white" strokeWidth={4} /> : (
+                                                        <div className="shrink-0">
+                                                            {task.status === 'completed' ? <Check size={11} strokeWidth={4} /> : (
                                                                 <>
-                                                                    {task.type === 'session' && <Dumbbell size={10} className="text-current" />}
-                                                                    {task.type === 'neat' && <Footprints size={10} className="text-current" />}
-                                                                    {task.type === 'nutrition' && <CheckSquare size={10} className="text-current" />}
-                                                                    {(task.type === 'tracking' || task.type === 'checkin') && <ClipboardList size={10} className="text-current" />}
+                                                                    {task.type === 'session' && <Dumbbell size={10} />}
+                                                                    {task.type === 'neat' && <Footprints size={10} />}
+                                                                    {task.type === 'nutrition' && <Utensils size={10} />}
+                                                                    {(task.type === 'tracking' || task.type === 'checkin') && <ClipboardList size={10} />}
                                                                 </>
                                                             )}
                                                         </div>
-                                                        <span className="text-[9px] font-bold truncate leading-tight flex-1 select-none">
+                                                        <span className="text-[10px] font-black truncate leading-tight flex-1 select-none tracking-tight">
                                                             {getTaskName(task)}
                                                         </span>
                                                         {task.status === 'completed' && (
-                                                            <button
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    if (task.type === 'session') {
-                                                                        setSessionResultsTask(task);
-                                                                    } else {
-                                                                        setTaskResultsTask(task);
-                                                                    }
-                                                                }}
-                                                                className="ml-1 p-0.5 bg-white/20 rounded hover:bg-white/40 transition-colors"
-                                                                title="Ver Resultados"
-                                                            >
-                                                                <Zap size={8} className="text-white" fill="white" />
-                                                            </button>
+                                                            <div className="bg-white/20 p-0.5 rounded shadow-inner">
+                                                                <Zap size={10} fill="white" />
+                                                            </div>
                                                         )}
                                                     </motion.div>
                                                 ))}
@@ -980,11 +1040,56 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
         </>
     );
 
-    if (isEmbedded) return content;
+
 
     return (
-        <div className="fixed inset-0 z-[60] bg-white flex flex-col animate-in slide-in-from-right duration-300">
-            {content}
+        <div className={`
+            ${isEmbedded ? 'relative w-full h-[85vh] bg-transparent' : 'fixed inset-0 z-[60] bg-white slide-in-from-right animate-in duration-300'}
+            flex overflow-hidden
+        `}>
+            <div className={`flex-1 flex flex-col min-w-0 ${isEmbedded ? '' : 'border-r border-slate-100'}`}>
+                {content}
+            </div>
+
+            {/* Desktop Library Sidebar */}
+            <div className={`
+                hidden ${isEmbedded ? 'xl:flex' : 'lg:flex'} 
+                flex-col w-80 bg-slate-50 overflow-hidden shrink-0 border-l border-slate-100
+            `}>
+                <div className="p-6 border-b border-slate-200 bg-white">
+                    <div className="flex items-center gap-2 mb-1">
+                        <Package size={18} className="text-slate-900" />
+                        <h3 className="text-xl font-black text-slate-900 tracking-tight">Biblioteca</h3>
+                    </div>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                        {selectedDate ? `Añadiendo al ${format(selectedDate, 'd MMM', { locale: es })}` : 'Selecciona un día'}
+                    </p>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                    <TaskPicker
+                        sessions={sessions}
+                        programs={programs}
+                        nutritionDays={nutritionDays}
+                        availableForms={availableForms}
+                        onAssign={handleTaskPickerAssign}
+                        user={user}
+                    />
+                </div>
+            </div>
+
+            {/* Nutrition Day Editor Modal */}
+            <AnimatePresence>
+                {dayEditorOpen && (
+                    <div className="fixed inset-0 z-[500] bg-white overflow-hidden">
+                        <DayEditor
+                            onClose={() => {
+                                setDayEditorOpen(false);
+                                loadData(); // Reload nutrition days
+                            }}
+                        />
+                    </div>
+                )}
+            </AnimatePresence>
         </div>
     );
 };

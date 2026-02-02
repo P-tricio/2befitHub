@@ -398,6 +398,7 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
                                                                 dot={{ r: 6, fill: activeMetric === 'weight' ? '#6366f1' : activeMetric === 'steps' ? '#10b981' : '#f43f5e', strokeWidth: 3, stroke: '#fff' }}
                                                                 activeDot={{ r: 8, strokeWidth: 0 }}
                                                                 animationDuration={1000}
+                                                                connectNulls={true}
                                                             />
                                                         </LineChart>
                                                     </ResponsiveContainer>

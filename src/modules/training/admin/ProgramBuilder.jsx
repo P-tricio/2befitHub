@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Save, Calendar, Trash2, ChevronRight, ChevronDown, Search, Edit2, X, Copy, AlertCircle, ArrowRightLeft, BookmarkPlus, XCircle, Utensils, Zap, MessageCircle, Footprints, CheckSquare, ClipboardList, Dumbbell, ArrowDown } from 'lucide-react';
+import { Plus, Save, Calendar, Trash2, ChevronRight, ChevronDown, Search, Edit2, X, Copy, AlertCircle, ArrowRightLeft, BookmarkPlus, XCircle, Utensils, Zap, MessageCircle, Footprints, CheckSquare, ClipboardList, Dumbbell, ArrowDown, Clock, Filter } from 'lucide-react';
 import ActionMenu from '../../../components/admin/ActionMenu';
 import { TrainingDB } from '../services/db';
 import { NutritionDB } from '../../nutrition/services/nutritionDB';
@@ -19,6 +19,10 @@ const ProgramBuilder = () => {
     const [isEditing, setIsEditing] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [availableForms, setAvailableForms] = useState([]);
+    const [filterType, setFilterType] = useState('all'); // 'all', 'training', 'nutrition', 'control'
+    const [sortKey, setSortKey] = useState('name'); // 'name', 'createdAt'
+    const [isFilterOpen, setIsFilterOpen] = useState(false);
+    const [isSortOpen, setIsSortOpen] = useState(false);
 
     // Builder State
     const [currentProgram, setCurrentProgram] = useState(null);
@@ -505,13 +509,49 @@ const ProgramBuilder = () => {
         }
     };
 
-    // Filter programs for list view
-    const filteredPrograms = programs.filter(p =>
-        p.name.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const getProgramStats = (p) => {
+        const schedule = p.schedule || {};
+        const stats = { training: 0, nutrition: 0, control: 0 };
+
+        Object.values(schedule).forEach(dayTasks => {
+            if (Array.isArray(dayTasks)) {
+                dayTasks.forEach(t => {
+                    const type = t.type || (typeof t === 'string' ? 'session' : 'unknown');
+                    if (type === 'session' || type === 'free_training') stats.training++;
+                    else if (type === 'nutrition_day' || type === 'nutrition') stats.nutrition++;
+                    else if (type === 'tracking' || type === 'checkin' || type === 'neat' || type === 'scheduled_message') stats.control++;
+                });
+            }
+        });
+        return stats;
+    };
+
+    // Filter and sort programs for list view
+    const filteredPrograms = programs
+        .filter(p => {
+            const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase());
+            if (!matchesSearch) return false;
+
+            if (filterType === 'all') return true;
+
+            const stats = getProgramStats(p);
+            if (filterType === 'training') return stats.training > 0;
+            if (filterType === 'nutrition') return stats.nutrition > 0;
+            if (filterType === 'control') return stats.control > 0;
+
+            return true;
+        })
+        .sort((a, b) => {
+            if (sortKey === 'createdAt') {
+                const dateA = a.createdAt?.toDate?.()?.getTime() || (a.createdAt ? new Date(a.createdAt).getTime() : 0);
+                const dateB = b.createdAt?.toDate?.()?.getTime() || (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+                return dateB - dateA; // Newest first
+            }
+            return (a.name || '').localeCompare(b.name || '');
+        });
 
     return (
-        <div className="max-w-7xl mx-auto relative p-6">
+        <div className="max-w-[1600px] mx-auto relative p-6">
             {/* Header Redesigned */}
             <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
                 <div>
@@ -519,7 +559,7 @@ const ProgramBuilder = () => {
                     <p className="text-slate-500 text-sm font-medium mt-1">Biblioteca de programas maestros para atletas.</p>
                 </div>
 
-                <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
+                <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto items-center">
                     <div className="relative flex-1 sm:w-80 group">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-slate-900 transition-colors" size={20} />
                         <input
@@ -530,9 +570,74 @@ const ProgramBuilder = () => {
                             className="w-full pl-12 pr-6 py-3.5 bg-white border border-slate-200 rounded-[20px] text-sm font-medium outline-none focus:border-slate-900 focus:ring-4 focus:ring-slate-900/5 transition-all shadow-sm"
                         />
                     </div>
+
+                    {/* Filter Dropdown */}
+                    <div className="relative">
+                        <button
+                            onClick={() => {
+                                setIsFilterOpen(!isFilterOpen);
+                                setIsSortOpen(false);
+                            }}
+                            className={`flex items-center gap-2 px-6 py-3.5 bg-white border border-slate-200 rounded-[20px] text-[10px] font-black uppercase tracking-widest transition-all hover:bg-slate-50 ${filterType !== 'all' ? 'border-slate-900 bg-slate-50' : ''}`}
+                        >
+                            <Filter size={18} className={filterType !== 'all' ? 'text-slate-900' : 'text-slate-400'} />
+                            <span className="hidden sm:inline">
+                                {filterType === 'all' ? 'Filtros' : (filterType === 'training' ? 'Entreno' : (filterType === 'nutrition' ? 'Nutrición' : 'Control'))}
+                            </span>
+                            <ChevronDown size={14} className={`transition-transform duration-300 ${isFilterOpen ? 'rotate-180' : ''}`} />
+                        </button>
+
+                        <AnimatePresence>
+                            {isFilterOpen && (
+                                <motion.div
+                                    initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                                    exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                                    className="absolute right-0 mt-2 w-56 bg-slate-900 text-white rounded-[24px] shadow-2xl py-3 z-50 border border-white/10 overflow-hidden"
+                                >
+                                    <button onClick={() => { setFilterType('all'); setIsFilterOpen(false); }} className={`w-full text-left px-6 py-3.5 text-[10px] font-black uppercase tracking-widest hover:bg-white/10 transition-colors ${filterType === 'all' ? 'text-indigo-400 bg-white/5' : ''}`}>Todos</button>
+                                    <button onClick={() => { setFilterType('training'); setIsFilterOpen(false); }} className={`w-full text-left px-6 py-3.5 text-[10px] font-black uppercase tracking-widest hover:bg-white/10 transition-colors ${filterType === 'training' ? 'text-indigo-400 bg-white/5' : ''}`}>Entrenamientos</button>
+                                    <button onClick={() => { setFilterType('nutrition'); setIsFilterOpen(false); }} className={`w-full text-left px-6 py-3.5 text-[10px] font-black uppercase tracking-widest hover:bg-white/10 transition-colors ${filterType === 'nutrition' ? 'text-indigo-400 bg-white/5' : ''}`}>Nutrición</button>
+                                    <button onClick={() => { setFilterType('control'); setIsFilterOpen(false); }} className={`w-full text-left px-6 py-3.5 text-[10px] font-black uppercase tracking-widest hover:bg-white/10 transition-colors ${filterType === 'control' ? 'text-indigo-400 bg-white/5' : ''}`}>Control / Otros</button>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                    </div>
+
+                    {/* Sort Dropdown */}
+                    <div className="relative">
+                        <button
+                            onClick={() => {
+                                setIsSortOpen(!isSortOpen);
+                                setIsFilterOpen(false);
+                            }}
+                            className="flex items-center gap-2 px-6 py-3.5 bg-white border border-slate-200 rounded-[20px] text-[10px] font-black uppercase tracking-widest transition-all hover:bg-slate-50"
+                        >
+                            <ArrowRightLeft size={18} className="text-slate-400 rotate-90" />
+                            <span className="hidden sm:inline">
+                                {sortKey === 'name' ? 'Nombre' : 'Creación'}
+                            </span>
+                            <ChevronDown size={14} className={`transition-transform duration-300 ${isSortOpen ? 'rotate-180' : ''}`} />
+                        </button>
+
+                        <AnimatePresence>
+                            {isSortOpen && (
+                                <motion.div
+                                    initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                                    exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                                    className="absolute right-0 mt-2 w-56 bg-slate-900 text-white rounded-[24px] shadow-2xl py-3 z-50 border border-white/10 overflow-hidden"
+                                >
+                                    <button onClick={() => { setSortKey('name'); setIsSortOpen(false); }} className={`w-full text-left px-6 py-3.5 text-[10px] font-black uppercase tracking-widest hover:bg-white/10 transition-colors ${sortKey === 'name' ? 'text-indigo-400 bg-white/5' : ''}`}>Alfabético (A-Z)</button>
+                                    <button onClick={() => { setSortKey('createdAt'); setIsSortOpen(false); }} className={`w-full text-left px-6 py-3.5 text-[10px] font-black uppercase tracking-widest hover:bg-white/10 transition-colors ${sortKey === 'createdAt' ? 'text-indigo-400 bg-white/5' : ''}`}>Más Recientes</button>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                    </div>
+
                     <button
                         onClick={handleCreate}
-                        className="bg-slate-900 hover:bg-slate-800 text-white px-8 py-3.5 rounded-[20px] font-black flex items-center justify-center gap-2 shadow-xl shadow-slate-900/20 active:scale-95 transition-all text-sm uppercase tracking-widest shrink-0"
+                        className="bg-slate-900 hover:bg-slate-800 text-white px-8 py-3.5 rounded-[20px] font-black flex items-center justify-center gap-2 shadow-xl shadow-slate-900/20 active:scale-95 transition-all text-xs uppercase tracking-widest shrink-0"
                     >
                         <Plus size={20} />
                         Nuevo Programa
@@ -541,7 +646,7 @@ const ProgramBuilder = () => {
             </header>
 
             {/* List Redesigned */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pb-20">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 gap-6 pb-20">
                 {filteredPrograms.length === 0 && (
                     <div className="col-span-full py-20 text-center">
                         <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-200">
@@ -552,30 +657,76 @@ const ProgramBuilder = () => {
                         </p>
                     </div>
                 )}
-                {filteredPrograms.map(p => (
-                    <div
-                        key={p.id}
-                        onClick={() => handleEdit(p)}
-                        className="group bg-white p-6 rounded-[32px] border border-slate-100 hover:border-slate-200 hover:shadow-2xl hover:shadow-slate-200/50 transition-all cursor-pointer relative flex flex-col justify-between gap-4"
-                    >
-                        <div className="flex justify-between items-start gap-3">
-                            <div className="min-w-0">
-                                <h3 className="font-black text-slate-900 text-lg leading-tight truncate group-hover:text-indigo-600 transition-colors">{p.name}</h3>
-                                <div className="flex items-center gap-2 mt-2">
-                                    <span className="px-2 py-0.5 bg-slate-100 text-[10px] font-black text-slate-500 rounded-md uppercase tracking-wider">{p.weeks || 4} Semanas</span>
-                                    {p.description && <span className="text-[10px] text-slate-400 font-bold truncate max-w-[120px]">{p.description}</span>}
+                {filteredPrograms.map(p => {
+                    const stats = getProgramStats(p);
+                    const updateDate = p.updatedAt ? (typeof p.updatedAt === 'number' ? new Date(p.updatedAt) : p.updatedAt.toDate?.()) : null;
+
+                    return (
+                        <div
+                            key={p.id}
+                            onClick={() => handleEdit(p)}
+                            className="group bg-white p-6 rounded-[32px] border border-slate-100 hover:border-slate-200 hover:shadow-2xl hover:shadow-slate-200/50 transition-all cursor-pointer relative flex flex-col justify-between gap-6"
+                        >
+                            <div className="flex justify-between items-start gap-3">
+                                <div className="min-w-0">
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <span className="px-2 py-0.5 bg-indigo-50 text-indigo-600 text-[9px] font-black uppercase tracking-widest rounded-md">Master</span>
+                                        <span className="px-2 py-0.5 bg-slate-100 text-slate-500 text-[9px] font-black uppercase tracking-widest rounded-md">{p.weeks || 4} Semanas</span>
+                                    </div>
+                                    <h3 className="font-black text-slate-900 text-lg leading-tight group-hover:text-indigo-600 transition-colors uppercase tracking-tight">{p.name}</h3>
+                                    {p.description && (
+                                        <p className="text-slate-400 text-xs font-medium mt-1 line-clamp-1">{p.description}</p>
+                                    )}
+                                </div>
+                                <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                                    <ActionMenu actions={[
+                                        { label: 'Editar', icon: <Edit2 size={16} />, onClick: () => handleEdit(p) },
+                                        { label: 'Duplicar', icon: <Copy size={16} />, onClick: () => handleDuplicate(p) },
+                                        { label: 'Eliminar', icon: <Trash2 size={16} />, onClick: () => handleDelete(p.id), variant: 'danger' }
+                                    ]} />
                                 </div>
                             </div>
-                            <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
-                                <ActionMenu actions={[
-                                    { label: 'Editar', icon: <Edit2 size={16} />, onClick: () => handleEdit(p) },
-                                    { label: 'Duplicar', icon: <Copy size={16} />, onClick: () => handleDuplicate(p) },
-                                    { label: 'Eliminar', icon: <Trash2 size={16} />, onClick: () => handleDelete(p.id), variant: 'danger' }
-                                ]} />
+
+                            <div className="space-y-4">
+                                {/* Stats Grid */}
+                                <div className="grid grid-cols-3 gap-2">
+                                    <div className="bg-slate-50/50 rounded-xl p-2 border border-slate-100/50 flex flex-col items-center justify-center gap-0.5 group-hover:bg-white group-hover:border-indigo-100 transition-all">
+                                        <Dumbbell size={12} className="text-indigo-500" />
+                                        <span className="text-[9px] font-black text-slate-700">{stats.training}</span>
+                                        <span className="text-[7px] font-black text-slate-400 uppercase tracking-tighter">Entrenos</span>
+                                    </div>
+                                    <div className="bg-slate-50/50 rounded-xl p-2 border border-slate-100/50 flex flex-col items-center justify-center gap-0.5 group-hover:bg-white group-hover:border-orange-100 transition-all">
+                                        <Utensils size={12} className="text-orange-500" />
+                                        <span className="text-[9px] font-black text-slate-700">{stats.nutrition}</span>
+                                        <span className="text-[7px] font-black text-slate-400 uppercase tracking-tighter">Nutrición</span>
+                                    </div>
+                                    <div className="bg-slate-50/50 rounded-xl p-2 border border-slate-100/50 flex flex-col items-center justify-center gap-0.5 group-hover:bg-white group-hover:border-emerald-100 transition-all">
+                                        <ClipboardList size={12} className="text-emerald-500" />
+                                        <span className="text-[9px] font-black text-slate-700">{stats.control}</span>
+                                        <span className="text-[7px] font-black text-slate-400 uppercase tracking-tighter">Control</span>
+                                    </div>
+                                </div>
+
+                                {/* Item Footer */}
+                                <div className="flex items-center justify-between pt-2 border-t border-slate-50">
+                                    <div className="flex items-center gap-1.5 text-slate-400">
+                                        <Clock size={12} />
+                                        <span className="text-[9px] font-black uppercase tracking-widest">
+                                            {updateDate ? updateDate.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }) : '—'}
+                                        </span>
+                                    </div>
+                                    <button
+                                        onClick={() => handleEdit(p)}
+                                        className="text-[9px] font-black text-indigo-600 uppercase tracking-widest flex items-center gap-1 group-hover:translate-x-1 transition-transform"
+                                    >
+                                        VER DETALLES
+                                        <ChevronRight size={12} />
+                                    </button>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                ))}
+                    );
+                })}
             </div>
 
             {/* Editor Drawer (Right Side) */}

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Search, MoreVertical, Calendar, Activity, Trophy, MessageCircle, Trash2, Bell } from 'lucide-react';
+import { Search, MoreVertical, Calendar, Activity, Trophy, MessageCircle, Trash2, Bell, Filter, ArrowUpDown, ChevronDown, TrendingUp, TrendingDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TrainingDB } from '../services/db';
 import UserTracking from './UserTracking';
@@ -21,9 +21,16 @@ const UserManager = () => {
     const [chatUser, setChatUser] = useState(null);
     const [notificationUser, setNotificationUser] = useState(null);
 
+    // Filtering and Sorting State
+    const [sortConfig, setSortConfig] = useState({ key: 'displayName', direction: 'asc' });
+    const [isSortOpen, setIsSortOpen] = useState(false);
+
     // Close menu when clicking outside
     useEffect(() => {
-        const handleClickOutside = () => setActiveMenuId(null);
+        const handleClickOutside = () => {
+            setActiveMenuId(null);
+            setIsSortOpen(false);
+        };
         window.addEventListener('click', handleClickOutside);
         return () => window.removeEventListener('click', handleClickOutside);
     }, []);
@@ -61,19 +68,6 @@ const UserManager = () => {
         }
     };
 
-    const handleToggleStatus = async (user) => {
-        const newStatus = user.status === 'inactive' ? 'active' : 'inactive';
-        // Optimistic update
-        setUsers(prev => prev.map(u => u.id === user.id ? { ...u, status: newStatus } : u));
-
-        try {
-            await TrainingDB.users.updateStatus(user.id, newStatus);
-        } catch (error) {
-            console.error(error);
-            alert("Error al actualizar estado");
-            loadData(); // Revert on error
-        }
-    };
 
     const handleDeleteUser = async (user) => {
         if (window.confirm(`¿Estás seguro de que quieres eliminar a ${user.displayName}? Esta acción no se puede deshacer.`)) {
@@ -87,10 +81,67 @@ const UserManager = () => {
         }
     };
 
-    const filteredUsers = users.filter(u =>
-        (u.displayName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (u.email || '').toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const getSortLabel = () => {
+        switch (sortConfig.key) {
+            case 'lastActiveAt': return 'Últ. Conexión';
+            case 'createdAt': return 'Ingreso';
+            case 'status': return 'Estado';
+            default: return '';
+        }
+    };
+
+    const formatSortValue = (user) => {
+        const val = user[sortConfig.key];
+        if (!val && sortConfig.key !== 'status') return '—';
+
+        if (sortConfig.key === 'displayName') return '';
+        if (sortConfig.key === 'status') {
+            return user.status === 'inactive' ? 'Inactivo' : 'Activo';
+        }
+
+        const dateFields = ['lastMessageAt', 'lastActiveAt', 'createdAt', 'updatedAt'];
+        if (dateFields.includes(sortConfig.key)) {
+            const date = val?.toDate?.() || (val ? new Date(val) : null);
+            if (date && !isNaN(date.getTime())) {
+                return date.toLocaleDateString('es-ES', {
+                    day: '2-digit',
+                    month: 'short',
+                    year: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+            }
+        }
+        return val?.toString() || '—';
+    };
+
+    const filteredUsers = users
+        .filter(u => {
+            return (u.displayName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                (u.email || '').toLowerCase().includes(searchTerm.toLowerCase());
+        })
+        .sort((a, b) => {
+            let valA = a[sortConfig.key];
+            let valB = b[sortConfig.key];
+
+            // Normalize for comparison
+            const dateFields = ['lastMessageAt', 'lastActiveAt', 'createdAt', 'updatedAt'];
+            if (dateFields.includes(sortConfig.key)) {
+                valA = valA?.toDate?.()?.getTime() || (valA ? new Date(valA).getTime() : 0);
+                valB = valB?.toDate?.()?.getTime() || (valB ? new Date(valB).getTime() : 0);
+            } else {
+                valA = valA || '';
+                valB = valB || '';
+                if (typeof valA === 'string') {
+                    valA = valA.toLowerCase();
+                    valB = valB.toLowerCase();
+                }
+            }
+
+            if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+            if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+            return 0;
+        });
 
     if (selectedUser) {
         return (
@@ -117,20 +168,71 @@ const UserManager = () => {
     return (
         <>
             <div className="max-w-7xl mx-auto relative p-6">
-                <header className="flex items-center gap-4 mb-4">
-                    <h1 className="text-xl font-black text-slate-900 tracking-tight shrink-0">Atletas</h1>
-                    <span className="text-[10px] font-black bg-slate-900 text-white px-2 py-0.5 rounded-full shrink-0">
-                        {filteredUsers.length}
-                    </span>
-                    <div className="relative flex-1 group">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                        <input
-                            type="text"
-                            placeholder="Buscar..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium outline-none focus:border-slate-900 transition-all"
-                        />
+                <header className="flex flex-col md:flex-row md:items-center gap-4 mb-6">
+                    <div className="flex items-center gap-4 shrink-0">
+                        <h1 className="text-xl font-black text-slate-900 tracking-tight">Atletas</h1>
+                        <span className="text-[10px] font-black bg-slate-900 text-white px-2 py-0.5 rounded-full">
+                            {filteredUsers.length}
+                        </span>
+                    </div>
+
+                    <div className="flex flex-1 items-center gap-2">
+                        <div className="relative flex-1 group">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                            <input
+                                type="text"
+                                placeholder="Buscar..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium outline-none focus:border-slate-900 transition-all shadow-sm"
+                            />
+                        </div>
+
+                        {/* Sort Controls */}
+                        <div className="flex items-center gap-2">
+                            {/* Sort Category Popup */}
+                            <div className="relative">
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setIsSortOpen(!isSortOpen);
+                                    }}
+                                    className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all hover:bg-slate-50"
+                                >
+                                    <ArrowUpDown size={14} className="text-slate-400" />
+                                    <span className="hidden sm:inline">
+                                        {sortConfig.key === 'displayName' ? 'Nombre' : (sortConfig.key === 'lastActiveAt' ? 'Conexión' : (sortConfig.key === 'createdAt' ? 'Ingreso' : 'Estado'))}
+                                    </span>
+                                    <ChevronDown size={14} className={`transition-transform duration-300 ${isSortOpen ? 'rotate-180' : ''}`} />
+                                </button>
+
+                                <AnimatePresence>
+                                    {isSortOpen && (
+                                        <motion.div
+                                            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                                            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                                            className="absolute right-0 mt-2 w-48 bg-slate-900 text-white rounded-2xl shadow-2xl py-2 z-50 border border-white/10"
+                                            onClick={(e) => e.stopPropagation()}
+                                        >
+                                            <button onClick={() => { setSortConfig(prev => ({ ...prev, key: 'displayName' })); setIsSortOpen(false); }} className={`w-full text-left px-6 py-3 text-[10px] font-black uppercase tracking-widest hover:bg-white/10 ${sortConfig.key === 'displayName' ? 'text-indigo-400' : ''}`}>Nombre</button>
+                                            <button onClick={() => { setSortConfig(prev => ({ ...prev, key: 'lastActiveAt' })); setIsSortOpen(false); }} className={`w-full text-left px-6 py-3 text-[10px] font-black uppercase tracking-widest hover:bg-white/10 ${sortConfig.key === 'lastActiveAt' ? 'text-indigo-400' : ''}`}>Últ. Conexión</button>
+                                            <button onClick={() => { setSortConfig(prev => ({ ...prev, key: 'createdAt' })); setIsSortOpen(false); }} className={`w-full text-left px-6 py-3 text-[10px] font-black uppercase tracking-widest hover:bg-white/10 ${sortConfig.key === 'createdAt' ? 'text-indigo-400' : ''}`}>Fecha Ingreso</button>
+                                            <button onClick={() => { setSortConfig(prev => ({ ...prev, key: 'status' })); setIsSortOpen(false); }} className={`w-full text-left px-6 py-3 text-[10px] font-black uppercase tracking-widest hover:bg-white/10 ${sortConfig.key === 'status' ? 'text-indigo-400' : ''}`}>Estado</button>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+                            </div>
+
+                            {/* Direction Toggle */}
+                            <button
+                                onClick={() => setSortConfig(prev => ({ ...prev, direction: prev.direction === 'asc' ? 'desc' : 'asc' }))}
+                                className={`p-2 bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-slate-900 hover:border-slate-900 transition-all active:scale-90`}
+                                title={sortConfig.direction === 'asc' ? 'Orden Ascendente' : 'Orden Descendente'}
+                            >
+                                {sortConfig.direction === 'asc' ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
+                            </button>
+                        </div>
                     </div>
                 </header>
 
@@ -140,7 +242,9 @@ const UserManager = () => {
                         <thead>
                             <tr className="border-b border-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] bg-slate-50/30">
                                 <th className="p-6 pl-8">Atleta</th>
-                                <th className="p-6">Estado</th>
+                                {getSortLabel() && (
+                                    <th className="p-6 text-slate-400">{getSortLabel()}</th>
+                                )}
                                 <th className="p-6 text-right pr-8">Acciones</th>
                             </tr>
                         </thead>
@@ -158,27 +262,23 @@ const UserManager = () => {
                                             </div>
                                             <div className="min-w-0">
                                                 <div className="font-black text-slate-900 text-base truncate">{user.displayName}</div>
-                                                <div className="text-xs text-slate-400 font-bold uppercase tracking-wider truncate">{user.email}</div>
+                                                <div className="text-xs text-slate-400 font-bold uppercase tracking-wider truncate">{user.email || 'Sin email'}</div>
                                             </div>
                                         </div>
                                     </td>
-                                    <td className="p-6">
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleToggleStatus(user);
-                                            }}
-                                            className={`
-                                            px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all
-                                            ${user.status === 'inactive'
-                                                    ? 'bg-rose-50 text-rose-500 border-rose-100 hover:bg-rose-100'
-                                                    : 'bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-100'
+                                    {getSortLabel() && (
+                                        <td className="p-6">
+                                            <span className={`
+                                                px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all
+                                                ${sortConfig.key === 'status'
+                                                    ? (user.status === 'inactive' ? 'bg-rose-50 text-rose-500 border-rose-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100')
+                                                    : 'bg-slate-50 text-slate-600 border-slate-100'
                                                 }
-                                        `}
-                                        >
-                                            {user.status === 'inactive' ? 'Inactivo' : 'Activo'}
-                                        </button>
-                                    </td>
+                                            `}>
+                                                {formatSortValue(user)}
+                                            </span>
+                                        </td>
+                                    )}
                                     <td className="p-6 pr-8 text-right">
                                         <div className="flex justify-end items-center gap-2" onClick={(e) => e.stopPropagation()}>
                                             <button
@@ -288,20 +388,13 @@ const UserManager = () => {
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <div className="font-bold text-slate-900 text-sm truncate">{user.displayName}</div>
-                                    <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider truncate">{user.email}</div>
+                                    <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider truncate mb-1">{user.email || 'Sin email'}</div>
+                                    {getSortLabel() && (
+                                        <div className="text-[8px] font-black text-slate-500 uppercase tracking-tighter bg-slate-50 px-2 py-0.5 rounded-md w-fit inline-block">
+                                            {getSortLabel()}: {formatSortValue(user)}
+                                        </div>
+                                    )}
                                 </div>
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleToggleStatus(user);
-                                    }}
-                                    className={`px-2 py-1 rounded-full text-[8px] font-black uppercase tracking-wide border shrink-0 ${user.status === 'inactive'
-                                        ? 'bg-rose-50 text-rose-500 border-rose-100'
-                                        : 'bg-emerald-50 text-emerald-600 border-emerald-100'
-                                        }`}
-                                >
-                                    {user.status === 'inactive' ? 'Inact.' : 'Activo'}
-                                </button>
                             </div>
 
                             <div className="flex items-center gap-2 mt-2 pt-2 border-t border-slate-50">

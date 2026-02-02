@@ -44,7 +44,20 @@ const Login = () => {
                 await new Promise(resolve => setTimeout(resolve, 500));
                 navigate('/');
             } else {
-                await signup(email, password);
+                const userCredential = await signup(email, password);
+                const user = userCredential.user;
+
+                // Explicitly initialize the user document to avoid race conditions with onAuthStateChanged
+                // and to ensure 'email' and 'createdAt' are never missing.
+                const userRef = doc(db, 'users', user.uid);
+                await setDoc(userRef, {
+                    email: email,
+                    displayName: fullName || 'Usuario Nuevo',
+                    createdAt: serverTimestamp(),
+                    role: 'user',
+                    status: 'active'
+                }, { merge: true });
+
                 if (fullName.trim()) {
                     await updateUserProfile({ displayName: fullName });
                 }

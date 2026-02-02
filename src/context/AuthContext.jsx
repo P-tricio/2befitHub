@@ -87,6 +87,17 @@ export const AuthProvider = ({ children }) => {
                     if (userSnap.exists()) {
                         // User exists, merge Firestore data (role, etc.)
                         const userData = userSnap.data();
+
+                        // Fix: Ensure basic fields are present (handles race conditions during registration)
+                        if (!userData.email || !userData.createdAt) {
+                            const updates = {};
+                            if (!userData.email) updates.email = user.email;
+                            if (!userData.createdAt) updates.createdAt = serverTimestamp();
+                            await updateDoc(userRef, updates);
+                            userData.email = updates.email || userData.email;
+                            userData.createdAt = updates.createdAt || userData.createdAt;
+                        }
+
                         setCurrentUser({ ...user, ...userData });
                     } else {
                         // Create new user doc
