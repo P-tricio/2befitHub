@@ -1550,25 +1550,6 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
     const [heartRates, setHeartRates] = useState({}); // Heart rate per exercise
     const [energyMetrics, setEnergyMetrics] = useState({}); // { idx: { volumeUnit: 'kcal', intensityUnit: 'W' } }
     const [exerciseNotes, setExerciseNotes] = useState({}); // Per-exercise notes
-    const [evidenceUrl, setEvidenceUrl] = useState(null);
-    const [isUploading, setIsUploading] = useState(false);
-
-    // Handler for Evidence Upload
-    const handleImageUpload = async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        setIsUploading(true);
-        try {
-            const url = await uploadToImgBB(file);
-            setEvidenceUrl(url);
-        } catch (error) {
-            console.error("Upload failed:", error);
-            alert("Error al subir imagen: " + error.message);
-        } finally {
-            setIsUploading(false);
-        }
-    };
 
     useEffect(() => {
         const initReps = {};
@@ -2010,7 +1991,6 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
             libreSetsDone, // Track completed sets for LIBRE protocol
             libreSetReps, // Track repetitions per set for LIBRE protocol
             libreSeriesWeights, // Track weight per set for LIBRE protocol
-            evidenceUrl, // Pass evidence URL
             elapsed: (protocol === 'R' || protocol === 'T') ? elapsed : 0
         });
     };
@@ -2429,42 +2409,6 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                 : (protocol === 'E' || protocol === 'LIBRE' ? 'px-4 py-2 mt-2' : 'p-4 mt-4')
                             }`}>
 
-                            {/* EVIDENCE UPLOAD SECTION */}
-                            <div className="flex justify-end mb-4">
-                                <input
-                                    type="file"
-                                    id={`evidence-${step.id}`}
-                                    className="hidden"
-                                    accept="image/*"
-                                    onChange={handleImageUpload}
-                                />
-                                <label
-                                    htmlFor={`evidence-${step.id}`}
-                                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-bold uppercase tracking-wide cursor-pointer transition-all ${evidenceUrl ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'}`}
-                                >
-                                    {isUploading ? (
-                                        <>
-                                            <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
-                                            <span>Subiendo...</span>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Camera size={14} />
-                                            <span>{evidenceUrl ? 'Cambiar Foto' : 'Adjuntar Evidencia'}</span>
-                                        </>
-                                    )}
-                                </label>
-                            </div>
-                            {evidenceUrl && (
-                                <div className="mb-4">
-                                    <div className="relative w-full h-32 bg-slate-800 rounded-lg overflow-hidden border border-emerald-500/30">
-                                        <img src={evidenceUrl} alt="Evidencia" className="w-full h-full object-cover opacity-60 hover:opacity-100 transition-opacity" />
-                                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                            <Check size={28} className="text-emerald-500 drop-shadow-md" strokeWidth={3} />
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
 
                             {getTimerDisplay()}
 
@@ -3441,26 +3385,6 @@ const CardioTaskView = ({ session, overrides, onFinish, onBack }) => {
     const [heartRateAvg, setHeartRateAvg] = useState('');
     const [heartRateMax, setHeartRateMax] = useState('');
 
-    // Evidence Upload State
-    const [evidenceUrl, setEvidenceUrl] = useState(null);
-    const [isUploading, setIsUploading] = useState(false);
-
-    const handleImageUpload = async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        setIsUploading(true);
-        try {
-            const url = await uploadToImgBB(file);
-            setEvidenceUrl(url);
-        } catch (error) {
-            console.error("Error uploading evidence:", error);
-            alert("Error al subir imagen: " + error.message);
-        } finally {
-            setIsUploading(false);
-        }
-    };
-
     // Timer Logic
     useEffect(() => {
         let interval;
@@ -3503,8 +3427,7 @@ const CardioTaskView = ({ session, overrides, onFinish, onBack }) => {
                 rpe,
                 notes: notes.trim(),
                 comment: notes.trim(), // For backward compatibility
-                type: 'cardio',
-                evidenceUrl // Pass evidence URL
+                type: 'cardio'
             });
         } catch (err) {
             console.error(err);
@@ -3689,25 +3612,6 @@ const CardioTaskView = ({ session, overrides, onFinish, onBack }) => {
                     </div>
 
                     <div className="flex gap-4">
-                        {/* Evidence Button */}
-                        <div className="relative">
-                            <input
-                                type="file"
-                                accept="image/*"
-                                onChange={handleImageUpload}
-                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
-                                disabled={isUploading}
-                            />
-                            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${evidenceUrl ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}>
-                                {isUploading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> :
-                                    evidenceUrl ? <Check size={24} strokeWidth={3} /> : <Camera size={24} />}
-                            </div>
-                            {evidenceUrl && (
-                                <div className="absolute -top-2 -right-2 w-5 h-5 bg-emerald-500 border-2 border-slate-950 rounded-full flex items-center justify-center z-10 pointer-events-none">
-                                    <Check size={10} strokeWidth={4} className="text-white" />
-                                </div>
-                            )}
-                        </div>
 
                         {/* Notes Input */}
                         <div className="flex-1 bg-slate-900/50 rounded-2xl border border-white/5 mx-2">
