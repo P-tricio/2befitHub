@@ -217,112 +217,119 @@ const SessionRunner = () => {
         }));
     };
 
+    const finalizeSession = async (overriddenResults = null, overriddenFeedback = null) => {
+        if (isProcessing) return;
+        setIsProcessing(true);
+        try {
+            // Unify analysis generation
+            const results = overriddenResults || sessionState.results || {};
+            const { insights, metrics } = generateSessionAnalysis(results, timeline);
+
+            const feedback = overriddenFeedback || sessionState.feedback || {};
+
+            let totalElapsed = 0;
+            Object.values(results).forEach(res => {
+                if (res && res.elapsed) totalElapsed += res.elapsed;
+            });
+
+            // Determine the target date for markers and logs
+            const scheduledDate = location.state?.scheduledDate;
+            const targetDate = scheduledDate || new Date().toISOString().split('T')[0];
+
+            setIsGlobalActive(false);
+
+            // Confirm all pending logs for this session as valid
+            await TrainingDB.logs.confirmSessionLogs(currentUser.uid, session.id);
+
+            // Save feedback AND analysis
+            await TrainingDB.logs.create(currentUser.uid, {
+                sessionId: session.id,
+                timestamp: new Date().toISOString(),
+                scheduledDate: targetDate,
+                type: 'SESSION_FEEDBACK',
+                ...feedback,
+                analysis: insights,
+                metrics: metrics
+            });
+
+            // Mark session as completed in user's schedule
+            const durationMin = Math.round(globalTime / 60);
+            const rpe = feedback.rpe;
+
+            let summary = `${durationMin || '?'} min`;
+            if (rpe) summary += ` • RPE ${rpe} `;
+            if (metrics.cardioPace) summary += ` • ${metrics.cardioPace} min / km`;
+            if (metrics.avgHR) summary += ` • ${metrics.avgHR} bpm`;
+
+            // Find task with this sessionId in today's schedule and update it
+            try {
+                await TrainingDB.users.updateSessionTaskInSchedule(
+                    currentUser.uid,
+                    targetDate,
+                    session.id, // sessionId to find the task
+                    {
+                        status: 'completed',
+                        completedAt: new Date().toISOString(),
+                        summary: summary,
+                        results: {
+                            durationMinutes: durationMin,
+                            rpe: rpe,
+                            notes: feedback.comment || feedback.notes,
+                            analysis: insights,
+                            metrics: metrics,
+                            totalVolume: metrics.totalVolume,
+                            evidenceUrl: feedback.evidenceUrl
+                        }
+                    }
+                );
+            } catch (err) {
+                console.warn('Could not update task in schedule:', err);
+            }
+
+            // Trigger Notification for Admin
+            try {
+                // Collect technical coach insights for the notification
+                const technicalInsights = insights
+                    .filter(i => i.type === 'up' || i.type === 'down' || i.type === 'stagnation')
+                    .map(i => `${i.exerciseName || 'Ejercicio'}: ${i.coachInsight} `)
+                    .join('\n');
+
+                await TrainingDB.notifications.create('admin', {
+                    athleteId: currentUser.uid,
+                    athleteName: currentUser?.displayName || 'Atleta',
+                    type: 'session',
+                    title: session?.name || 'Sesión Completada',
+                    message: `${currentUser?.displayName || 'Un atleta'} ha completado la sesión: ${session?.name || 'Sesión'} (${summary})${technicalInsights ? '\n\nSugerencias técnicas:\n' + technicalInsights : ''} `,
+                    priority: technicalInsights ? 'high' : 'normal',
+                    data: {
+                        sessionId: session.id,
+                        type: 'session',
+                        summary: summary,
+                        durationMinutes: durationMin,
+                        rpe: rpe,
+                        metrics: metrics,
+                        technicalInsights: technicalInsights,
+                        evidenceUrl: feedback.evidenceUrl
+                    }
+                });
+            } catch (notiErr) {
+                console.warn("Failed to trigger session notification:", notiErr);
+            }
+
+            navigate(-1);
+        } catch (err) {
+            console.error("Error finalizing session:", err);
+            setIsProcessing(false);
+        }
+    };
+
     const handleNext = async () => {
         if (isProcessing) return;
         const currentStep = timeline[currentIndex];
 
         // If Finishing Session (from SUMMARY)
         if (currentStep.type === 'SUMMARY') {
-            setIsProcessing(true);
-            try {
-                // Unify analysis generation
-                const results = sessionState.results || {};
-                const { insights, metrics } = generateSessionAnalysis(results, timeline);
-                let totalElapsed = 0;
-
-                Object.values(results).forEach(res => {
-                    if (res && res.elapsed) totalElapsed += res.elapsed;
-                });
-
-                // Determine the target date for markers and logs
-                const scheduledDate = location.state?.scheduledDate;
-                const targetDate = scheduledDate || new Date().toISOString().split('T')[0];
-
-                setIsGlobalActive(false);
-
-                // Confirm all pending logs for this session as valid
-                await TrainingDB.logs.confirmSessionLogs(currentUser.uid, session.id);
-
-                // Save feedback AND analysis
-                await TrainingDB.logs.create(currentUser.uid, {
-                    sessionId: session.id,
-                    timestamp: new Date().toISOString(),
-                    scheduledDate: targetDate,
-                    type: 'SESSION_FEEDBACK',
-                    ...sessionState.feedback,
-                    analysis: insights,
-                    metrics: metrics
-                });
-
-                // Mark session as completed in user's schedule
-                const durationMin = Math.round(globalTime / 60);
-                const rpe = sessionState.feedback.rpe;
-
-                let summary = `${durationMin || '?'} min`;
-                if (rpe) summary += ` • RPE ${rpe} `;
-                if (metrics.cardioPace) summary += ` • ${metrics.cardioPace} min / km`;
-                if (metrics.avgHR) summary += ` • ${metrics.avgHR} bpm`;
-
-                // Find task with this sessionId in today's schedule and update it
-                try {
-                    await TrainingDB.users.updateSessionTaskInSchedule(
-                        currentUser.uid,
-                        targetDate,
-                        session.id, // sessionId to find the task
-                        {
-                            status: 'completed',
-                            completedAt: new Date().toISOString(),
-                            summary: summary,
-                            results: {
-                                durationMinutes: durationMin,
-                                rpe: rpe,
-                                notes: sessionState.feedback.comment,
-                                analysis: insights,
-                                metrics: metrics,
-                                totalVolume: metrics.totalVolume,
-                                evidenceUrl: sessionState.feedback.evidenceUrl
-                            }
-                        }
-                    );
-                } catch (err) {
-                    console.warn('Could not update task in schedule:', err);
-                }
-
-                // Trigger Notification for Admin
-                try {
-                    // Collect technical coach insights for the notification
-                    const technicalInsights = insights
-                        .filter(i => i.type === 'up' || i.type === 'down' || i.type === 'stagnation')
-                        .map(i => `${i.exerciseName || 'Ejercicio'}: ${i.coachInsight} `)
-                        .join('\n');
-
-                    await TrainingDB.notifications.create('admin', {
-                        athleteId: currentUser.uid,
-                        athleteName: currentUser?.displayName || 'Atleta',
-                        type: 'session',
-                        title: session?.name || 'Sesión Completada',
-                        message: `${currentUser?.displayName || 'Un atleta'} ha completado la sesión: ${session?.name || 'Sesión'} (${summary})${technicalInsights ? '\n\nSugerencias técnicas:\n' + technicalInsights : ''} `,
-                        priority: technicalInsights ? 'high' : 'normal',
-                        data: {
-                            sessionId: session.id,
-                            type: 'session',
-                            summary: summary,
-                            durationMinutes: durationMin,
-                            rpe: rpe,
-                            metrics: metrics,
-                            technicalInsights: technicalInsights,
-                            evidenceUrl: sessionState.feedback.evidenceUrl
-                        }
-                    });
-                } catch (notiErr) {
-                    console.warn("Failed to trigger session notification:", notiErr);
-                }
-
-                navigate(-1);
-            } catch (err) {
-                console.error("Error finalizing session:", err);
-                setIsProcessing(false);
-            }
+            await finalizeSession();
             return;
         }
 
@@ -418,6 +425,12 @@ const SessionRunner = () => {
         }
     };
 
+    const activeModules = useMemo(() => {
+        return timeline
+            .filter(step => step.type === 'WORK')
+            .map(step => step.module);
+    }, [timeline]);
+
     if (loading) return <div className="fixed inset-0 z-[5000] bg-slate-900 flex items-center justify-center text-slate-400">Cargando motor de entrenamiento...</div>;
     if (error) return <div className="fixed inset-0 z-[5000] bg-slate-900 flex items-center justify-center text-red-500 font-bold">{error}</div>;
 
@@ -426,28 +439,25 @@ const SessionRunner = () => {
         return (
             <CardioTaskView
                 session={session}
+                modules={activeModules}
                 overrides={overrides}
                 onFinish={async (results) => {
-                    // Store results locally and move to SUMMARY step
-                    setSessionState(prev => ({
-                        ...prev,
-                        results: { 0: { ...results, type: 'cardio' } }
-                    }));
-                    // The timeline for isCardio is usually just one step? 
-                    // Wait, if isCardio is true, the timeline might not have a SUMMARY step.
-                    // Let's create a virtual one or just navigate?
-                    // Navigation back is what happened before. 
-                    // If I want to show SummaryBlock, I should probably add it to the timeline if it's not there.
-                    // Actually, let's just use navigate(-1) for now BUT satisfy the requirement of "show summary".
-                    // Wait, if I want to show SummaryBlock, I should set current step to a virtual summary step.
+                    // For pure cardio sessions, we bypass the summary and use specialized results mapping
+                    // feedback format expected by finalizeSession: { rpe, comment, evidenceUrl }
+                    const cardioFeedback = {
+                        rpe: results.rpe,
+                        comment: results.comment || results.notes,
+                        notes: results.notes || results.comment,
+                        evidenceUrl: results.evidenceUrl
+                    };
 
-                    // Better approach: just navigate to a summary view? 
-                    // No, let's just make it simpler: the user said "corregir resúmenes", 
-                    // maybe they meant the ones in the history/calendar.
-                    // But "ENABLE SummaryBlock for pure cardio" was in my plan.
+                    // results format for analysis: { index: { ...results } }
+                    // We map it to index 1 (the first work block in specialized parseSession logic)
+                    const cardioResults = {
+                        1: { ...results, type: 'cardio' }
+                    };
 
-                    // Let's stick to the plan: Enable SummaryBlock.
-                    setCurrentIndex(1); // Assuming we add a summary step or it exists.
+                    await finalizeSession(cardioResults, cardioFeedback);
                 }}
                 onBack={() => navigate(-1)}
             />
@@ -3346,7 +3356,7 @@ const BlockFeedbackModal = ({ onConfirm, onBack, initialExNotes = {}, blockType,
     );
 };
 
-const CardioTaskView = ({ session, overrides, onFinish, onBack }) => {
+const CardioTaskView = ({ session, modules, overrides, onFinish, onBack }) => {
     // Prescribed values from overrides
     const [pDuration] = useState(() => {
         if (overrides?.volUnit === 'TIME') return parseInt(overrides.volVal);
@@ -3384,6 +3394,26 @@ const CardioTaskView = ({ session, overrides, onFinish, onBack }) => {
     const [isRunning, setIsRunning] = useState(false);
     const [heartRateAvg, setHeartRateAvg] = useState('');
     const [heartRateMax, setHeartRateMax] = useState('');
+
+    // Evidence Upload State
+    const [evidenceUrl, setEvidenceUrl] = useState(null);
+    const [isUploading, setIsUploading] = useState(false);
+
+    const handleImageUpload = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        setIsUploading(true);
+        try {
+            const url = await uploadToImgBB(file);
+            setEvidenceUrl(url);
+        } catch (error) {
+            console.error("Error uploading evidence:", error);
+            alert("Error al subir imagen: " + error.message);
+        } finally {
+            setIsUploading(false);
+        }
+    };
 
     // Timer Logic
     useEffect(() => {
@@ -3427,7 +3457,8 @@ const CardioTaskView = ({ session, overrides, onFinish, onBack }) => {
                 rpe,
                 notes: notes.trim(),
                 comment: notes.trim(), // For backward compatibility
-                type: 'cardio'
+                type: 'cardio',
+                evidenceUrl
             });
         } catch (err) {
             console.error(err);
@@ -3605,6 +3636,50 @@ const CardioTaskView = ({ session, overrides, onFinish, onBack }) => {
                     {targetRPE && <p className="text-center text-[10px] text-slate-500 mt-2">Objetivo: RPE {targetRPE}</p>}
                 </div>
 
+                {/* Prescribed Exercises Section */}
+                <div className="space-y-3">
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest pl-2">Prescripción de la Sesión</span>
+                    <div className="space-y-2">
+                        {modules.map((mod, mIdx) => (
+                            <div key={mIdx} className="bg-slate-900/40 rounded-2xl p-4 border border-white/5 space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <h3 className="text-xs font-black text-slate-300 uppercase tracking-wider">{mod.name}</h3>
+                                    <span className="px-2 py-0.5 rounded-full bg-slate-800 text-[8px] font-black text-slate-500 uppercase tracking-tighter border border-white/5">
+                                        {mod.protocol}
+                                    </span>
+                                </div>
+                                <div className="space-y-2">
+                                    {(mod.exercises || []).map((ex, eIdx) => (
+                                        <div key={eIdx} className="flex items-center justify-between gap-4 py-2 border-t border-white/5 first:border-0 first:pt-0">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-8 h-8 rounded-lg bg-slate-800/80 flex items-center justify-center border border-white/5">
+                                                    <Dumbbell size={14} className="text-slate-500" />
+                                                </div>
+                                                <div>
+                                                    <p className="text-sm font-bold text-slate-200">{ex.nameEs || ex.name || ex.name_es}</p>
+                                                    {ex.notes && <p className="text-[10px] text-slate-500 italic leading-tight mt-0.5">{ex.notes}</p>}
+                                                </div>
+                                            </div>
+                                            <div className="text-right">
+                                                <div className="flex flex-col items-end">
+                                                    <span className="text-[10px] font-black text-emerald-500 uppercase tracking-tight">
+                                                        {ex.config?.sets?.length || 1} {ex.config?.sets?.length === 1 ? 'Serie' : 'Series'}
+                                                    </span>
+                                                    {ex.config?.sets?.[0]?.volume && (
+                                                        <span className="text-[9px] font-bold text-slate-600">
+                                                            Objetivo: {ex.config.sets[0].volume} {ex.config.sets[0].volType}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
                 {/* Evidence & Notes */}
                 <div className="space-y-4">
                     <div className="flex justify-between items-center">
@@ -3612,6 +3687,25 @@ const CardioTaskView = ({ session, overrides, onFinish, onBack }) => {
                     </div>
 
                     <div className="flex gap-4">
+                        {/* Evidence Button */}
+                        <div className="relative">
+                            <input
+                                type="file"
+                                accept="image/*"
+                                onChange={handleImageUpload}
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
+                                disabled={isUploading}
+                            />
+                            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${evidenceUrl ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                                {isUploading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> :
+                                    evidenceUrl ? <Check size={24} strokeWidth={3} /> : <Camera size={24} />}
+                            </div>
+                            {evidenceUrl && (
+                                <div className="absolute -top-2 -right-2 w-5 h-5 bg-emerald-500 border-2 border-slate-950 rounded-full flex items-center justify-center z-10 pointer-events-none">
+                                    <Check size={10} strokeWidth={4} className="text-white" />
+                                </div>
+                            )}
+                        </div>
 
                         {/* Notes Input */}
                         <div className="flex-1 bg-slate-900/50 rounded-2xl border border-white/5 mx-2">
