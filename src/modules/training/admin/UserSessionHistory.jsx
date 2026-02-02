@@ -21,16 +21,20 @@ const UserSessionHistory = ({ user, onClose, isEmbedded = false }) => {
         try {
             setLoading(true);
             // 1. Fetch user data for schedule
-            const userData = await TrainingDB.users.getById(user.id);
+            const [userData, allSessions, logHistory] = await Promise.all([
+                TrainingDB.users.getById(user.id),
+                TrainingDB.sessions.getAll(),
+                TrainingDB.logs.getFeedbackLogs(user.id)
+            ]);
+
             const schedule = userData?.schedule || {};
 
-            // 2. Fetch sessions metadata
-            const allSessions = await TrainingDB.sessions.getAll();
+            // 2. Map sessions metadata
             const sMap = {};
             allSessions.forEach(s => sMap[s.id] = s);
             setSessionsMap(sMap);
 
-            // 3. Extract completed sessions
+            // 3. Extract completed sessions from schedule
             const completed = [];
             Object.entries(schedule).forEach(([date, tasks]) => {
                 tasks.forEach(task => {
@@ -42,6 +46,40 @@ const UserSessionHistory = ({ user, onClose, isEmbedded = false }) => {
                         });
                     }
                 });
+            });
+
+            // 4. DATA RECOVERY: Add sessions that have logs but aren't in schedule as "completed"
+            // This handles cases where the session was saved but the schedule update failed
+            logHistory.forEach(log => {
+                if (!log.sessionId) return;
+
+                // Check if we already have this session/date in the completed list
+                const exists = completed.some(c =>
+                    c.sessionId === log.sessionId &&
+                    c.scheduledDate === log.scheduledDate
+                );
+
+                if (!exists) {
+                    completed.push({
+                        id: `recovered-${log.id}`,
+                        sessionId: log.sessionId,
+                        type: 'session',
+                        status: 'completed',
+                        summary: log.summary || `${log.metrics?.durationMinutes || '?'} min (Recuperada)`,
+                        results: {
+                            durationMinutes: log.metrics?.durationMinutes || log.durationMinutes,
+                            rpe: log.rpe,
+                            notes: log.notes || log.comment,
+                            analysis: log.analysis,
+                            metrics: log.metrics,
+                            totalVolume: log.metrics?.totalVolume,
+                            evidenceUrl: log.evidenceUrl
+                        },
+                        scheduledDate: log.scheduledDate || format(new Date(log.timestamp), 'yyyy-MM-dd'),
+                        session: sMap[log.sessionId],
+                        isRecovered: true
+                    });
+                }
             });
 
             // Sort by date (newest first)
@@ -110,16 +148,21 @@ const UserSessionHistory = ({ user, onClose, isEmbedded = false }) => {
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ delay: idx * 0.05 }}
                                 onClick={() => setSelectedResults(item)}
-                                className="w-full bg-white p-5 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md hover:border-slate-200 transition-all flex items-center gap-4 text-left group"
+                                className={`w-full bg-white p-5 rounded-3xl border shadow-sm hover:shadow-md hover:border-slate-200 transition-all flex items-center gap-4 text-left group ${item.isRecovered ? 'border-orange-100 bg-orange-50/10' : 'border-slate-100'}`}
                             >
-                                <div className="w-14 h-14 bg-emerald-500 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-500/20 shrink-0">
+                                <div className={`w-14 h-14 ${item.isRecovered ? 'bg-orange-500 shadow-orange-500/20' : 'bg-emerald-500 shadow-emerald-500/20'} text-white rounded-2xl flex items-center justify-center shadow-lg shrink-0`}>
                                     <Clock size={28} />
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2 mb-1">
-                                        <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded uppercase tracking-wider">
+                                        <span className={`text-[10px] font-black ${item.isRecovered ? 'text-orange-600 bg-orange-50' : 'text-emerald-600 bg-emerald-50'} px-2 py-0.5 rounded uppercase tracking-wider`}>
                                             {format(parseISO(item.scheduledDate), 'dd MMM yyyy', { locale: es })}
                                         </span>
+                                        {item.isRecovered && (
+                                            <span className="text-[10px] font-black text-orange-400 bg-white border border-orange-100 px-2 py-0.5 rounded uppercase tracking-wider flex items-center gap-1">
+                                                <Zap size={10} /> Recuperada
+                                            </span>
+                                        )}
                                         {item.results?.rpe && (
                                             <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">RPE {item.results.rpe}</span>
                                         )}
@@ -134,8 +177,8 @@ const UserSessionHistory = ({ user, onClose, isEmbedded = false }) => {
                                         </div>
                                         {item.summary && (
                                             <div className="flex items-center gap-1">
-                                                <Zap size={12} className="text-amber-500" />
-                                                <span className="text-xs font-bold text-amber-600 truncate max-w-[150px]">{item.summary}</span>
+                                                <Zap size={12} className={item.isRecovered ? 'text-orange-500' : 'text-amber-500'} />
+                                                <span className={`text-xs font-bold truncate max-w-[150px] ${item.isRecovered ? 'text-orange-600' : 'text-amber-600'}`}>{item.summary}</span>
                                             </div>
                                         )}
                                     </div>

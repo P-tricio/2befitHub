@@ -324,37 +324,49 @@ export const TrainingDB = {
             });
         },
         async updateSessionTaskInSchedule(userId, date, sessionId, updateData) {
-            // Find task by sessionId (for session-type tasks) instead of task.id
             const ref = doc(db, 'users', userId);
             const snap = await getDoc(ref);
-            if (!snap.exists()) {
-                console.warn('[updateSessionTaskInSchedule] User document not found:', userId);
-                return;
-            }
+            if (!snap.exists()) return;
 
             const data = snap.data();
             const schedule = data.schedule || {};
-            const dailyTasks = schedule[date] || [];
+            const targetId = String(sessionId); // Ensure string for comparison
 
-            console.log('[updateSessionTaskInSchedule] Looking for sessionId:', sessionId, 'on date:', date);
-            console.log('[updateSessionTaskInSchedule] Daily tasks:', dailyTasks);
+            // 1. Try exact date first
+            let dailyTasks = schedule[date] || [];
+            let taskIndex = Array.isArray(dailyTasks) ? dailyTasks.findIndex(t => t.type === 'session' && String(t.sessionId) === targetId) : -1;
+            let targetDate = date;
 
-            const taskIndex = dailyTasks.findIndex(t => t.type === 'session' && t.sessionId === sessionId);
+            // 2. Fallback: Search the entire schedule if not found on current date
             if (taskIndex === -1) {
-                console.warn('[updateSessionTaskInSchedule] Task not found. Looking for sessionId:', sessionId);
-                console.warn('[updateSessionTaskInSchedule] Available tasks:', JSON.stringify(dailyTasks.map(t => ({ type: t.type, sessionId: t.sessionId })), null, 2));
+                console.log(`[updateSessionTaskInSchedule] Session ${targetId} not found on ${date}. Searching entire schedule...`);
+                const allEntries = Object.entries(schedule);
+                for (const [d, tasks] of allEntries) {
+                    if (!Array.isArray(tasks)) continue;
+                    const idx = tasks.findIndex(t => t.type === 'session' && String(t.sessionId) === targetId);
+                    if (idx !== -1) {
+                        targetDate = d;
+                        dailyTasks = [...tasks];
+                        taskIndex = idx;
+                        console.log(`[updateSessionTaskInSchedule] Found session ${targetId} on ${targetDate}`);
+                        break;
+                    }
+                }
+            }
+
+            if (taskIndex === -1) {
+                console.warn('[updateSessionTaskInSchedule] Task not found for sessionId:', sessionId);
                 return;
             }
-            console.log('[updateSessionTaskInSchedule] Found task at index:', taskIndex, 'Updating with:', updateData);
 
             // Update specific task
-            const updatedTask = { ...dailyTasks[taskIndex], ...updateData };
-            dailyTasks[taskIndex] = updatedTask;
+            const updatedDailyTasks = [...dailyTasks];
+            updatedDailyTasks[taskIndex] = { ...updatedDailyTasks[taskIndex], ...updateData };
 
             // Write back entire array
-            const updateKey = `schedule.${date}`;
+            const updateKey = `schedule.${targetDate}`;
             await updateDoc(ref, {
-                [updateKey]: dailyTasks,
+                [updateKey]: updatedDailyTasks,
                 updatedAt: serverTimestamp()
             });
         },
@@ -474,6 +486,21 @@ export const TrainingDB = {
                     });
             } catch (error) {
                 console.warn('Could not fetch session logs:', error);
+                return [];
+            }
+        },
+
+        async getFeedbackLogs(userId) {
+            try {
+                const q = query(
+                    collection(db, LOGS),
+                    where('userId', '==', userId),
+                    where('type', '==', 'SESSION_FEEDBACK')
+                );
+                const snapshot = await getDocs(q);
+                return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+            } catch (error) {
+                console.error("Error fetching feedback logs:", error);
                 return [];
             }
         }

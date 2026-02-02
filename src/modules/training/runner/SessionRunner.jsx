@@ -220,6 +220,8 @@ const SessionRunner = () => {
     const finalizeSession = async (overriddenResults = null, overriddenFeedback = null) => {
         if (isProcessing) return;
         setIsProcessing(true);
+        console.log('[finalizeSession] Starting finalization for session:', session?.id);
+
         try {
             // Unify analysis generation
             const results = overriddenResults || sessionState.results || {};
@@ -236,23 +238,36 @@ const SessionRunner = () => {
             const scheduledDate = location.state?.scheduledDate;
             const targetDate = scheduledDate || new Date().toISOString().split('T')[0];
 
+            console.log('[finalizeSession] Target date for schedule update:', targetDate);
+
             setIsGlobalActive(false);
 
-            // Confirm all pending logs for this session as valid
-            await TrainingDB.logs.confirmSessionLogs(currentUser.uid, session.id);
+            // 1. Confirm pending logs
+            try {
+                await TrainingDB.logs.confirmSessionLogs(currentUser.uid, session.id);
+                console.log('[finalizeSession] Confirmed session logs');
+            } catch (e) {
+                console.warn('[finalizeSession] Low priority error confirming logs:', e);
+            }
 
-            // Save feedback AND analysis
-            await TrainingDB.logs.create(currentUser.uid, {
-                sessionId: session.id,
-                timestamp: new Date().toISOString(),
-                scheduledDate: targetDate,
-                type: 'SESSION_FEEDBACK',
-                ...feedback,
-                analysis: insights,
-                metrics: metrics
-            });
+            // 2. Save feedback AND analysis (Crucial)
+            try {
+                await TrainingDB.logs.create(currentUser.uid, {
+                    sessionId: session.id,
+                    timestamp: new Date().toISOString(),
+                    scheduledDate: targetDate,
+                    type: 'SESSION_FEEDBACK',
+                    ...feedback,
+                    analysis: insights,
+                    metrics: metrics
+                });
+                console.log('[finalizeSession] Created feedback log');
+            } catch (e) {
+                console.error('[finalizeSession] Failed to create feedback log:', e);
+                throw new Error("No se pudo guardar el feedback de la sesión.");
+            }
 
-            // Mark session as completed in user's schedule
+            // 3. Mark session as completed in user's schedule (Crucial)
             const durationMin = Math.round(globalTime / 60);
             const rpe = feedback.rpe;
 
@@ -261,7 +276,7 @@ const SessionRunner = () => {
             if (metrics.cardioPace) summary += ` • ${metrics.cardioPace} min / km`;
             if (metrics.avgHR) summary += ` • ${metrics.avgHR} bpm`;
 
-            // Find task with this sessionId in today's schedule and update it
+            let scheduleUpdateSuccess = false;
             try {
                 await TrainingDB.users.updateSessionTaskInSchedule(
                     currentUser.uid,
@@ -282,13 +297,18 @@ const SessionRunner = () => {
                         }
                     }
                 );
+                console.log('[finalizeSession] Schedule update requested successfully');
+                scheduleUpdateSuccess = true;
             } catch (err) {
-                console.warn('Could not update task in schedule:', err);
+                console.error('[finalizeSession] Could not update task in schedule:', err);
+                // We don't throw here to avoid blocking the user if the log was saved (Data Recovery handles this)
+                // But we should alert them? Maybe not if "Recovered" logic works.
             }
 
-            // Trigger Notification for Admin
+            // 4. Trigger Notification for Admin (Non-blocking)
+            // We run this asynchronously without awaiting to speed up UX, or await if we want to be sure.
+            // Given the priority, let's await but catch securely.
             try {
-                // Collect technical coach insights for the notification
                 const technicalInsights = insights
                     .filter(i => i.type === 'up' || i.type === 'down' || i.type === 'stagnation')
                     .map(i => `${i.exerciseName || 'Ejercicio'}: ${i.coachInsight} `)
@@ -316,14 +336,16 @@ const SessionRunner = () => {
                 console.warn("Failed to trigger session notification:", notiErr);
             }
 
+            console.log('[finalizeSession] Finalization complete. Navigating back.');
             navigate(-1);
         } catch (err) {
             console.error("Error finalizing session:", err);
+            alert("Hubo un problema al guardar la sesión: " + (err.message || "Error desconocido"));
             setIsProcessing(false);
         }
     };
 
-    const handleNext = async () => {
+    const handleNext = async (summaryData = null) => {
         if (isProcessing) return;
         const currentStep = timeline[currentIndex];
 
