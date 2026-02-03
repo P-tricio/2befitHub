@@ -155,7 +155,10 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
             return;
         }
 
-        const { type, ...config } = payload;
+        const { type } = payload;
+        // Extract config correctly: TaskPicker sends { type, config: {...} } for generics.
+        // For sessions/others it might be mixed, so we prioritize payload.config if present.
+        const taskConfig = payload.config || {};
 
         if (type === 'session') {
             handleAssignSession(payload.sessionId);
@@ -185,13 +188,38 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
             // Generic tasks: neat, nutrition, tracking, scheduled_message
             let title = '';
             switch (type) {
-                case 'neat': title = 'Objetivo Movimiento'; break;
-                case 'nutrition':
-                    title = config.categories?.length > 0
-                        ? `Hábitos: ${config.categories.map(c => c === 'nutrition' ? 'Alim.' : (c === 'movement' ? 'Mov.' : 'Salud')).join(', ')}`
-                        : 'Hábitos';
+                case 'neat':
+                    {
+                        const target = taskConfig.target || 0;
+                        const unit = taskConfig.type === 'steps' ? 'pasos' : 'min';
+                        title = target > 0 ? `Movimiento: ${target} ${unit}` : 'Objetivo Movimiento';
+                    }
                     break;
-                case 'tracking': title = 'Seguimiento'; break;
+                case 'nutrition':
+                    {
+                        const cats = taskConfig.categories || [];
+                        const labels = { nutrition: 'Alim.', movement: 'Mov.', health: 'Salud' };
+                        const catLabels = cats.map(c => labels[c] || c);
+                        title = catLabels.length > 0
+                            ? `Hábitos: ${catLabels.join(', ')}`
+                            : 'Hábitos';
+                    }
+                    break;
+                case 'tracking':
+                    {
+                        const parts = [];
+                        if (taskConfig.weight) parts.push('Peso');
+                        if (taskConfig.metrics) parts.push('Medidas');
+                        if (taskConfig.photos) parts.push('Fotos');
+
+                        if (taskConfig.formId) {
+                            const form = availableForms.find(f => f.id === taskConfig.formId);
+                            parts.push(form ? form.name : 'Formulario');
+                        }
+
+                        title = parts.join(' + ') || 'Seguimiento';
+                    }
+                    break;
                 case 'scheduled_message': title = 'Mensaje Programado'; break;
                 default: title = 'Tarea';
             }
@@ -201,7 +229,7 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
                 type,
                 title,
                 completed: false,
-                config: config,
+                config: taskConfig, // Save the clean config object, not nested
                 admin_assigned: true
             });
         }

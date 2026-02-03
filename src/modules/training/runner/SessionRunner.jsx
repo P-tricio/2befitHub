@@ -2338,24 +2338,79 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
         const metric = primaryTarget.metric;
         const timeCap = primaryTarget.timeCap || 240;
 
+        // Custom Logic for PDP-R (Target Reps Priority)
+        let displayVolume = volume;
+        let splitRepsString = null;
+
+        if (protocol === 'R') {
+            const hasExplicitVolume = displayVolume && displayVolume > 0;
+
+            // If no global volume, OR if we have multiple exercises, we favor derived calc
+            if (!hasExplicitVolume || exercises.length > 1) {
+                const targets = exercises.map(ex => ex.targetReps || 0);
+                const sumReps = targets.reduce((acc, val) => acc + val, 0);
+
+                if (sumReps > 0) {
+                    // If no explicit volume, adopt the sum
+                    if (!hasExplicitVolume) displayVolume = sumReps;
+
+                    // If multiple exercises, create split string
+                    if (exercises.length > 1) {
+                        splitRepsString = targets.join('+');
+                    }
+                }
+            }
+        }
+
         // Decide Hero Content
         let heroContent = null;
         let subContent = null;
 
-        if (volume && volume > 0) {
+        if (displayVolume && displayVolume > 0) {
             // Volume-Based Hero (Distance, Cals, Reps)
-            const metricDisplay = (metric || '').toUpperCase();
-            // Handle time-based volume override (minutos)
+
+            // Safe metric display
+            let metricDisplay = (metric || '').toUpperCase();
+            if (!metricDisplay && protocol === 'R') metricDisplay = 'REPS'; // Default for R
+
             heroContent = (
                 <div className="flex flex-col items-center">
                     <span className={HERO_TEXT_SIZE + " font-black font-mono tracking-tighter text-white tabular-nums leading-none"}>
-                        {volume} <span className="text-[0.4em] align-top text-orange-500">{metricDisplay}</span>
+                        {splitRepsString || displayVolume} <span className="text-[0.4em] align-top text-orange-500">{metricDisplay}</span>
                     </span>
                     <span className="text-xs font-bold text-orange-500/80 uppercase tracking-widest mt-1">OBJETIVO TOTAL</span>
                 </div>
             );
+
+            // Subtitle: Show Time Cap / Timer for R or others with volume
+            if (timeLeft != null) {
+                subContent = (
+                    <div className="flex flex-col items-center mt-4">
+                        <span className="text-3xl font-black font-mono text-slate-600 tabular-nums">
+                            {formatTime(timeLeft).trim()}
+                        </span>
+                        <div className="flex items-center gap-2">
+                            <span className="text-[9px] font-bold text-slate-600 uppercase tracking-widest">
+                                TIME CAP: {formatTime(timeCap).trim()}
+                            </span>
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                                • RESTANTE
+                            </span>
+                        </div>
+                    </div>
+                );
+            } else if (protocol === 'R') {
+                subContent = (
+                    <div className="flex items-center gap-2 mt-4">
+                        <span className={`text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded border bg-slate-800/50 text-slate-500 border-slate-700/50`}>
+                            TIME CAP: {formatTime(timeCap).trim()}
+                        </span>
+                    </div>
+                );
+            }
+
         } else {
-            // Time-Based Hero (Default T)
+            // Time-Based Hero (Default T or R without volume)
             heroContent = (
                 <div className="flex flex-col items-center">
                     <span className={HERO_TEXT_SIZE + " font-black font-mono tracking-tighter text-white tabular-nums leading-none"}>
@@ -2364,18 +2419,16 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                     <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">TIEMPO RESTANTE</span>
                 </div>
             );
-        }
 
-        // Sub Content (Timer or Secondary)
-        if (volume && volume > 0 && timeLeft) {
-            subContent = (
-                <div className="flex flex-col items-center mt-4">
-                    <span className="text-3xl font-black font-mono text-slate-600 tabular-nums">
-                        {formatTime(timeLeft).trim()}
-                    </span>
-                    <span className="text-[9px] font-bold text-slate-600 uppercase tracking-widest">TIEMPO LÍMITE</span>
-                </div>
-            );
+            if (protocol === 'R') {
+                subContent = (
+                    <div className="flex items-center gap-2 mt-4">
+                        <span className={`text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded border bg-slate-800/50 text-slate-500 border-slate-700/50`}>
+                            TIME CAP: {formatTime(timeCap).trim()}
+                        </span>
+                    </div>
+                );
+            }
         }
 
         return (
@@ -2394,15 +2447,6 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                 )}
 
                 {subContent}
-
-                {/* Legacy R Display kept minimal if needed, but handled by above logic usually */}
-                {protocol === 'R' && !volume && (
-                    <div className="flex items-center gap-2 mt-4">
-                        <span className={`text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded border bg-slate-800/50 text-slate-500 border-slate-700/50`}>
-                            TIME CAP: {formatTime(timeCap)}
-                        </span>
-                    </div>
-                )}
             </div>
         );
     };
