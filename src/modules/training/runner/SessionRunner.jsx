@@ -5,7 +5,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { TrainingDB } from '../services/db';
 import { uploadToImgBB } from '../services/imageService';
 import { useAuth } from '../../../context/AuthContext';
-import { ChevronLeft, ChevronUp, ChevronDown, Play, AlertCircle, CheckCircle, Clock, Plus, TrendingUp, TrendingDown, Minus, Info, Dumbbell, Zap, X, Activity, MessageSquare, Flame, Footprints, Trash2, Repeat, Layers, Camera, Check, Pause, AlertTriangle, ArrowRight, Save, Target } from 'lucide-react';
+import { ChevronLeft, ChevronUp, ChevronDown, Play, AlertCircle, CheckCircle, Clock, Plus, TrendingUp, TrendingDown, Minus, Info, Dumbbell, Zap, X, Activity, MessageSquare, Flame, Footprints, Trash2, Repeat, Layers, Camera, Check, Pause, AlertTriangle, ArrowRight, Save, Target, Hash } from 'lucide-react';
 import { useSessionData } from './hooks/useSessionData.js';
 import { useKeepAwake } from '../../../hooks/useKeepAwake';
 import { useAudioFeedback } from '../../../hooks/useAudioFeedback';
@@ -195,6 +195,8 @@ const SessionRunner = () => {
         selectedExercise: null, // For Modal
         globalTime: 0,
     });
+
+
 
     // --- PERSISTENCE: Save/Load Session State ---
     useEffect(() => {
@@ -477,6 +479,51 @@ const SessionRunner = () => {
             };
 
             await TrainingDB.logs.create(currentUser.uid, logEntry);
+
+            // 🆕 Log exercise-level history for cross-session tracking
+            try {
+                const moduleExercises = currentStep.module.exercises || [];
+                for (let idx = 0; idx < moduleExercises.length; idx++) {
+                    const ex = moduleExercises[idx];
+                    const exId = ex.id || ex.exerciseId;
+
+                    // Skip if no exercise ID or not loadable
+                    if (!exId) continue;
+                    const isLoadable = ex.loadable || ex.isLoadable || ex.config?.isLoadable;
+                    if (!isLoadable && ex.quality !== 'F') continue; // Only track loadable/strength exercises
+
+                    // Get weight data from results
+                    const weight = finalResults.actualWeights?.[idx] || finalResults.weights?.[idx] || sanitizedWeights[idx];
+                    const reps = finalResults.actualReps?.[idx] || finalResults.reps?.[idx];
+                    const setWeights = finalResults.seriesWeights?.[idx] || [];
+                    const setReps = finalResults.seriesReps?.[idx] || [];
+
+                    // Only log if there's actual weight data
+                    if (weight && parseFloat(weight) > 0) {
+                        const sets = setWeights.length > 0
+                            ? setWeights.map((w, i) => ({ weight: parseFloat(w) || 0, reps: parseInt(setReps[i]) || 0 }))
+                            : [{ weight: parseFloat(weight), reps: parseInt(reps) || 0 }];
+
+                        const maxWeight = Math.max(...sets.map(s => s.weight || 0).filter(w => w > 0));
+
+                        await TrainingDB.exerciseHistory.log(currentUser.uid, exId, {
+                            date: new Date(),
+                            sessionId: session.id,
+                            moduleId: currentStep.module.id,
+                            exerciseName: ex.nameEs || ex.name,
+                            sets: sets,
+                            maxWeight: maxWeight,
+                            // 🆕 Context fields for smart lookup
+                            protocol: currentStep.module.protocol,
+                            blockType: currentStep.blockType,
+                            manifestation: currentStep.module.manifestation
+                        });
+                    }
+                }
+            } catch (historyErr) {
+                console.warn('[handleBlockFeedbackConfirm] Exercise history logging failed:', historyErr);
+                // Non-blocking error - session log is already saved
+            }
 
             setShowFeedbackModal(false);
             setPendingResults(null);
@@ -956,127 +1003,182 @@ const CollapsiblePlanningBlock = ({ module, onSelectExercise }) => {
                     >
                         <div className="divide-y divide-slate-800/50">
                             {(() => {
-                                const isGrouped = module.exercises?.length > 1 && (protocol === 'LIBRE');
-                                const groupType = isGrouped ? (module.exercises.length === 2 ? 'SUPERSERIE' : 'CIRCUITO') : null;
+                                // Sync grouping logic with WorkBlock (Runner)
+                                const groups = [];
+                                const exercises = module.exercises || [];
 
-                                return (
-                                    <>
-                                        {groupType && (
-                                            <div className="bg-slate-800/20 px-4 py-2 flex items-center gap-2 border-b border-slate-800/50">
-                                                <div className={`w-1.5 h-1.5 rounded-full ${groupType === 'SUPERSERIE' ? 'bg-indigo-500' : 'bg-amber-500'}`} />
-                                                <span className={`text-[9px] font-black uppercase tracking-[0.2em] ${groupType === 'SUPERSERIE' ? 'text-indigo-400' : 'text-amber-400'}`}>
-                                                    {groupType}
-                                                </span>
-                                            </div>
-                                        )}
-                                        {module.exercises?.map((ex, exIdx) => (
-                                            <div
-                                                key={exIdx}
-                                                className="p-4 flex gap-4 hover:bg-slate-800/50 transition-colors cursor-pointer group relative"
-                                                onClick={() => onSelectExercise(ex)}
-                                            >
-                                                {/* visual line for grouped exercises */}
-                                                {groupType && (
-                                                    <div className={`absolute left-2.5 top-0 bottom-0 w-0.5 ${exIdx === 0 ? 'top-6' : ''} ${exIdx === module.exercises.length - 1 ? 'bottom-6' : ''} ${groupType === 'SUPERSERIE' ? 'bg-indigo-500/20' : 'bg-amber-500/20'}`} />
-                                                )}
+                                if (protocol !== 'LIBRE' || module.isWarmup) {
+                                    // For other protocols (R, T, E, etc) and Warmup, 
+                                    // all exercises in the module are performed in the same block/screen
+                                    if (exercises.length > 0) {
+                                        groups.push(exercises.map((ex, idx) => ({ ...ex, originalIndex: idx })));
+                                    }
+                                } else {
+                                    exercises.forEach((ex, idx) => {
+                                        // join the current exercise to that group if marked as grouped
+                                        if (ex.isGrouped && groups.length > 0) {
+                                            groups[groups.length - 1].push({ ...ex, originalIndex: idx });
+                                        } else {
+                                            // Start a new group
+                                            groups.push([{ ...ex, originalIndex: idx }]);
+                                        }
+                                    });
+                                }
 
-                                                {/* Image */}
-                                                <div className="w-20 h-20 bg-slate-900 rounded-xl overflow-hidden shrink-0 border border-slate-700/50 relative z-10">
-                                                    <ExerciseMedia exercise={ex} thumbnailMode={true} lazyLoad={false} />
+                                return groups.map((group, groupIdx) => {
+                                    const isGroup = group.length > 1;
+                                    const groupType = isGroup ? (group.length === 2 ? 'SUPERSERIE' : 'CIRCUITO') : null;
+
+                                    return (
+                                        <div key={groupIdx} className={isGroup ? "bg-indigo-500/5 border-b border-indigo-500/10 last:border-0" : ""}>
+                                            {groupType && (
+                                                <div className="bg-slate-800/20 px-4 py-2 flex items-center gap-2 border-b border-slate-800/50">
+                                                    <div className={`w-1.5 h-1.5 rounded-full ${groupType === 'SUPERSERIE' ? 'bg-indigo-500' : 'bg-amber-500'}`} />
+                                                    <span className={`text-[9px] font-black uppercase tracking-[0.2em] ${groupType === 'SUPERSERIE' ? 'text-indigo-400' : 'text-amber-400'}`}>
+                                                        {groupType}
+                                                    </span>
                                                 </div>
+                                            )}
+                                            {group.map((ex, exIdx) => (
+                                                <div
+                                                    key={ex.originalIndex}
+                                                    className="p-4 flex gap-4 hover:bg-slate-800/50 transition-colors cursor-pointer group relative"
+                                                    onClick={() => onSelectExercise(ex)}
+                                                >
+                                                    {/* visual line for grouped exercises */}
+                                                    {isGroup && (
+                                                        <div className={`absolute left-2.5 top-0 bottom-0 w-0.5 ${exIdx === 0 ? 'top-6' : ''} ${exIdx === group.length - 1 ? 'bottom-6' : ''} ${groupType === 'SUPERSERIE' ? 'bg-indigo-500/20' : 'bg-amber-500/20'}`} />
+                                                    )}
 
-                                                <div className="flex-1 min-w-0 py-1 flex flex-col justify-between relative z-10">
-                                                    <div className="flex justify-between items-start gap-2">
-                                                        <h4 className="font-bold text-white text-sm line-clamp-1 group-hover:text-emerald-400 transition-colors">{ex.nameEs || ex.name}</h4>
-                                                        <Info size={16} className="text-slate-500 group-hover:text-emerald-400 transition-colors shrink-0" />
+                                                    {/* Image */}
+                                                    <div className="w-20 h-20 bg-slate-900 rounded-xl overflow-hidden shrink-0 border border-slate-700/50 relative z-10">
+                                                        <ExerciseMedia exercise={ex} thumbnailMode={true} lazyLoad={false} />
                                                     </div>
 
-                                                    {/* Targeting Configuration Badges */}
-                                                    <div className="flex flex-wrap gap-1.5 mt-2">
-                                                        {/* Sets x Reps - for LIBRE protocol */}
-                                                        {(protocol === 'LIBRE') && (() => {
-                                                            const sets = ex.config?.sets || [];
-                                                            const numSets = sets.length || ex.sets || ex.targetSets || 3;
-                                                            const repsPerSet = sets.length > 0
-                                                                ? sets.map(s => s.reps || ex.targetReps || 8)
-                                                                : [];
-                                                            const isVariableReps = new Set(repsPerSet).size > 1;
-                                                            const repsDisplay = isVariableReps
-                                                                ? repsPerSet.join('-')
-                                                                : (ex.targetReps || sets[0]?.reps || 8);
+                                                    <div className="flex-1 min-w-0 py-1 flex flex-col justify-between relative z-10">
+                                                        <div className="flex justify-between items-start gap-2">
+                                                            <h4 className="font-bold text-white text-sm line-clamp-1 group-hover:text-emerald-400 transition-colors">{ex.nameEs || ex.name}</h4>
+                                                            <Info size={16} className="text-slate-500 group-hover:text-emerald-400 transition-colors shrink-0" />
+                                                        </div>
 
-                                                            return (
-                                                                <span className="inline-flex items-center px-2 py-1 bg-cyan-500/10 text-cyan-400 rounded text-[10px] font-black border border-cyan-500/20">
-                                                                    {numSets}x{repsDisplay}
-                                                                </span>
-                                                            );
-                                                        })()}
+                                                        {/* Targeting Configuration Badges */}
+                                                        <div className="flex flex-wrap gap-1.5 mt-2">
+                                                            {/* Sets x Reps - for LIBRE protocol */}
+                                                            {(protocol === 'LIBRE') && (() => {
+                                                                const sets = ex.config?.sets || [];
+                                                                const numSets = sets.length || ex.sets || ex.targetSets || 3;
 
-                                                        {/* Reps for other protocols */}
-                                                        {((ex.targetReps > 0 || ex.manifestation) && protocol !== 'T' && protocol !== 'LIBRE') && (
-                                                            <span className="inline-flex items-center px-2 py-1 bg-slate-700/50 text-slate-200 rounded text-[10px] font-black uppercase tracking-wider border border-slate-600/50">
-                                                                {ex.targetReps ? `${ex.targetReps} reps` : ex.manifestation}
-                                                            </span>
-                                                        )}
+                                                                // Detect Volume Type
+                                                                const volType = ex.config?.volType || 'REPS';
+                                                                const volUnit =
+                                                                    volType === 'TIME' ? 'seg' :
+                                                                        volType === 'METROS' ? 'm' :
+                                                                            volType === 'KM' ? 'km' :
+                                                                                volType === 'KCAL' ? 'kcal' :
+                                                                                    'reps';
 
-                                                        {/* Weight if prescribed */}
-                                                        {(ex.config?.sets?.[0]?.weight || ex.weight) && (
-                                                            <span className="inline-flex items-center px-2 py-1 bg-blue-500/10 text-blue-400 rounded text-[10px] font-black border border-blue-500/20">
-                                                                {ex.config?.sets?.[0]?.weight || ex.weight}kg
-                                                            </span>
-                                                        )}
+                                                                const repsPerSet = sets.length > 0
+                                                                    ? sets.map(s => {
+                                                                        if (ex.config?.volType && s.reps) return s.reps;
+                                                                        return s.reps || s.time || s.distance || ex.targetReps || 8;
+                                                                    })
+                                                                    : [];
 
-                                                        {/* Intensity (RIR/RPE) */}
-                                                        {(ex.config?.sets?.[0]?.rir != null || ex.config?.sets?.[0]?.rpe != null || ex.intensity) && (
-                                                            <span className="inline-flex items-center px-2 py-1 bg-orange-500/10 text-orange-400 rounded text-[10px] font-black border border-orange-500/20">
-                                                                {ex.config?.sets?.[0]?.rir != null
-                                                                    ? `RIR ${ex.config.sets[0].rir} `
-                                                                    : ex.config?.sets?.[0]?.rpe != null
-                                                                        ? `RPE ${ex.config.sets[0].rpe} `
-                                                                        : ex.intensity}
-                                                            </span>
-                                                        )}
+                                                                const isVariableReps = new Set(repsPerSet).size > 1;
+                                                                const repsDisplay = isVariableReps
+                                                                    ? repsPerSet.join('-')
+                                                                    : (repsPerSet[0] || ex.targetReps || 8);
 
-                                                        {/* Protocol Specific Timer/Cap */}
-                                                        {protocol === 'T' && (
-                                                            <span className="inline-flex items-center px-2 py-1 bg-emerald-500/10 text-emerald-500 rounded text-[10px] font-black uppercase tracking-wider border border-emerald-500/20">
-                                                                <Clock size={12} className="mr-1" />
-                                                                {(() => {
-                                                                    const seconds = module.targeting?.[0]?.timeCap || 240;
-                                                                    const m = Math.floor(seconds / 60);
-                                                                    const s = seconds % 60;
-                                                                    return s === 0 ? `${m} '` : `${m}:${s.toString().padStart(2, '0')}`;
-                                                                })()}
-                                                            </span >
-                                                        )}
-                                                        {
-                                                            (protocol === 'E' || ex.config?.isEMOM) && (
-                                                                <span className="inline-flex items-center px-2 py-1 bg-orange-500/10 text-orange-500 rounded text-[10px] font-black uppercase tracking-wider border border-orange-500/20">
-                                                                    EMOM {ex.config?.emomTime || ex.config?.sets?.length || module.emomParams?.durationMinutes || 4}'
-                                                                </span>
-                                                            )
-                                                        }
-
-                                                        {/* Notes indicator */}
-                                                        {
-                                                            (() => {
-                                                                const notes = ex.notes || ex.config?.notes;
-                                                                if (!notes) return null;
                                                                 return (
-                                                                    <span className="inline-flex items-center px-2 py-1 bg-amber-500/10 text-amber-400 rounded text-[10px] font-black border border-amber-500/20" title={notes}>
-                                                                        📝 Notas
+                                                                    <span className="inline-flex items-center px-2 py-1 bg-cyan-500/10 text-cyan-400 rounded text-[10px] font-black border border-cyan-500/20">
+                                                                        {numSets}x{repsDisplay} <span className="text-[8px] uppercase opacity-70 ml-0.5">{volUnit}</span>
                                                                     </span>
                                                                 );
-                                                            })()
-                                                        }
-                                                    </div >
-                                                </div >
-                                            </div >
-                                        ))}
-                                    </>
-                                );
+                                                            })()}
+
+                                                            {/* Reps/Time/Dist for other protocols */}
+                                                            {((ex.targetReps > 0 || ex.targetTime > 0 || ex.manifestation) && protocol !== 'T' && protocol !== 'LIBRE') && (
+                                                                <span className="inline-flex items-center px-2 py-1 bg-slate-700/50 text-slate-200 rounded text-[10px] font-black uppercase tracking-wider border border-slate-600/50">
+                                                                    {ex.targetTime ? `${ex.targetTime} seg` : ex.targetReps ? `${ex.targetReps} reps` : ex.manifestation}
+                                                                </span>
+                                                            )}
+
+                                                            {/* Weight if prescribed */}
+                                                            {(ex.config?.sets?.[0]?.weight || ex.weight) && (
+                                                                <span className="inline-flex items-center px-2 py-1 bg-blue-500/10 text-blue-400 rounded text-[10px] font-black border border-blue-500/20">
+                                                                    {ex.config?.sets?.[0]?.weight || ex.weight}{(ex.quality === 'E' || ex.quality === 'Cardio') ? 'W' : 'kg'}
+                                                                </span>
+                                                            )}
+
+                                                            {/* Intensity (Universal) */}
+                                                            {(() => {
+                                                                const val = ex.config?.sets?.[0]?.rir || ex.config?.sets?.[0]?.weight || ex.intensity;
+                                                                const intType = ex.config?.intType || 'RIR';
+                                                                if (!val && !ex.weight) return null;
+
+                                                                let display = '';
+                                                                if (val) {
+                                                                    if (intType === 'RIR') display = `RIR ${val}`;
+                                                                    else if (intType === 'PESO') display = `${val}kg`;
+                                                                    else if (intType === '%') display = `${val}%`;
+                                                                    else if (intType === 'RPE') display = `RPE ${val}`;
+                                                                    else if (intType === 'WATTS') display = `${val}W`;
+                                                                    else if (intType === 'BPM') display = `${val} bpm`;
+                                                                    else if (intType === 'RITMO') display = `${val}`;
+                                                                    else if (intType === 'NIVEL') display = `Nvl ${val}`;
+                                                                    else display = val;
+                                                                } else if (ex.weight) {
+                                                                    display = `${ex.weight}kg`; // Legacy fallback
+                                                                }
+
+                                                                return (
+                                                                    <span className="inline-flex items-center px-2 py-1 bg-orange-500/10 text-orange-400 rounded text-[10px] font-black border border-orange-500/20">
+                                                                        {display}
+                                                                    </span>
+                                                                );
+                                                            })()}
+
+                                                            {/* Protocol Specific Timer/Cap */}
+                                                            {protocol === 'T' && (
+                                                                <span className="inline-flex items-center px-2 py-1 bg-emerald-500/10 text-emerald-500 rounded text-[10px] font-black uppercase tracking-wider border border-emerald-500/20">
+                                                                    <Clock size={12} className="mr-1" />
+                                                                    {(() => {
+                                                                        const seconds = module.targeting?.[0]?.timeCap || 240;
+                                                                        const m = Math.floor(seconds / 60);
+                                                                        const s = seconds % 60;
+                                                                        return s === 0 ? `${m} '` : `${m}:${s.toString().padStart(2, '0')}`;
+                                                                    })()}
+                                                                </span>
+                                                            )}
+                                                            {
+                                                                (protocol === 'E' || ex.config?.isEMOM) && (
+                                                                    <span className="inline-flex items-center px-2 py-1 bg-orange-500/10 text-orange-500 rounded text-[10px] font-black uppercase tracking-wider border border-orange-500/20">
+                                                                        EMOM {ex.config?.emomTime || ex.config?.sets?.length || module.emomParams?.durationMinutes || 4}'
+                                                                    </span>
+                                                                )
+                                                            }
+
+                                                            {/* Notes indicator */}
+                                                            {
+                                                                (() => {
+                                                                    const notes = ex.notes || ex.config?.notes;
+                                                                    if (!notes) return null;
+                                                                    return (
+                                                                        <span className="inline-flex items-center px-2 py-1 bg-amber-500/10 text-amber-400 rounded text-[10px] font-black border border-amber-500/20" title={notes}>
+                                                                            📝 Notas
+                                                                        </span>
+                                                                    );
+                                                                })()
+                                                            }
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    );
+                                });
                             })()}
-                        </div >
+                        </div>
                     </motion.div >
                 )}
             </AnimatePresence >
@@ -1550,31 +1652,39 @@ const WarmupBlock = ({ step, plan, onComplete, isProcessing }) => {
                 }
             </div>
             <div className="space-y-4 flex-1">
-                {[
+                {(module.exercises?.[0]?.config?.sets || [
                     { reps: '12', pct: '40%' },
                     { reps: '6', pct: '60%' },
                     { reps: '3', pct: '80%' }
-                ].map((set, idx) => (
-                    <div key={idx} className="bg-slate-800/50 backdrop-blur-sm border border-slate-700/50 p-4 rounded-2xl flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-xl bg-orange-500/10 flex items-center justify-center text-orange-500 font-black text-lg border border-orange-500/20">
-                            {idx + 1}
+                ]).map((set, idx) => {
+                    // Determine if using Time or Reps - Universal Check
+                    const isTime = set.time || set.metric === 'time' || module.exercises?.[0]?.config?.volType === 'TIME' || module.exercises?.[0]?.targetTime > 0;
+                    const val = isTime ? (set.time || set.reps) : (set.reps);
+                    const label = isTime ? 'seg' : 'reps';
+                    const intensityLabel = set.pct || (set.weight ? `${set.weight}kg` : set.rpe ? `RPE ${set.rpe}` : 'Aprox');
+
+                    return (
+                        <div key={idx} className="bg-slate-800/50 backdrop-blur-sm border border-slate-700/50 p-4 rounded-2xl flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-xl bg-orange-500/10 flex items-center justify-center text-orange-500 font-black text-lg border border-orange-500/20">
+                                {idx + 1}
+                            </div>
+                            <div className="flex-1">
+                                <div className="text-white font-bold text-lg">{val} {label}</div>
+                                <div className="text-xs font-bold text-slate-500 uppercase tracking-wide">Intensidad {intensityLabel}</div>
+                            </div>
+                            <div className="w-28 relative">
+                                <input
+                                    type="number"
+                                    placeholder="0"
+                                    value={weights[idx]}
+                                    onChange={(e) => handleWeightChange(idx, e.target.value)}
+                                    className="w-full bg-slate-900 border-2 border-slate-700 rounded-xl py-3 px-2 text-right text-white font-mono font-bold text-lg outline-none focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10 transition-all placeholder:text-slate-700"
+                                />
+                                <span className="absolute right-10 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-600 pointer-events-none">kg</span>
+                            </div>
                         </div>
-                        <div className="flex-1">
-                            <div className="text-white font-bold text-lg">{set.reps} reps</div>
-                            <div className="text-xs font-bold text-slate-500 uppercase tracking-wide">Intensidad {set.pct}</div>
-                        </div>
-                        <div className="w-28 relative">
-                            <input
-                                type="number"
-                                placeholder="0"
-                                value={weights[idx]}
-                                onChange={(e) => handleWeightChange(idx, e.target.value)}
-                                className="w-full bg-slate-900 border-2 border-slate-700 rounded-xl py-3 px-2 text-right text-white font-mono font-bold text-lg outline-none focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10 transition-all placeholder:text-slate-700"
-                            />
-                            <span className="absolute right-10 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-600 pointer-events-none">kg</span>
-                        </div>
-                    </div>
-                ))}
+                    );
+                })}
             </div>
             <button
                 onClick={onComplete}
@@ -1601,6 +1711,34 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
     const [elapsed, setElapsed] = useState(0);
     const [isActive, setIsActive] = useState(false); // Start PAUSED
     const [currentMinute, setCurrentMinute] = useState(1); // For EMOM
+
+    // Manual Work Timer State (Ephemeral) - Moved from SessionRunner
+    const [workTimer, setWorkTimer] = useState({ active: false, timeLeft: 0, duration: 0, exIdx: null });
+
+    // Work Timer Effect
+    useEffect(() => {
+        let interval;
+        if (workTimer.active && workTimer.timeLeft > 0) {
+            interval = setInterval(() => {
+                setWorkTimer(prev => {
+                    if (prev.timeLeft <= 1) {
+                        playCountdownShort(); // Beep when done
+                        return { ...prev, active: false, timeLeft: 0 };
+                    }
+                    return { ...prev, timeLeft: prev.timeLeft - 1 };
+                });
+            }, 1000);
+        }
+        return () => clearInterval(interval);
+    }, [workTimer.active, workTimer.timeLeft]);
+
+    const toggleWorkTimer = (exIdx, duration) => {
+        if (workTimer.active && workTimer.exIdx === exIdx) {
+            setWorkTimer({ active: false, timeLeft: 0, duration: 0, exIdx: null });
+        } else {
+            setWorkTimer({ active: true, timeLeft: duration, duration: duration, exIdx });
+        }
+    };
 
     // ROBUST TIMER LOGIC (Work & Rest)
     const lastMonitorTick = useRef(Date.now());
@@ -1642,6 +1780,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
     // Historical Performance State
     const [previousLog, setPreviousLog] = useState(null);
     const [loadingHistory, setLoadingHistory] = useState(true);
+    const [globalExerciseWeights, setGlobalExerciseWeights] = useState({}); // { exerciseId: { weight, match, contextLabel } }
 
     // Fetch previous performance when component mounts
     useEffect(() => {
@@ -1652,6 +1791,32 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                 // Pass stableId to broad logic across sessions
                 const lastLog = await TrainingDB.logs.getLastLog(currentUser.uid, module.id, module.stableId);
                 setPreviousLog(lastLog);
+
+                // 🆕 Fetch global exercise history with context awareness
+                const currentContext = {
+                    protocol: module.protocol,
+                    blockType: module.blockType || module.manifestation?.split('-')[0] // Extract BASE/BOOST from manifestation
+                };
+
+                const globalWeights = {};
+                for (const ex of exercises) {
+                    const exId = ex.id || ex.exerciseId;
+                    if (exId) {
+                        try {
+                            const weightData = await TrainingDB.exerciseHistory.getLastWeightByContext(
+                                currentUser.uid,
+                                exId,
+                                currentContext
+                            );
+                            if (weightData) {
+                                globalWeights[exId] = weightData; // { weight, match, contextLabel, context }
+                            }
+                        } catch (e) {
+                            // Ignore individual fetch errors
+                        }
+                    }
+                }
+                setGlobalExerciseWeights(globalWeights);
             } catch (error) {
                 console.error('Error fetching history:', error);
             } finally {
@@ -1660,7 +1825,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
         };
 
         fetchHistory();
-    }, [currentUser, module.id]);
+    }, [currentUser, module.id, module.protocol, module.blockType, exercises]);
 
     // Results Logging
     const [repsDone, setRepsDone] = useState({});
@@ -1726,11 +1891,23 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
             }
             // PRIORITY 2: Use plan (if no history exists)
             else if (plan?.[module.offset + idx]) {
+                const w = parseFloat(plan[module.offset + idx]);
+                // Sanity check: if it looks like an RPE value (<=10) and config says RIR/RPE, ignore it as weight?
+                // Actually, just rely on isLoadable later to hide it, but cleaner to not init.
+                // However, we don't have isLoadable here easily without calling getLibreConfig.
+                // We'll trust the plan.
                 initWeights[idx] = plan[module.offset + idx];
             }
             // PRIORITY 3: Empty
             else {
-                initWeights[idx] = '';
+                // FALLBACK: Don't pick up RPE/RIR intensities as weight
+                const { isLoadable } = getLibreConfig(ex);
+                // If not loadable, force empty string to avoid showing "28.0" or similar phantom values
+                if (!isLoadable) {
+                    initWeights[idx] = '';
+                } else {
+                    initWeights[idx] = '';
+                }
             }
         });
         setRepsDone(initReps);
@@ -1859,48 +2036,139 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
     const getLibreConfig = (ex) => {
         const sets = ex.config?.sets || [];
         const firstSet = sets[0] || {};
+        const config = ex.config || {};
 
         // Number of sets is the length of the sets array
         const targetSets = sets.length || ex.sets || ex.targetSets || 3;
 
+        // Detect Volume Type
+        const vType = config.volType || 'REPS';
+        let volUnit = 'reps';
+        let isTime = false;
+        let isDist = false;
+
+        if (vType === 'TIME' || ex.targetTime > 0 || (sets[0]?.time > 0)) {
+            volUnit = 'seg';
+            isTime = true;
+        } else if (vType === 'METROS' || vType === 'DISTANCE' || ex.targetDistance > 0) {
+            volUnit = 'm';
+            isDist = true;
+        } else if (vType === 'KM') {
+            volUnit = 'km';
+            isDist = true;
+        } else if (vType === 'KCAL') {
+            volUnit = 'kcal';
+        }
+
         // Get reps for EACH set (for variable rep schemes like 5-4-3-2-1)
         const repsPerSet = sets.length > 0
-            ? sets.map(s => s.reps || ex.targetReps || ex.reps || 8)
-            : Array(targetSets).fill(ex.targetReps || ex.reps || 8);
+            ? sets.map(s => {
+                // If using new config style, 'reps' field holds the scalar value (seconds, meters, etc)
+                if (config.volType && s.reps) return s.reps;
+
+                // Fallbacks for legacy/mixed data
+                if (isTime) return s.time || (s.metric === 'time' ? s.value : null) || ex.targetTime || 0;
+                if (isDist) return s.distance || ex.targetDistance || 0;
+                return s.reps || ex.targetReps || ex.reps || 8;
+            })
+            : Array(targetSets).fill(
+                isTime ? (ex.targetTime || 0) :
+                    isDist ? (ex.targetDistance || 0) :
+                        (ex.targetReps || ex.reps || 8)
+            );
 
         // Fallback single value for display purposes
-        const targetReps = firstSet.reps || ex.targetReps || ex.reps || 8;
+        const targetReps = repsPerSet[0] || 8;
 
         // Rest from first set, or module default
         const restSeconds = firstSet.rest || ex.restSeconds || module.targeting?.[0]?.restSeconds || 90;
 
-        // Intensity can be RIR, RPE, or percentage
-        const intensity = firstSet.rir != null
-            ? `RIR ${firstSet.rir}`
-            : (firstSet.rpe != null
-                ? `RPE ${firstSet.rpe}`
-                : (ex.intensity || ex.loadPercent || null));
+        // Intensity Logic - expanded map
+        let intensity = null;
 
-        // Weight from first set
-        const prescribedWeight = firstSet.weight || null;
+        // isLoadable: Does the exercise require a WEIGHT input?
+        // Criteria: 1) Exercise is marked as loadable AND 2) NOT a cardio exercise (quality = 'E')
+        const isCardio = ex.quality === 'E' || ex.quality === 'Resistencia' || ex.quality === 'Cardio';
+        const isLoadable = Boolean((ex.loadable || ex.isLoadable || config.isLoadable) && !isCardio);
+
+        // Determine intensity type for DISPLAY purposes (the badge/target, not the input)
+        const iType = config.intType || (isLoadable ? 'PESO' : 'RIR');
+        // Admin stores intensity value in 'rir' field often, or 'weight'
+        const iVal = firstSet.rir || firstSet.weight || firstSet.intensity || ex.intensity;
+
+        // Set unit label based on context:
+        // - For LOADABLE exercises: always 'kg' (user inputs weight in kg)
+        // - For NON-LOADABLE/CARDIO: use the intensity type for display purposes only
+        let intUnitLabel = 'kg'; // Default
+        if (isLoadable) {
+            intUnitLabel = 'kg'; // Weight exercises always use kg for input
+        } else {
+            // Non-loadable exercises: show the intensity type unit (for display only, not input)
+            if (iType === 'WATTS') { intUnitLabel = 'W'; }
+            else if (iType === 'BPM') { intUnitLabel = 'bpm'; }
+            else if (iType === 'RITMO') { intUnitLabel = '/km'; }
+            else if (iType === 'NIVEL') { intUnitLabel = 'nvl'; }
+            else if (iType === '%') { intUnitLabel = '%'; }
+            else if (iType === 'RPE') { intUnitLabel = 'RPE'; }
+            else if (iType === 'RIR') { intUnitLabel = 'RIR'; }
+            else { intUnitLabel = 'kg'; } // Fallback
+        }
+
+        // Format display string
+        if (iVal) {
+            if (iType === 'RIR') intensity = `RIR ${iVal}`;
+            else if (iType === 'PESO') intensity = `${iVal}kg`;
+            else if (iType === '%') intensity = `${iVal}%`;
+            else if (iType === 'RPE') intensity = `RPE ${iVal}`;
+            else if (iType === 'WATTS') intensity = `${iVal}W`;
+            else if (iType === 'BPM') intensity = `${iVal} bpm`;
+            else if (iType === 'RITMO') intensity = `${iVal}`;
+            else if (iType === 'NIVEL') intensity = `Nvl ${iVal}`;
+            else intensity = iVal;
+        } else if (ex.loadPercent) {
+            intensity = `${ex.loadPercent}%`;
+        }
 
         // Check if reps vary across sets
         const isVariableReps = new Set(repsPerSet).size > 1;
 
-        return { targetSets, targetReps, repsPerSet, restSeconds, intensity, prescribedWeight, isVariableReps };
+        return { targetSets, targetReps, repsPerSet, restSeconds, intensity, isVariableReps, isTime, isDist, volUnit, intUnitLabel, isLoadable };
     };
 
     const getPreviousWeight = (idx) => {
-        // Strictly Historical: Look at previousLog (which is fetched in this WorkBlock)
-        if (previousLog?.results?.actualWeights) {
-            return previousLog.results.actualWeights[idx] || '--';
+        const currentEx = exercises[idx];
+        const exId = currentEx?.id || currentEx?.exerciseId;
+
+        // 🆕 Priority 1: Check global exercise history (cross-session with context)
+        if (exId && globalExerciseWeights[exId]) {
+            return globalExerciseWeights[exId]; // { weight, match, contextLabel, context }
         }
 
-        if (previousLog?.results?.weights) {
-            return previousLog.results.weights[idx] || '--';
+        // Priority 2: Check module-specific previousLog (legacy fallback)
+        if (!previousLog) return null;
+
+        // Robust matching: Try to find by ID or exact Name match in previous exercises
+        let prevIdx = -1;
+        if (previousLog.exercises) {
+            prevIdx = previousLog.exercises.findIndex(pe =>
+                (pe.id && currentEx.id && pe.id === currentEx.id) ||
+                (pe.name && currentEx.name && pe.name === currentEx.name)
+            );
         }
 
-        return '--';
+        // If found, return that specific weight
+        if (prevIdx !== -1) {
+            const weight = previousLog.results?.actualWeights?.[prevIdx] || previousLog.results?.weights?.[prevIdx];
+            if (weight) return { weight: parseFloat(weight), match: 'legacy', contextLabel: 'Módulo' };
+        }
+
+        // Fallback to index ONLY if Protocol indicates rigid structure (not LIBRE) AND no metadata
+        if (prevIdx === -1 && protocol !== 'LIBRE') {
+            const weight = previousLog.results?.actualWeights?.[idx] || previousLog.results?.weights?.[idx];
+            if (weight) return { weight: parseFloat(weight), match: 'legacy', contextLabel: 'Módulo' };
+        }
+
+        return null;
     };
 
     // Initialize LIBRE sets
@@ -2487,13 +2755,15 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                     </div>
                 </div>
 
-                {exercises.some(ex => ex.loadable) && (
+                {exercises.some(ex => ex.loadable || ex.quality === 'E' || ex.quality === 'Resistencia' || ex.quality === 'Cardio') && (
                     <div className={`transition-all duration-500 ease-in-out overflow-hidden ${(isActive || protocol === 'LIBRE') ? 'max-h-0 opacity-0 mb-0' : 'max-h-96 opacity-100 mb-2'}`}>
                         <div className="bg-slate-800/40 backdrop-blur-sm border border-slate-700/30 rounded-2xl p-3">
-                            <h3 className="text-[9px] font-black uppercase tracking-wider text-slate-500 mb-2 text-center">Peso Utilizado</h3>
+                            <h3 className="text-[9px] font-black uppercase tracking-wider text-slate-500 mb-2 text-center">
+                                {exercises.some(ex => ex.quality === 'E' || ex.quality === 'Cardio') ? 'Carga / Intensidad' : 'Peso Utilizado'}
+                            </h3>
                             <div className={`grid gap-2 ${exercises.filter(ex => ex.loadable).length > 1 ? 'grid-cols-2' : 'grid-cols-1 max-w-xs mx-auto'}`}>
                                 {exercises.map((ex, idx) => {
-                                    if (!ex.loadable) return null;
+                                    if (!ex.loadable && ex.quality !== 'E' && ex.quality !== 'Resistencia' && ex.quality !== 'Cardio') return null;
 
                                     // Get exercise-specific recommendation
                                     const recommendation = previousLog?.analysis?.find(
@@ -2501,8 +2771,8 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                             (a.exerciseId === ex.id || a.exerciseIndex === idx)
                                     );
 
-                                    // Get previous stats
-                                    const previousWeight = previousLog?.results?.actualWeights?.[idx];
+                                    // Get previous stats using context-aware lookup
+                                    const prevData = getPreviousWeight(idx);
                                     const previousReps = previousLog?.results?.actualReps?.[idx];
 
                                     // Only show header if multiple loaded exercises
@@ -2526,15 +2796,24 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                             {/* Weights Row (Previous + Current) */}
                                             <div className={`relative z-10 ${isSingleExercise ? 'flex items-center gap-3' : 'flex flex-col gap-2'}`}>
                                                 {/* Previous Weight */}
-                                                <div className={`bg-slate-800/80 rounded-lg p-2 border border-slate-600/50 flex items-center justify-between relative overflow-hidden ${isSingleExercise ? 'min-w-[80px]' : ''}`}>
-                                                    <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none">ANTERIOR</span>
-                                                    {previousWeight ? (
-                                                        <div className="flex items-baseline gap-1 ml-2">
-                                                            <span className={`font-black text-white leading-none tracking-tight ${isSingleExercise ? 'text-xl' : 'text-lg'}`}>{previousWeight}</span>
-                                                            <span className="text-[9px] font-bold text-slate-500">kg</span>
+                                                <div className={`rounded-lg p-2 border flex flex-col items-center justify-center relative overflow-hidden ${isSingleExercise ? 'min-w-[70px]' : ''} ${prevData?.match === 'any' ? 'bg-yellow-900/30 border-yellow-700/50' : 'bg-slate-800/80 border-slate-600/50'}`}>
+                                                    <span className="text-[7px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1">
+                                                        Anterior {prevData?.contextLabel && `(${prevData.contextLabel})`}
+                                                    </span>
+                                                    {prevData ? (
+                                                        <div className="flex flex-col items-center">
+                                                            <div className="flex items-baseline gap-0.5">
+                                                                <span className={`font-black leading-none tracking-tight ${isSingleExercise ? 'text-lg' : 'text-base'} ${prevData.match === 'any' ? 'text-yellow-300' : 'text-white'}`}>{prevData.weight}</span>
+                                                                <span className="text-[8px] font-bold text-slate-500">
+                                                                    {(ex.quality === 'E' || ex.quality === 'Cardio') ? (energyMetrics[idx]?.intensityUnit || 'W') : 'kg'}
+                                                                </span>
+                                                            </div>
+                                                            {prevData.match === 'any' && (
+                                                                <span className="text-[6px] text-yellow-500 mt-0.5">⚠️ Otro contexto</span>
+                                                            )}
                                                         </div>
                                                     ) : (
-                                                        <span className="text-xs font-bold text-slate-600 ml-2">--</span>
+                                                        <span className="text-sm font-bold text-slate-600">--</span>
                                                     )}
                                                 </div>
 
@@ -2597,7 +2876,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
 
                                                     {recommendation.adjustment !== 0 ? (
                                                         <div className="flex items-baseline gap-1">
-                                                            <span className={`text-lg font-black leading-none tracking-tight 
+                                                            <span className={`text-lg font-black leading-none tracking-tight
                                                                     ${recommendation.adjustment > 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
                                                                 {recommendation.adjustment > 0 ? '+' : ''}{recommendation.adjustment}
                                                             </span>
@@ -2620,7 +2899,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                 {/* Main Timer Display (Protocol Specific) */}
                 {
                     (protocol === 'T' || protocol === 'E' || protocol === 'R') && (
-                        <div className={`mb-2 bg-slate-800/30 rounded-3xl border border-slate-700/50 backdrop-blur relative overflow-hidden transition-all duration-500 
+                        <div className={`mb-2 bg-slate-800/30 rounded-3xl border border-slate-700/50 backdrop-blur relative overflow-hidden transition-all duration-500
                     ${isActive
                                 ? 'mt-0 p-3'
                                 : (protocol === 'E' || protocol === 'LIBRE' ? 'px-4 py-2 mt-2' : 'p-4 mt-4')
@@ -2629,7 +2908,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
 
                             {getTimerDisplay()}
 
-                            {/* Block Instruction / Specific Notes */}
+                            {/* Block Instruction */}
                             {module.targeting?.[0]?.instruction && module.targeting[0].instruction !== 'Completar Tarea' && (
                                 <div className="mt-3 px-4 py-2 bg-emerald-500/5 border-l-2 border-emerald-500/30 rounded-r-lg">
                                     <p className="text-[11px] font-medium text-slate-400 italic leading-relaxed">
@@ -2637,6 +2916,18 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                     </p>
                                 </div>
                             )}
+
+                            {/* Exercise Specific Notes */}
+                            {exercises.filter(ex => ex.notes).map((ex, exIdx) => (
+                                <div key={exIdx} className="mt-2 px-4 py-2 bg-amber-500/5 border-l-2 border-amber-500/30 rounded-r-lg">
+                                    <p className="text-[9px] font-black text-amber-500 uppercase tracking-widest mb-0.5">
+                                        {ex.nameEs || ex.name}
+                                    </p>
+                                    <p className="text-[11px] font-medium text-slate-400 italic leading-relaxed">
+                                        "{ex.notes}"
+                                    </p>
+                                </div>
+                            ))}
 
                             <div className="flex gap-3 mt-4">
                                 <button
@@ -2812,71 +3103,74 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                 if (!isGroup) {
                                     const ex = group[0];
                                     const idx = ex.originalIndex;
-                                    const { targetSets, targetReps, repsPerSet, restSeconds, intensity, prescribedWeight, isVariableReps } = getLibreConfig(ex);
+                                    const { targetSets, targetReps, repsPerSet, restSeconds, intensity, prescribedWeight, isVariableReps, volUnit, intUnitLabel, isLoadable } = getLibreConfig(ex);
+                                    const volType = ex.config?.volType || 'REPS';
                                     const setsCompleted = libreSetsDone[idx] || 0;
                                     const isExerciseComplete = setsCompleted >= targetSets;
-                                    const weight = weightsUsed[idx] || prescribedWeight;
+                                    const weight = currentSetWeight[idx] || weightsUsed[idx] || (ex.config?.sets?.[0]?.weight) || 0;
                                     const isSingle = exercises.length === 1;
 
                                     return (
-                                        <div
-                                            key={`single-${idx}`}
-                                            className={`bg-slate-800/50 rounded-2xl border transition-all overflow-hidden ${isExerciseComplete ? 'border-emerald-500/50 bg-emerald-900/20' : 'border-slate-700/50'} ${isSingle ? 'flex-1 flex flex-col mb-4' : ''}`}
-                                        >
-                                            {/* Exercise Visualisation */}
-                                            <div
-                                                className="w-full aspect-[16/10] bg-slate-900 relative overflow-hidden group/media cursor-pointer"
-                                                onClick={() => onSelectExercise(ex)}
-                                            >
-                                                <ExerciseMedia exercise={ex} staticMode={true} />
-                                                <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 via-transparent to-transparent opacity-60" />
-                                                <div className="absolute inset-0 bg-black/20 opacity-0 group-hover/media:opacity-100 transition-opacity flex items-center justify-center">
-                                                    <div className="bg-white/10 backdrop-blur-md rounded-full p-3 border border-white/20">
-                                                        <Info className="text-white" size={24} />
-                                                    </div>
+                                        <div key={`group-${gIdx}`} className="space-y-4">
+                                            {/* Media & Info Card */}
+                                            <div className="bg-slate-800/50 rounded-3xl border border-slate-700/50 overflow-hidden">
+                                                <div className="relative aspect-video bg-black/40">
+                                                    <ExerciseMedia exercise={ex} />
+                                                    <div className="absolute inset-0 bg-gradient-to-t from-slate-900/90 to-transparent pointer-events-none" />
+
                                                 </div>
-                                            </div>
 
-                                            {/* Exercise Header */}
-                                            <div
-                                                className={`p-3 md:p-4 cursor-pointer hover:bg-slate-700/30 transition-colors group/header`}
-                                                onClick={() => onSelectExercise(ex)}
-                                            >
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex items-center justify-between gap-2 mb-1">
-                                                        <div className={`font-black text-white truncate ${isSingle ? 'text-xl mb-2' : ''}`}>{ex.nameEs || ex.name}</div>
-                                                        <Info size={16} className="text-slate-500 group-hover/header:text-emerald-400 transition-colors shrink-0" />
-                                                    </div>
-
-                                                    <div className={`flex flex-wrap gap-2 ${isSingle ? 'gap-3' : ''}`}>
-                                                        <div className={`bg-emerald-500/15 border border-emerald-500/30 rounded-lg flex items-center gap-1.5 ${isSingle ? 'px-3 py-1.5' : 'px-2 py-1'}`}>
-                                                            <span className={`text-emerald-400 font-black ${isSingle ? 'text-lg' : 'text-sm'}`}>
-                                                                {isVariableReps ? repsPerSet.join('-') : targetReps}
-                                                            </span>
-                                                            <span className={`text-emerald-400/70 font-medium ${isSingle ? 'text-sm' : 'text-[10px]'}`}>
-                                                                {(ex.quality === 'E' || ex.quality === 'Resistencia' || ex.quality === 'Cardio') ? (energyMetrics[idx]?.volumeUnit || 'kcal').toUpperCase() : (ex.config?.volType === 'TIME' ? 'seg' : 'reps')}                                                      </span>
+                                                {/* Exercise Header */}
+                                                <div
+                                                    className={`p-3 md:p-4 cursor-pointer hover:bg-slate-700/30 transition-colors group/header`}
+                                                    onClick={() => onSelectExercise(ex)}
+                                                >
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center justify-between gap-2 mb-1">
+                                                            <div className={`font-black text-white truncate ${isSingle ? 'text-xl mb-2' : ''}`}>{ex.nameEs || ex.name}</div>
+                                                            <Info size={16} className="text-slate-500 group-hover/header:text-emerald-400 transition-colors shrink-0" />
                                                         </div>
-                                                        {intensity && (
-                                                            <div className={`bg-orange-500/15 border border-orange-500/30 rounded-lg flex items-center gap-1.5 ${isSingle ? 'px-3 py-1.5' : 'px-2 py-1'}`}>
-                                                                <span className={`text-orange-400 font-black ${isSingle ? 'text-lg' : 'text-sm'}`}>{intensity}</span>
-                                                            </div>
-                                                        )}
-                                                        {weight && (
-                                                            <div className={`bg-blue-500/15 border border-blue-500/30 rounded-lg flex items-center gap-1.5 ${isSingle ? 'px-3 py-1.5' : 'px-2 py-1'}`}>
-                                                                <span className={`text-blue-400 font-black ${isSingle ? 'text-lg' : 'text-sm'}`}>{weight}</span>
-                                                                <span className={`text-blue-400/70 font-medium ${isSingle ? 'text-sm' : 'text-[10px]'}`}>
-                                                                    {ex.quality === 'E' ? (energyMetrics[idx]?.intensityUnit || 'W').toUpperCase() : 'KG'}
+
+                                                        <div className={`flex flex-wrap gap-2 ${isSingle ? 'gap-3' : ''}`}>
+                                                            <div className={`bg-emerald-500/15 border border-emerald-500/30 rounded-lg flex items-center gap-1.5 ${isSingle ? 'px-3 py-1.5' : 'px-2 py-1'}`}>
+                                                                <span className={`text-emerald-400 font-black ${isSingle ? 'text-lg' : 'text-sm'}`}>
+                                                                    {isVariableReps ? repsPerSet.join('-') : targetReps}
+                                                                </span>
+                                                                <span className={`text-emerald-400/70 font-medium ${isSingle ? 'text-sm' : 'text-[10px]'}`}>
+                                                                    {(() => {
+                                                                        const isTime = ex.config?.volType === 'TIME' || ex.targetTime > 0;
+                                                                        const isDist = ex.config?.volType === 'DISTANCE' || ex.targetDistance > 0;
+                                                                        const isCardio = ex.quality === 'E' || ex.quality === 'Resistencia' || ex.quality === 'Cardio';
+
+                                                                        if (isCardio) return (energyMetrics[idx]?.volumeUnit || 'kcal').toUpperCase();
+                                                                        if (isTime) return 'SEG';
+                                                                        if (isDist) return 'M';
+                                                                        return 'REPS';
+                                                                    })()}
                                                                 </span>
                                                             </div>
-                                                        )}
-                                                        {ex.notes && (
-                                                            <div className={`bg-amber-500/15 border border-amber-500/30 rounded-lg flex items-center gap-1.5 ${isSingle ? 'px-3 py-1.5' : 'px-2 py-1'}`}>
-                                                                <span className={`text-amber-400 font-black ${isSingle ? 'text-xs' : 'text-[10px]'} uppercase tracking-wider`}>📝 Notas</span>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    <div className={`text-slate-500 ${isSingle ? 'text-xs mt-2' : 'text-[10px] mt-1'}`}>
-                                                        ⏱ {restSeconds}s descanso
+                                                            {!!intensity && (
+                                                                <div className={`bg-orange-500/15 border border-orange-500/30 rounded-lg flex items-center gap-1.5 ${isSingle ? 'px-3 py-1.5' : 'px-2 py-1'}`}>
+                                                                    <span className={`text-orange-400 font-black ${isSingle ? 'text-lg' : 'text-sm'}`}>{intensity}</span>
+                                                                </div>
+                                                            )}
+                                                            {!!weight && (
+                                                                <div className={`bg-blue-500/15 border border-blue-500/30 rounded-lg flex items-center gap-1.5 ${isSingle ? 'px-3 py-1.5' : 'px-2 py-1'}`}>
+                                                                    <span className={`text-blue-400 font-black ${isSingle ? 'text-lg' : 'text-sm'}`}>{weight}</span>
+                                                                    <span className={`text-blue-400/70 font-medium ${isSingle ? 'text-sm' : 'text-[10px]'}`}>
+                                                                        {ex.quality === 'E' ? (energyMetrics[idx]?.intensityUnit || 'W').toUpperCase() : 'KG'}
+                                                                    </span>
+                                                                </div>
+                                                            )}
+                                                            {ex.notes && (
+                                                                <div className={`bg-amber-500/15 border border-amber-500/30 rounded-lg flex items-center gap-1.5 ${isSingle ? 'px-3 py-1.5' : 'px-2 py-1'}`}>
+                                                                    <span className={`text-amber-400 font-black ${isSingle ? 'text-xs' : 'text-[10px]'} uppercase tracking-wider`}>📝 Notas</span>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        <div className={`text-slate-500 ${isSingle ? 'text-xs mt-2' : 'text-[10px] mt-1'}`}>
+                                                            ⏱ {restSeconds}s descanso
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
@@ -2917,7 +3211,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                                                         ) : (
                                                                             <>
                                                                                 <span className="font-black text-base leading-none">{repsPerSet[setIdx] || targetReps}</span>
-                                                                                <span className="text-[8px] text-slate-500 uppercase">reps</span>
+                                                                                <span className="text-[8px] text-slate-500 uppercase">{volUnit}</span>
                                                                             </>
                                                                         )}
                                                                     </button>
@@ -2929,72 +3223,82 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                                 {!isExerciseComplete ? (
                                                     <div className="bg-slate-900/60 rounded-2xl p-3 md:p-4 border border-slate-700/50">
                                                         {/* Previous session weight indicator */}
-                                                        <div className="flex justify-center mb-4">
-                                                            <div className="bg-slate-800/80 rounded-xl px-4 py-2 border border-slate-700 flex items-center gap-3">
-                                                                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Peso Anterior</span>
-                                                                <span className="text-sm font-black text-slate-400">{getPreviousWeight(idx)}{getPreviousWeight(idx) !== '--' ? 'kg' : ''}</span>
-                                                            </div>
-                                                        </div>
+                                                        {isLoadable && (() => {
+                                                            const prevData = getPreviousWeight(idx);
+                                                            if (!prevData) return null;
+                                                            return (
+                                                                <div className="flex justify-center mb-4">
+                                                                    <div className={`rounded-xl px-4 py-2 border flex flex-col items-center ${prevData.match === 'any' ? 'bg-yellow-900/30 border-yellow-700/50' : 'bg-slate-800/80 border-slate-700'}`}>
+                                                                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                                                                            Anterior {prevData.contextLabel && `(${prevData.contextLabel})`}
+                                                                        </span>
+                                                                        <span className="text-sm font-black text-slate-400">{prevData.weight} kg</span>
+                                                                        {prevData.match === 'any' && (
+                                                                            <span className="text-[8px] text-yellow-500 mt-1">⚠️ Otro contexto</span>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })()}
                                                         {/* Weight & Reps Controls - Premium Vertical Stack */}
                                                         <div className="space-y-2 mb-4">
-                                                            {/* Weight Stepper Row */}
-                                                            <div className="bg-slate-900/40 rounded-[1.5rem] p-3 border border-white/5 shadow-inner">
-                                                                <div className="flex items-center justify-between mb-3 px-1">
-                                                                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
-                                                                        {ex.quality === 'E' ? 'Intensidad' : 'Peso Utilizado'}
-                                                                    </span>
-                                                                    <div className="flex items-center gap-2">
-                                                                        {ex.quality === 'E' && (
-                                                                            <select
-                                                                                value={energyMetrics[idx]?.intensityUnit || 'W'}
-                                                                                onChange={(e) => setEnergyMetrics(prev => ({ ...prev, [idx]: { ...prev[idx], intensityUnit: e.target.value } }))}
-                                                                                className="bg-transparent text-slate-500 text-[8px] font-black uppercase outline-none"
-                                                                            >
-                                                                                <option value="W">Watts</option>
-                                                                                <option value="Nivel">Nivel</option>
-                                                                                <option value="Paso">Paso</option>
-                                                                                <option value="RPM">RPM</option>
-                                                                            </select>
-                                                                        )}
-                                                                        <span className="text-[8px] font-bold text-slate-600 bg-slate-800/30 px-2 py-0.5 rounded-full">+1 unit steps</span>
+                                                            {/* Weight Control */}
+                                                            {isLoadable ? (
+                                                                <div className="bg-slate-800/50 rounded-2xl p-4 border border-white/5 flex items-center justify-between">
+                                                                    <div className="flex flex-col">
+                                                                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">INTENSIDAD / PESO</span>
+                                                                        <div className="flex items-center gap-2">
+                                                                            <span className="text-2xl font-black text-white">{weight || 0}</span>
+                                                                            <span className="text-xs font-bold text-slate-500 uppercase">{intUnitLabel}</span>
+                                                                            {(() => {
+                                                                                const prevData = getPreviousWeight(ex.originalIndex);
+                                                                                if (!prevData) return null;
+                                                                                return (
+                                                                                    <span className={`text-[10px] px-1.5 py-0.5 rounded border ${prevData.match === 'any' ? 'bg-yellow-900/50 border-yellow-700 text-yellow-300' : 'bg-slate-700 border-slate-600 text-slate-300'}`}>
+                                                                                        Ant: {prevData.weight}
+                                                                                    </span>
+                                                                                );
+                                                                            })()}
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-1 bg-slate-900/50 rounded-xl p-1 border border-white/5">
+                                                                        <button
+                                                                            onClick={() => setCurrentSetWeight(prev => ({ ...prev, [idx]: Math.max(0, (parseFloat(prev[idx] || 0) - 1)).toString() }))}
+                                                                            className="w-10 h-10 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-400 active:bg-slate-600 transition-colors"
+                                                                        >
+                                                                            <Minus size={18} />
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => setCurrentSetWeight(prev => ({ ...prev, [idx]: (parseFloat(prev[idx] || 0) + 1).toString() }))}
+                                                                            className="w-10 h-10 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-400 active:bg-slate-600 transition-colors"
+                                                                        >
+                                                                            <Plus size={18} />
+                                                                        </button>
                                                                     </div>
                                                                 </div>
-                                                                <div className="flex items-center gap-2">
-                                                                    <button
-                                                                        onClick={() => setCurrentSetWeight(prev => ({ ...prev, [idx]: Math.max(0, (parseFloat(prev[idx] || 0) - 1)).toString() }))}
-                                                                        className="w-11 h-11 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 active:bg-slate-700 transition-all active:scale-95 shadow-md"
-                                                                    >
-                                                                        <Minus size={20} />
-                                                                    </button>
-
-                                                                    <div className="flex-1 bg-slate-900/60 rounded-xl h-11 border border-white/5 flex items-center justify-center gap-1">
-                                                                        <input
-                                                                            type="text"
-                                                                            inputMode="decimal"
-                                                                            value={currentSetWeight[idx] || ''}
-                                                                            onChange={(e) => setCurrentSetWeight(prev => ({ ...prev, [idx]: e.target.value.replace(',', '.') }))}
-                                                                            className="w-16 bg-transparent text-center text-white font-black text-xl outline-none"
-                                                                            placeholder="0.0"
-                                                                        />
-                                                                        <span className="text-[10px] font-black text-slate-500 uppercase">
-                                                                            {ex.quality === 'E' ? (energyMetrics[idx]?.intensityUnit || 'W') : 'kg'}
-                                                                        </span>
-                                                                    </div>
-
-                                                                    <button
-                                                                        onClick={() => setCurrentSetWeight(prev => ({ ...prev, [idx]: (parseFloat(prev[idx] || 0) + 1).toString() }))}
-                                                                        className="w-11 h-11 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 active:bg-slate-700 transition-all active:scale-95 shadow-md"
-                                                                    >
-                                                                        <Plus size={20} />
-                                                                    </button>
-                                                                </div>
-                                                            </div>
-
+                                                            ) : <div />}
                                                             {/* Reps Stepper Row */}
                                                             <div className="bg-slate-900/40 rounded-[1.5rem] p-3 border border-white/5 shadow-inner">
                                                                 <div className="flex items-center justify-between mb-3 px-1">
-                                                                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
-                                                                        {ex.quality === 'E' ? 'Volumen Real' : 'Repeticiones reales'}
+                                                                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                                                                        {(() => {
+                                                                            const volType = ex.config?.volType || 'REPS';
+                                                                            const volUnit =
+                                                                                volType === 'TIME' ? 'seg' :
+                                                                                    volType === 'METROS' ? 'm' :
+                                                                                        volType === 'KM' ? 'km' :
+                                                                                            volType === 'KCAL' ? 'kcal' :
+                                                                                                'reps';
+
+                                                                            return (
+                                                                                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                                                                                    {volType === 'TIME' ? 'Tiempo Real' :
+                                                                                        volType === 'METROS' || volType === 'KM' ? 'Distancia Real' :
+                                                                                            volType === 'KCAL' ? 'Volumen Real' :
+                                                                                                'Repeticiones reales'}
+                                                                                </span>
+                                                                            );
+                                                                        })()}
                                                                     </span>
                                                                     <div className="flex items-center gap-2">
                                                                         {ex.quality === 'E' && (
@@ -3010,9 +3314,36 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                                                                 <option value="seg">Seg</option>
                                                                             </select>
                                                                         )}
-                                                                        <span className="text-[8px] font-black text-emerald-500/60 bg-emerald-500/5 px-2 py-0.5 rounded-full uppercase tracking-tighter">
-                                                                            Objetivo: {repsPerSet[setsCompleted] || targetReps} {ex.quality === 'E' ? (energyMetrics[idx]?.volumeUnit || 'kcal') : 'reps'}
+                                                                        <span className="text-[8px] font-black text-emerald-500/60 bg-emerald-500/5 px-2 py-0.5 rounded-full uppercase tracking-tighter flex items-center gap-1">
+                                                                            Objetivo: {repsPerSet[setsCompleted] || targetReps} {volUnit}
                                                                         </span>
+
+                                                                        {/* Manual Work Timer Button (Only for Time-based exercises) */}
+                                                                        {(volType === 'TIME' || ex.targetTime > 0) && (
+                                                                            <button
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    const timeTarget = parseInt(repsPerSet[setsCompleted] || targetReps) || 30;
+                                                                                    toggleWorkTimer(idx, timeTarget);
+                                                                                }}
+                                                                                className={`px-2 py-0.5 rounded-md flex items-center gap-1 text-[9px] font-black transition-all border ${workTimer.active && workTimer.exIdx === idx
+                                                                                    ? 'bg-red-500 text-white border-red-600 animate-pulse'
+                                                                                    : 'bg-slate-700 text-slate-300 border-slate-600 hover:bg-slate-600'
+                                                                                    }`}
+                                                                            >
+                                                                                {workTimer.active && workTimer.exIdx === idx ? (
+                                                                                    <>
+                                                                                        <span className="animate-spin-slow">⏳</span>
+                                                                                        <span>{workTimer.timeLeft}s</span>
+                                                                                    </>
+                                                                                ) : (
+                                                                                    <>
+                                                                                        <Play size={8} />
+                                                                                        <span>Cronómetro</span>
+                                                                                    </>
+                                                                                )}
+                                                                            </button>
+                                                                        )}
                                                                     </div>
                                                                 </div>
                                                                 <div className="flex items-center gap-2">
@@ -3033,7 +3364,16 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                                                             placeholder="0"
                                                                         />
                                                                         <span className="text-[10px] font-black text-slate-500 uppercase">
-                                                                            {(ex.quality === 'E' || ex.quality === 'Resistencia' || ex.quality === 'Cardio') ? (energyMetrics[idx]?.volumeUnit || 'kcal') : 'reps'}
+                                                                            {(() => {
+                                                                                const isTime = ex.config?.volType === 'TIME' || ex.targetTime > 0;
+                                                                                const isDist = ex.config?.volType === 'DISTANCE' || ex.targetDistance > 0;
+                                                                                const isCardio = ex.quality === 'E' || ex.quality === 'Resistencia' || ex.quality === 'Cardio';
+
+                                                                                if (isCardio) return (energyMetrics[idx]?.volumeUnit || 'kcal');
+                                                                                if (isTime) return 'seg';
+                                                                                if (isDist) return 'm';
+                                                                                return 'reps';
+                                                                            })()}
                                                                         </span>
                                                                     </div>
 
@@ -3096,10 +3436,11 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                             <div className="space-y-4">
                                                 {group.map((ex, i) => {
                                                     const idx = ex.originalIndex;
-                                                    const { targetSets, targetReps, repsPerSet, restSeconds, intensity, prescribedWeight, isVariableReps } = getLibreConfig(ex);
+                                                    const { targetSets, targetReps, repsPerSet, restSeconds, intensity, isVariableReps, volUnit, intUnitLabel, isLoadable } = getLibreConfig(ex);
+                                                    const volType = ex.config?.volType || 'REPS'; // Fix: Define volType locally
                                                     const setsCompleted = libreSetsDone[idx] || 0;
                                                     const isExerciseComplete = setsCompleted >= targetSets;
-                                                    const weight = currentSetWeight[idx] || weightsUsed[idx] || prescribedWeight;
+                                                    const weight = currentSetWeight[idx] || weightsUsed[idx] || (ex.config?.sets?.[0]?.weight) || 0;
                                                     const isSingle = false; // It's part of a group
 
                                                     return (
@@ -3114,7 +3455,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                                                 <div className="absolute bottom-3 left-4">
                                                                     <p className="text-sm font-black text-white truncate mb-0.5 leading-tight">{ex.nameEs || ex.name}</p>
                                                                     <p className="text-[10px] font-black text-emerald-400 tracking-wider">
-                                                                        {isVariableReps ? repsPerSet[setsCompleted] || targetReps : targetReps} REPS
+                                                                        {isVariableReps ? repsPerSet[setsCompleted] || targetReps : targetReps} {volUnit.toUpperCase()}
                                                                     </p>
                                                                 </div>
                                                             </div>
@@ -3123,51 +3464,97 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                                             <div className="p-4 pt-2">
                                                                 <div className="flex items-center justify-between mb-3 px-1">
                                                                     <span className="text-[10px] font-bold text-slate-500 uppercase">{setsCompleted}/{targetSets} Series</span>
-                                                                    {isExerciseComplete && <span className="text-emerald-400 text-[10px] font-bold">✓ Completado</span>}
+                                                                    <div className="flex items-center gap-2">
+                                                                        {/* Per-exercise Timer Button for time-based exercises */}
+                                                                        {(volType === 'TIME' || ex.targetTime > 0) && (
+                                                                            <button
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    const timeTarget = parseInt(repsPerSet[setsCompleted] || targetReps) || 30;
+                                                                                    toggleWorkTimer(idx, timeTarget);
+                                                                                }}
+                                                                                className={`rounded-xl flex items-center gap-1.5 font-black transition-all border shadow-lg ${workTimer.active && workTimer.exIdx === idx
+                                                                                    ? 'px-4 py-2 text-base bg-red-500 text-white border-red-600 animate-pulse scale-110'
+                                                                                    : 'px-2 py-1 text-[9px] bg-slate-700 text-slate-300 border-slate-600 hover:bg-slate-600'
+                                                                                    }`}
+                                                                            >
+                                                                                {workTimer.active && workTimer.exIdx === idx ? (
+                                                                                    <>
+                                                                                        <span className="text-lg">⏱</span>
+                                                                                        <span className="tabular-nums">{workTimer.timeLeft}s</span>
+                                                                                    </>
+                                                                                ) : (
+                                                                                    <>
+                                                                                        <Play size={10} />
+                                                                                        <span>{repsPerSet[setsCompleted] || targetReps}s</span>
+                                                                                    </>
+                                                                                )}
+                                                                            </button>
+                                                                        )}
+                                                                        {isExerciseComplete && <span className="text-emerald-400 text-[10px] font-bold">✓ Completado</span>}
+                                                                    </div>
                                                                 </div>
 
                                                                 {!isExerciseComplete ? (
                                                                     <div className="bg-slate-900/60 rounded-2xl p-3 border border-white/5 shadow-inner space-y-3">
-                                                                        <div className="flex items-center justify-between gap-4">
-                                                                            {/* Previous box */}
-                                                                            <div className="flex flex-col min-w-[60px]">
-                                                                                <span className="text-[7px] font-black text-slate-500 uppercase tracking-widest mb-1">Anterior</span>
-                                                                                <span className="text-xs font-black text-slate-400 leading-none">{getPreviousWeight(idx)}{getPreviousWeight(idx) !== '--' ? 'kg' : ''}</span>
-                                                                            </div>
 
-                                                                            {/* Weight Selector */}
-                                                                            <div className="flex-1 flex items-center justify-between bg-slate-800/50 rounded-xl p-1 border border-white/5">
-                                                                                <button
-                                                                                    onClick={() => setCurrentSetWeight(prev => ({ ...prev, [idx]: Math.max(0, (parseFloat(prev[idx] || 0) - 0.5)).toString() }))}
-                                                                                    className="w-8 h-8 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-400 active:bg-slate-600 transition-colors"
-                                                                                >
-                                                                                    <Minus size={14} />
-                                                                                </button>
-                                                                                <div className="flex items-baseline gap-0.5">
-                                                                                    <input
-                                                                                        type="text"
-                                                                                        inputMode="decimal"
-                                                                                        value={currentSetWeight[idx] || ''}
-                                                                                        onChange={(e) => setCurrentSetWeight(prev => ({ ...prev, [idx]: e.target.value.replace(',', '.') }))}
-                                                                                        className="w-10 bg-transparent text-center text-white font-black text-sm outline-none"
-                                                                                        placeholder="0"
-                                                                                    />
-                                                                                    <span className="text-[10px] font-bold text-slate-500">kg</span>
+                                                                        {/* Weight Control - Conditional per exercise type */}
+                                                                        {isLoadable ? (
+                                                                            <div className="flex items-center justify-between gap-4">
+                                                                                {/* Previous box */}
+                                                                                {(() => {
+                                                                                    const prevData = getPreviousWeight(idx);
+                                                                                    return (
+                                                                                        <div className="flex flex-col min-w-[60px]">
+                                                                                            <span className="text-[7px] font-black text-slate-500 uppercase tracking-widest mb-1">
+                                                                                                Anterior {prevData?.contextLabel && `(${prevData.contextLabel})`}
+                                                                                            </span>
+                                                                                            <span className={`text-xs font-black leading-none ${prevData?.match === 'any' ? 'text-yellow-400' : 'text-slate-400'}`}>
+                                                                                                {prevData ? `${prevData.weight} ${intUnitLabel}` : '--'}
+                                                                                            </span>
+                                                                                            {prevData?.match === 'any' && (
+                                                                                                <span className="text-[7px] text-yellow-500">⚠️ Otro</span>
+                                                                                            )}
+                                                                                        </div>
+                                                                                    );
+                                                                                })()}
+
+                                                                                {/* Weight Selector */}
+                                                                                <div className="flex-1 flex items-center justify-between bg-slate-800/50 rounded-xl p-1 border border-white/5">
+                                                                                    <button
+                                                                                        onClick={() => setCurrentSetWeight(prev => ({ ...prev, [idx]: Math.max(0, (parseFloat(prev[idx] || 0) - 1)).toString() }))}
+                                                                                        className="w-8 h-8 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-400 active:bg-slate-600 transition-colors"
+                                                                                    >
+                                                                                        <Minus size={14} />
+                                                                                    </button>
+                                                                                    <div className="flex items-baseline gap-0.5">
+                                                                                        <input
+                                                                                            type="text"
+                                                                                            inputMode="decimal"
+                                                                                            value={currentSetWeight[idx] || ''}
+                                                                                            onChange={(e) => setCurrentSetWeight(prev => ({ ...prev, [idx]: e.target.value.replace(',', '.') }))}
+                                                                                            className="w-10 bg-transparent text-center text-white font-black text-sm outline-none"
+                                                                                            placeholder="0"
+                                                                                        />
+                                                                                        <span className="text-[10px] font-bold text-slate-500">
+                                                                                            {intUnitLabel}
+                                                                                        </span>
+                                                                                    </div>
+                                                                                    <button
+                                                                                        onClick={() => setCurrentSetWeight(prev => ({ ...prev, [idx]: (parseFloat(prev[idx] || 0) + 1).toString() }))}
+                                                                                        className="w-8 h-8 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-400 active:bg-slate-600 transition-colors"
+                                                                                    >
+                                                                                        <Plus size={14} />
+                                                                                    </button>
                                                                                 </div>
-                                                                                <button
-                                                                                    onClick={() => setCurrentSetWeight(prev => ({ ...prev, [idx]: (parseFloat(prev[idx] || 0) + 0.5).toString() }))}
-                                                                                    className="w-8 h-8 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-400 active:bg-slate-600 transition-colors"
-                                                                                >
-                                                                                    <Plus size={14} />
-                                                                                </button>
                                                                             </div>
-                                                                        </div>
+                                                                        ) : null}
 
                                                                         <div className="flex items-center justify-between gap-4">
                                                                             {/* Label filler to keep alignment */}
                                                                             <div className="flex flex-col min-w-[60px]">
                                                                                 <span className="text-[7px] font-black text-slate-500 uppercase tracking-widest mb-1">Actual</span>
-                                                                                <span className="text-xs font-black text-white leading-none">Sets {setsCompleted + 1}</span>
+                                                                                <span className="text-xs font-black text-white leading-none">Serie {setsCompleted + 1}</span>
                                                                             </div>
 
                                                                             {/* Reps Selector */}
@@ -3187,7 +3574,9 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                                                                         className="w-10 bg-transparent text-center text-white font-black text-sm outline-none"
                                                                                         placeholder="0"
                                                                                     />
-                                                                                    <span className="text-[10px] font-bold text-slate-500">reps</span>
+                                                                                    <span className="text-[10px] font-bold text-slate-500">
+                                                                                        {volUnit}
+                                                                                    </span>
                                                                                 </div>
                                                                                 <button
                                                                                     onClick={() => setCurrentSetReps(prev => ({ ...prev, [idx]: (parseInt(prev[idx] || 0) + 1) }))}

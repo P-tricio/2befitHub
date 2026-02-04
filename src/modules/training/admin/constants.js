@@ -14,6 +14,8 @@ export const EQUIPMENT = [
     'Balón Medicinal',
     'Cajón',
     'Foam Roller',
+    'TRX/anillas',
+    'Disco',
     'Otro'
 ];
 

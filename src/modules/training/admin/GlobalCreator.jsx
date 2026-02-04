@@ -3,9 +3,9 @@ import {
     MoreVertical, Plus, Copy, Trash2, ChevronDown, ChevronUp, ChevronRight,
     Link, Link2, Move, Clock, Repeat, Flame, Dumbbell, Footprints, Edit2,
     Settings, Eye, Check, X, Search, Lock, Unlock, Save, Download, Coffee, Filter, UploadCloud, Loader2, Zap, Library, List, ClipboardList, Info,
-    Type, Target, Activity, Hash, Video, Tag, FileText
+    Type, Target, Activity, Hash, Video, Tag, FileText, GripVertical
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion';
 import { TrainingDB } from '../services/db';
 import { ExerciseAPI } from '../services/exerciseApi';
 import ActionMenu from '../../../components/admin/ActionMenu';
@@ -289,7 +289,7 @@ const ExerciseItem = ({ ex, idx, isGrouped, isFirstInGroup, isLastInGroup, onCon
 };
 
 // 2. Block Card Component
-const BlockCard = ({ block, idx, onUpdate, onRemove, onDuplicate, onAddExercise, onSaveModule, onImportModule, onOpenConfig, onSwapExercise, onProtocolChange, isMobileLandscape, isSessionCardio }) => {
+const BlockCard = ({ block, idx, onUpdate, onRemove, onDuplicate, onAddExercise, onSaveModule, onImportModule, onOpenConfig, onSwapExercise, onProtocolChange, isMobileLandscape, isSessionCardio, dragControls }) => {
     const [isExpanded, setIsExpanded] = useState(true);
     const [linkMode, setLinkMode] = useState(false); // Toggle for connecting exercises
 
@@ -320,6 +320,13 @@ const BlockCard = ({ block, idx, onUpdate, onRemove, onDuplicate, onAddExercise,
                     <span className="w-5 h-5 rounded bg-slate-900 text-white font-bold flex items-center justify-center shrink-0 text-[10px]">
                         {idx + 1}
                     </span>
+                    {/* Drag Handle */}
+                    <div
+                        className="cursor-grab active:cursor-grabbing p-1 text-slate-300 hover:text-slate-500 transition-colors -ml-1 mr-1"
+                        onPointerDown={(e) => dragControls?.start(e)}
+                    >
+                        <GripVertical size={18} />
+                    </div>
                     <input
                         type="text"
                         value={block.name}
@@ -838,6 +845,25 @@ const ExerciseConfigDrawer = ({ isOpen, onClose, exercise, onSave, isGrouped, is
     );
 };
 
+// 3. Draggable Block Wrapper
+const DraggableBlock = ({ block, idx, ...props }) => {
+    const controls = useDragControls();
+    return (
+        <Reorder.Item
+            as="div"
+            value={block}
+            dragControls={controls}
+            dragListener={false}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.98 }}
+            transition={{ duration: 0.2 }}
+        >
+            <BlockCard {...props} block={block} idx={idx} dragControls={controls} />
+        </Reorder.Item>
+    );
+};
+
 const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, onSave, onDirtyChange }) => {
     // Main View State: 'editor' | 'library' | 'sessions'
     const [mainView, setMainView] = useState('editor');
@@ -885,7 +911,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
     const [modulePickerOpen, setModulePickerOpen] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [pickerSearch, setPickerSearch] = useState('');
-    const [pickerFilter, setPickerFilter] = useState({ pattern: [], equipment: [], level: [], quality: [] });
+    const [pickerFilter, setPickerFilter] = useState({ pattern: [], equipment: [], level: [], quality: [], group: [] });
     const [pickerTab, setPickerTab] = useState('library'); // 'library' | 'online'
     const [onlineResults, setOnlineResults] = useState([]);
     const [isSearchingOnline, setIsSearchingOnline] = useState(false);
@@ -951,6 +977,11 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
             if (filters.quality.length > 0) {
                 const matchesQuality = filters.quality.some(qId => (ex.qualities || []).includes(qId));
                 if (!matchesQuality) return false;
+            }
+
+            if (filters.group && filters.group.length > 0) {
+                const exGroup = ex.group || 'Sin agrupar';
+                if (!filters.group.includes(exGroup)) return false;
             }
 
             return true;
@@ -1182,11 +1213,13 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                         // Basic mapping: "Barra" -> "barbell", "Mancuernas" -> "dumbbell"
                         const map = {
                             'Barra': 'barbell',
-                            'Mancuernas': 'dumbbell',
+                            'Mancuerna': 'dumbbell',
                             'Kettlebell': 'kettlebell',
                             'Peso Corporal': 'body weight',
                             'Máquina': 'machine',
-                            'Cable': 'cable'
+                            'Cable': 'cable',
+                            'TRX/anillas': 'suspension',
+                            'Disco': 'plate'
                         };
                         const targetEng = map[filterEq] || filterEq.toLowerCase();
                         return eqLower.includes(targetEng);
@@ -2586,38 +2619,46 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                                             )}
                                         </div>
 
-                                        <div className="max-w-4xl mx-auto space-y-6 pb-24 md:pb-0">
-                                            {blocks.map((block, idx) => (
-                                                <BlockCard
-                                                    key={block.id}
-                                                    block={block}
-                                                    idx={idx}
-                                                    isMobileLandscape={isMobileLandscape}
-                                                    isSessionCardio={isCardio}
-                                                    onUpdate={(d) => updateBlock(idx, d)}
-                                                    onRemove={() => setBlocks(blocks.filter((_, i) => i !== idx))}
-                                                    onDuplicate={() => {
-                                                        const newBlocks = [...blocks];
-                                                        const copy = {
-                                                            ...block,
-                                                            id: crypto.randomUUID(),
-                                                            name: `${block.name} (Copia)`,
-                                                            exercises: block.exercises.map(e => ({ ...e, id: crypto.randomUUID() }))
-                                                        };
-                                                        newBlocks.splice(idx + 1, 0, copy);
-                                                        setBlocks(newBlocks);
-                                                    }}
-                                                    onSaveModule={() => saveModuleToDB(block)}
-                                                    onImportModule={() => {
-                                                        setActiveBlockIdxForPicker(idx);
-                                                        setModulePickerOpen(true);
-                                                    }}
-                                                    onAddExercise={() => handleAddExerciseRequest(idx)}
-                                                    onOpenConfig={handleOpenConfig}
-                                                    onSwapExercise={handleSwapExercise}
-                                                    onProtocolChange={(p) => handleBlockProtocolUpdate(idx, p)}
-                                                />
-                                            ))}
+                                        <Reorder.Group
+                                            as="div"
+                                            axis="y"
+                                            values={blocks}
+                                            onReorder={setBlocks}
+                                            className="max-w-4xl mx-auto space-y-6 pb-24 md:pb-0"
+                                        >
+                                            <AnimatePresence mode="popLayout">
+                                                {blocks.map((block, idx) => (
+                                                    <DraggableBlock
+                                                        key={block.id}
+                                                        block={block}
+                                                        idx={idx}
+                                                        isMobileLandscape={isMobileLandscape}
+                                                        isSessionCardio={isCardio}
+                                                        onUpdate={(d) => updateBlock(idx, d)}
+                                                        onRemove={() => setBlocks(blocks.filter((_, i) => i !== idx))}
+                                                        onDuplicate={() => {
+                                                            const newBlocks = [...blocks];
+                                                            const copy = {
+                                                                ...block,
+                                                                id: crypto.randomUUID(),
+                                                                name: `${block.name} (Copia)`,
+                                                                exercises: block.exercises.map(e => ({ ...e, id: crypto.randomUUID() }))
+                                                            };
+                                                            newBlocks.splice(idx + 1, 0, copy);
+                                                            setBlocks(newBlocks);
+                                                        }}
+                                                        onSaveModule={() => saveModuleToDB(block)}
+                                                        onImportModule={() => {
+                                                            setActiveBlockIdxForPicker(idx);
+                                                            setModulePickerOpen(true);
+                                                        }}
+                                                        onAddExercise={() => handleAddExerciseRequest(idx)}
+                                                        onOpenConfig={handleOpenConfig}
+                                                        onSwapExercise={handleSwapExercise}
+                                                        onProtocolChange={(p) => handleBlockProtocolUpdate(idx, p)}
+                                                    />
+                                                ))}
+                                            </AnimatePresence>
 
                                             <button
                                                 onClick={addBlock}
@@ -2630,7 +2671,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                                             </button>
 
                                             <div className="h-10 md:hidden" />
-                                        </div>
+                                        </Reorder.Group>
                                     </div>
 
                                     {/* RIGHT: DESKTOP SIDEBAR (Overview & Actions) */}
@@ -3504,13 +3545,13 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                                         <>
                                             <div className="flex items-center justify-between">
                                                 <p className="text-xs text-slate-400 font-bold">
-                                                    {(pickerFilter.pattern.length + pickerFilter.equipment.length + pickerFilter.level.length + pickerFilter.quality.length) > 0
-                                                        ? `${pickerFilter.pattern.length + pickerFilter.equipment.length + pickerFilter.level.length + pickerFilter.quality.length} filtros activos`
+                                                    {(pickerFilter.pattern.length + pickerFilter.equipment.length + pickerFilter.level.length + pickerFilter.quality.length + pickerFilter.group.length) > 0
+                                                        ? `${pickerFilter.pattern.length + pickerFilter.equipment.length + pickerFilter.level.length + pickerFilter.quality.length + pickerFilter.group.length} filtros activos`
                                                         : 'Filtrar por características'}
                                                 </p>
                                                 <button
                                                     onClick={() => setFilterDrawerOpen(!filterDrawerOpen)}
-                                                    className={`p-2 rounded-lg flex items-center gap-2 text-xs font-bold transition-colors ${(pickerFilter.pattern.length + pickerFilter.equipment.length + pickerFilter.level.length + pickerFilter.quality.length) > 0
+                                                    className={`p-2 rounded-lg flex items-center gap-2 text-xs font-bold transition-colors ${(pickerFilter.pattern.length + pickerFilter.equipment.length + pickerFilter.level.length + pickerFilter.quality.length + pickerFilter.group.length) > 0
                                                         ? 'bg-slate-900 text-white'
                                                         : 'bg-slate-100 text-slate-500'
                                                         }`}
@@ -3597,8 +3638,25 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                                                                     ))}
                                                                 </div>
                                                             </div>
+                                                            <div>
+                                                                <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Grupo / Carpeta</p>
+                                                                <div className="flex flex-wrap gap-2">
+                                                                    {[{ id: 'none', name: 'Sin agrupar' }, ...exerciseGroups].map(g => (
+                                                                        <button
+                                                                            key={g.id}
+                                                                            onClick={() => toggleFilter('group', g.name)}
+                                                                            className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${pickerFilter.group.includes(g.name)
+                                                                                ? 'bg-slate-900 text-white border-slate-900'
+                                                                                : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                                                                                }`}
+                                                                        >
+                                                                            {g.name}
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
                                                             <button
-                                                                onClick={() => setPickerFilter({ pattern: [], equipment: [], level: [], quality: [] })}
+                                                                onClick={() => setPickerFilter({ pattern: [], equipment: [], level: [], quality: [], group: [] })}
                                                                 className="w-full py-2 text-xs text-red-500 font-bold hover:bg-red-50 rounded-lg"
                                                             >
                                                                 Limpiar Filtros

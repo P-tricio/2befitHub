@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { TrainingDB } from '../services/db';
-import { X, TrendingUp, TrendingDown, Activity, Calendar, Settings, Plus, Trash2, Footprints, Heart, BarChart, Utensils, Info, Edit2, Trophy, CalendarDays, CheckSquare, Camera, FileText, ChevronDown } from 'lucide-react';
+import { X, TrendingUp, TrendingDown, Activity, Calendar, Settings, Plus, Trash2, Footprints, Heart, BarChart, Utensils, Info, Edit2, Trophy, CalendarDays, CheckSquare, Camera, FileText, ChevronDown, Dumbbell } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart as RechartsBarChart, Bar } from 'recharts';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import AthleteHabits from '../athlete/pages/AthleteHabits';
 import UserPlanning from './UserPlanning';
 import UserSessionHistory from './UserSessionHistory';
+import ExerciseHistoryView from '../athlete/components/ExerciseHistoryView';
 
 const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
     const scrollContainerRef = useRef(null);
@@ -193,6 +194,7 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
                                 { id: 'habits', icon: <CheckSquare size={18} />, label: 'Hábitos' },
                                 { id: 'forms', icon: <FileText size={18} />, label: 'Cuestionarios' },
                                 { id: 'planning', icon: <CalendarDays size={18} />, label: 'Planificación' },
+                                { id: 'loads', icon: <Dumbbell size={18} />, label: 'Cargas' },
                                 { id: 'history', icon: <Trophy size={18} />, label: 'Historial' }
                             ].map(tab => (
                                 <button
@@ -738,6 +740,10 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
                     ) : activeTab === 'planning' ? (
                         <div className="bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden p-4 min-h-[600px]">
                             <UserPlanning user={user} isEmbedded={true} key={`planning-${user.id}`} />
+                        </div>
+                    ) : activeTab === 'loads' ? (
+                        <div className="bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden min-h-[600px]">
+                            <ExerciseHistoryView userId={user.id} />
                         </div>
                     ) : (
                         <div className="bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden p-4 min-h-[600px]">

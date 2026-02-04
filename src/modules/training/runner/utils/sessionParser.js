@@ -54,6 +54,7 @@ export const parseNewStructure = async (sessionData, globalProtocol) => {
     sessionData.blocks.forEach(block => {
         const blockName = block.name || '';
         const isBurn = blockName.toUpperCase().includes('BURN');
+        const isWarmup = blockName.toUpperCase().includes('WARMUP') || blockName.toUpperCase().includes('CALENTAMIENTO');
 
         // Normalize and ENRICH exercises
         const enrichedExercises = block.exercises.map(ex => {
@@ -96,21 +97,27 @@ export const parseNewStructure = async (sessionData, globalProtocol) => {
         // Normalize all exercises in block
         const normalizedExercises = normalizeExercises(enrichedExercises);
 
-        // Logic to derive EMOM params if missing (fallback for sessions created in UI)
-        let finalEmomParams = block.emomParams;
-        if (!finalEmomParams && block.params?.emomMinutes) {
+        // Logic to derive EMOM params (Strictly prioritize sets in exercises)
+        const maxSetsLength = normalizedExercises.reduce((max, ex) => {
+            return Math.max(max, ex.config?.sets?.length || 0);
+        }, 0);
+
+        let finalEmomParams = block.emomParams || {};
+
+        // If exercises have sets, that's the absolute truth for rounds
+        if (maxSetsLength > 0) {
             finalEmomParams = {
-                durationMinutes: block.params.emomMinutes,
+                ...finalEmomParams,
+                durationMinutes: maxSetsLength,
                 density: 'normal'
             };
-        } else if (!finalEmomParams && normalizedExercises.length > 0) {
-            const firstExConfig = normalizedExercises[0].config;
-            if (firstExConfig?.isEMOM) {
-                finalEmomParams = {
-                    durationMinutes: firstExConfig.sets?.length || 4,
-                    density: 'normal'
-                };
-            }
+        } else {
+            // Fallback to block params or default 4 ONLY if no exercises/sets exist
+            finalEmomParams = {
+                ...finalEmomParams,
+                durationMinutes: block.params?.emomMinutes || 4,
+                density: 'normal'
+            };
         }
 
         // Assign protocol based on global type or block override
@@ -152,10 +159,6 @@ export const parseNewStructure = async (sessionData, globalProtocol) => {
                     primaryTargeting.intensity_type = s0.intType || 'RPE';
                 }
             }
-            // Fallback for flat instructions
-            if (!primaryTargeting.instruction && ex0.notes) {
-                primaryTargeting.instruction = ex0.notes;
-            }
         }
 
         const builtModule = {
@@ -166,7 +169,8 @@ export const parseNewStructure = async (sessionData, globalProtocol) => {
             exercises: normalizedExercises,
             exerciseNames: getExerciseNames(normalizedExercises),
             blockType: blockName,
-            emomParams: finalEmomParams
+            emomParams: finalEmomParams,
+            isWarmup: isWarmup
         };
 
         allModules.push(builtModule);
@@ -192,7 +196,7 @@ export const parseNewStructure = async (sessionData, globalProtocol) => {
         // Add to timeline
         parts.forEach(partModule => {
             timeline.push({
-                type: 'WORK',
+                type: isWarmup ? 'WARMUP' : 'WORK',
                 blockType: blockName,
                 module: partModule
             });
@@ -241,13 +245,14 @@ export const parseLegacyStructure = async (sessionData) => {
                     ...overrides,
                     exerciseNames: getExerciseNames(normalizedExercises),
                     exercises: normalizedExercises,
-                    blockType
+                    blockType,
+                    isWarmup: blockType === 'WARMUP'
                 };
 
                 allModules.push(hydratedModule);
 
                 timeline.push({
-                    type: 'WORK',
+                    type: blockType === 'WARMUP' ? 'WARMUP' : 'WORK',
                     blockType: blockType,
                     module: hydratedModule
                 });

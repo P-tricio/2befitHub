@@ -524,6 +524,146 @@ export const TrainingDB = {
             }
         }
     },
+
+    // --- EXERCISE HISTORY (Global per-exercise performance tracking) ---
+    exerciseHistory: {
+        /**
+         * Log a single exercise performance entry
+         * @param {string} userId 
+         * @param {string} exerciseId 
+         * @param {Object} data - { date, sessionId, moduleId, sets, maxWeight, exerciseName }
+         */
+        async log(userId, exerciseId, data) {
+            if (!userId || !exerciseId) {
+                console.warn('[exerciseHistory.log] Missing userId or exerciseId');
+                return null;
+            }
+            try {
+                const ref = collection(db, 'users', userId, 'exercise_history', exerciseId, 'logs');
+                return await addDoc(ref, {
+                    ...data,
+                    createdAt: serverTimestamp()
+                });
+            } catch (error) {
+                console.error('[exerciseHistory.log] Error:', error);
+                return null;
+            }
+        },
+
+        /**
+         * Get exercise history for a specific exercise
+         * @param {string} userId 
+         * @param {string} exerciseId 
+         * @param {number} limitCount - Max entries to return
+         * @returns {Array} - Sorted by date descending
+         */
+        async getHistory(userId, exerciseId, limitCount = 50) {
+            if (!userId || !exerciseId) return [];
+            try {
+                const ref = collection(db, 'users', userId, 'exercise_history', exerciseId, 'logs');
+                const q = query(ref, orderBy('date', 'desc'), limit(limitCount));
+                const snapshot = await getDocs(q);
+                return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+            } catch (error) {
+                console.warn('[exerciseHistory.getHistory] Error:', error);
+                return [];
+            }
+        },
+
+        /**
+         * Get the last weight used for an exercise (global, across all sessions)
+         * @param {string} userId 
+         * @param {string} exerciseId 
+         * @returns {number|null}
+         */
+        async getLastWeight(userId, exerciseId) {
+            const history = await this.getHistory(userId, exerciseId, 1);
+            if (history.length === 0) return null;
+            return history[0].maxWeight || history[0].sets?.[0]?.weight || null;
+        },
+
+        /**
+         * Get the personal best (max weight ever) for an exercise
+         * @param {string} userId 
+         * @param {string} exerciseId 
+         * @returns {number|null}
+         */
+        async getPersonalBest(userId, exerciseId) {
+            const history = await this.getHistory(userId, exerciseId, 100);
+            if (history.length === 0) return null;
+            const maxWeights = history.map(h => h.maxWeight || 0).filter(w => w > 0);
+            return maxWeights.length > 0 ? Math.max(...maxWeights) : null;
+        },
+
+        /**
+         * Get all exercises with history for a user (for exercise picker)
+         * @param {string} userId 
+         * @returns {Array} - List of exercise IDs with metadata
+         */
+        async getAllExercises(userId) {
+            if (!userId) return [];
+            try {
+                const ref = collection(db, 'users', userId, 'exercise_history');
+                const snapshot = await getDocs(ref);
+                return snapshot.docs.map(d => d.id);
+            } catch (error) {
+                console.warn('[exerciseHistory.getAllExercises] Error:', error);
+                return [];
+            }
+        },
+
+        /**
+         * Get the last weight with context-aware matching
+         * @param {string} userId 
+         * @param {string} exerciseId 
+         * @param {Object} context - { protocol, blockType }
+         * @returns {Object|null} - { weight, match: 'exact'|'protocol'|'any', context: {...} }
+         */
+        async getLastWeightByContext(userId, exerciseId, context = {}) {
+            const history = await this.getHistory(userId, exerciseId, 20);
+            if (history.length === 0) return null;
+
+            const { protocol, blockType } = context;
+
+            // Priority 1: Exact match (same protocol AND blockType)
+            if (protocol && blockType) {
+                const exactMatch = history.find(h =>
+                    h.protocol === protocol && h.blockType === blockType
+                );
+                if (exactMatch) {
+                    return {
+                        weight: exactMatch.maxWeight,
+                        match: 'exact',
+                        contextLabel: blockType || protocol,
+                        context: exactMatch
+                    };
+                }
+            }
+
+            // Priority 2: Same protocol (any blockType)
+            if (protocol) {
+                const protocolMatch = history.find(h => h.protocol === protocol);
+                if (protocolMatch) {
+                    return {
+                        weight: protocolMatch.maxWeight,
+                        match: 'protocol',
+                        contextLabel: protocolMatch.blockType || protocol,
+                        context: protocolMatch
+                    };
+                }
+            }
+
+            // Priority 3: Any recent (fallback)
+            const recent = history[0];
+            return {
+                weight: recent.maxWeight,
+                match: 'any',
+                contextLabel: recent.blockType || recent.protocol || 'Otro',
+                context: recent
+            };
+        }
+    },
+
     // --- TRACKING (Check-ins: Weight, Steps, etc.) ---
     tracking: {
         async addEntry(userId, data) {
