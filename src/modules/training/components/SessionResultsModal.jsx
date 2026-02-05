@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Trophy, Clock, Zap, Star, MessageSquare, TrendingUp, TrendingDown, Minus, ChevronDown, ChevronUp, Dumbbell, CheckCircle, Activity } from 'lucide-react';
+import { X, Trophy, Clock, Zap, Star, MessageSquare, TrendingUp, TrendingDown, Minus, ChevronDown, ChevronUp, Dumbbell, CheckCircle, Activity, Camera } from 'lucide-react';
 import { TrainingDB } from '../services/db';
 import { format } from 'date-fns';
 
@@ -383,6 +383,23 @@ const SessionResultsModal = ({ task, session, onClose, userId }) => {
                                     <p className="text-slate-600 text-xs font-medium leading-relaxed italic">
                                         "{results.notes}"
                                     </p>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Evidence Photo */}
+                        {(results.evidenceUrl || task?.evidenceUrl) && (
+                            <div className="space-y-3 pt-4 border-t border-slate-200">
+                                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2 flex items-center gap-2">
+                                    <Camera size={12} /> Evidencia
+                                </h3>
+                                <div className="relative group rounded-[2rem] overflow-hidden border border-slate-200 bg-slate-50 shadow-sm">
+                                    <img
+                                        src={results.evidenceUrl || task.evidenceUrl}
+                                        alt="Evidencia del entrenamiento"
+                                        className="w-full h-auto aspect-square object-cover"
+                                    />
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent pointer-events-none" />
                                 </div>
                             </div>
                         )}

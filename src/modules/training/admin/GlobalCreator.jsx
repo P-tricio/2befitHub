@@ -975,7 +975,20 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
             if (filters.level.length > 0 && !filters.level.includes(ex.level)) return false;
 
             if (filters.quality.length > 0) {
-                const matchesQuality = filters.quality.some(qId => (ex.qualities || []).includes(qId));
+                const matchesQuality = filters.quality.some(qId => {
+                    // Check array qualities
+                    const inArray = (ex.qualities || []).includes(qId);
+                    if (inArray) return true;
+
+                    // Check single quality string with normalization
+                    const qString = (ex.quality || '').toUpperCase();
+                    if (qId === 'E') return qString === 'E' || qString.startsWith('ENERG') || qString.includes('PDP-E');
+                    if (qId === 'F') return qString === 'F' || qString.startsWith('FUERZ') || qString.includes('PDP-R') || qString.includes('PDP-T');
+                    if (qId === 'M') return qString === 'M' || qString.startsWith('MOVIL');
+                    if (qId === 'C') return qString === 'C' || qString.startsWith('CONTR');
+
+                    return qString === qId;
+                });
                 if (!matchesQuality) return false;
             }
 

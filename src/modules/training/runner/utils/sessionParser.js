@@ -196,9 +196,10 @@ export const parseNewStructure = async (sessionData, globalProtocol) => {
         // Add to timeline
         parts.forEach(partModule => {
             timeline.push({
-                type: isWarmup ? 'WARMUP' : 'WORK',
+                type: 'WORK', // Park Approximation UI: Use WORK type for warmups
                 blockType: blockName,
-                module: partModule
+                module: partModule,
+                isWarmup: isWarmup // Keep flag to bypass feedback
             });
         });
     });
@@ -252,9 +253,10 @@ export const parseLegacyStructure = async (sessionData) => {
                 allModules.push(hydratedModule);
 
                 timeline.push({
-                    type: blockType === 'WARMUP' ? 'WARMUP' : 'WORK',
+                    type: 'WORK', // Park Approximation UI: Use WORK type for warmups
                     blockType: blockType,
-                    module: hydratedModule
+                    module: hydratedModule,
+                    isWarmup: blockType === 'WARMUP' // Keep flag to bypass feedback
                 });
             }
         });

@@ -421,7 +421,7 @@ const SessionRunner = () => {
     const handleStepComplete = async (results) => {
         const currentStep = timeline[currentIndex];
 
-        if (currentStep.type === 'WORK') {
+        if (currentStep.type === 'WORK' && !currentStep.isWarmup) {
             // Store results and open feedback modal
             setPendingResults(results);
             setShowFeedbackModal(true);
@@ -786,15 +786,6 @@ const SessionRunner = () => {
                         className={`${currentStep.type === 'SUMMARY' ? 'w-full' : 'max-w-md mx-auto p-3 md:p-6'} h-full flex flex-col min-h-full`}
                     >
 
-                        {/* WARMUP UI */}
-                        {currentStep.type === 'WARMUP' && (
-                            <WarmupBlock
-                                step={currentStep}
-                                plan={sessionState.plans[currentStep.module.id]} // Pass plan
-                                onComplete={handleNext}
-                                isProcessing={isProcessing}
-                            />
-                        )}
 
                         {/* WORK UI */}
                         {currentStep.type === 'WORK' && (
@@ -1711,6 +1702,8 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
     const [elapsed, setElapsed] = useState(0);
     const [isActive, setIsActive] = useState(false); // Start PAUSED
     const [currentMinute, setCurrentMinute] = useState(1); // For EMOM
+    const lastSoundMinuteRef = useRef(0); // Guard for EMOM sound loops
+
 
     // Manual Work Timer State (Ephemeral) - Moved from SessionRunner
     const [workTimer, setWorkTimer] = useState({ active: false, timeLeft: 0, duration: 0, exIdx: null });
@@ -1752,27 +1745,9 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
     // Since 'restTimeLeft' is defined later (line ~1718), we can't hook it here easily.
     // BUT we can fix 'elapsed' and 'timeLeft' which ARE here.
 
-    useEffect(() => {
-        let interval;
-        if (isActive) {
-            lastMonitorTick.current = Date.now();
-            interval = setInterval(() => {
-                const now = Date.now();
-                const delta = Math.floor((now - lastMonitorTick.current) / 1000);
+    // Unified Timer Logic handled by robust implementation below (line ~2433)
+    // Removed redundant effect to prevent jitter
 
-                if (delta >= 1) {
-                    // Update Elapsed
-                    setElapsed(prev => prev + delta);
-
-                    // Update TimeLeft (if counting down)
-                    setTimeLeft(prev => (prev !== null && prev > 0) ? Math.max(0, prev - delta) : prev);
-
-                    lastMonitorTick.current = now;
-                }
-            }, 1000);
-        }
-        return () => clearInterval(interval);
-    }, [isActive]);
 
     // NOTE: The original interval at line ~2116 must be removed or it will conflict.
 
@@ -2406,8 +2381,8 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
             exerciseNotes, // Pass the per-exercise notes
             emomResults,
             libreSetsDone, // Track completed sets for LIBRE protocol
-            libreSetReps, // Track repetitions per set for LIBRE protocol
-            libreSeriesWeights, // Track weight per set for LIBRE protocol
+            seriesReps: libreSetReps, // Fixed: Rename to match consumer expectation
+            seriesWeights: libreSeriesWeights, // Fixed: Rename to match consumer expectation
             elapsed: (protocol === 'R' || protocol === 'T') ? elapsed : 0
         });
     };
@@ -2480,15 +2455,23 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
 
                             if (currentMin > totalDurationMin) {
                                 setIsActive(false);
-                                try { playCountdownFinal?.(); } catch (e) { }
+                                if (lastSoundMinuteRef.current !== currentMin) {
+                                    try { playCountdownFinal?.(); } catch (e) { }
+                                    lastSoundMinuteRef.current = currentMin;
+                                }
                             } else {
-                                if (currentMin > currentMinute) {
+                                if (currentMin > lastSoundMinuteRef.current) {
                                     setCurrentMinute(currentMin);
-                                    try { playSuccess?.(); } catch (e) { }
+                                    try {
+                                        playSuccess?.();
+                                        console.log(`[EMOM] Playing sound for Minute ${currentMin}`);
+                                    } catch (e) { }
+                                    lastSoundMinuteRef.current = currentMin;
                                 }
 
-                                // Emom Beeps
+                                // Emom Beeps - Use current second to ensure one play per second
                                 try {
+                                    const exactSec = realElapsed;
                                     if (newTimeLeft === 31) playHalfway?.();
                                     if (newTimeLeft <= 4 && newTimeLeft > 1) playCountdownShort?.();
                                 } catch (e) { console.warn("Audio error:", e); }
