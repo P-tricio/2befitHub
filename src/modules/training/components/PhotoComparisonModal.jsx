@@ -44,23 +44,23 @@ const PhotoComparisonModal = ({ userId, onClose }) => {
     const entry2 = entries.find(e => e.date === date2);
 
     return (
-        <div className="fixed inset-0 z-[5000] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[5000] flex items-center justify-center p-0 sm:p-4">
             <motion.div
                 initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                className="fixed inset-0 bg-slate-900/90 backdrop-blur-md"
+                className="fixed inset-0 bg-slate-900/95 backdrop-blur-md"
                 onClick={onClose}
             />
             <motion.div
                 initial={{ scale: 0.95, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.95, opacity: 0 }}
-                className="bg-slate-800 w-full max-w-4xl rounded-[2.5rem] border border-slate-700 shadow-2xl z-[510] overflow-hidden flex flex-col h-[90vh]"
+                className="bg-slate-800 w-full h-full sm:h-[90vh] sm:max-w-6xl sm:rounded-[2rem] shadow-2xl z-[510] overflow-hidden flex flex-col"
             >
                 {/* Header */}
-                <div className="p-6 border-b border-slate-700 flex justify-between items-center bg-slate-800/50">
+                <div className="px-4 py-3 sm:p-6 border-b border-slate-700 flex justify-between items-center bg-slate-800/50">
                     <div>
-                        <h3 className="text-2xl font-black text-white">Comparativa de Progreso</h3>
-                        <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Visualiza tu evolución</p>
+                        <h3 className="text-lg sm:text-2xl font-black text-white">Comparativa</h3>
+                        <p className="text-[10px] sm:text-xs text-slate-400 font-bold uppercase tracking-wider">Visualiza tu evolución</p>
                     </div>
                     <button onClick={onClose} className="p-2 bg-slate-700 hover:bg-slate-600 rounded-full transition-colors text-white">
                         <X size={20} />
@@ -90,9 +90,10 @@ const PhotoComparisonModal = ({ userId, onClose }) => {
                 ) : (
                     <div className="flex-1 overflow-hidden flex flex-col">
                         {/* View Selector & Selectors */}
-                        <div className="p-6 bg-slate-900/20 flex flex-wrap gap-4 items-center justify-between border-b border-slate-700/50">
+                        {/* View Selector & Selectors */}
+                        <div className="p-3 sm:p-6 bg-slate-900/20 flex flex-col sm:flex-row gap-3 sm:gap-4 items-center justify-between border-b border-slate-700/50">
                             {/* View Tabs */}
-                            <div className="flex bg-slate-700/50 p-1 rounded-xl">
+                            <div className="flex w-full sm:w-auto bg-slate-700/50 p-1 rounded-xl">
                                 {[
                                     { id: 'front', label: 'Frente' },
                                     { id: 'side', label: 'Perfil' },
@@ -101,7 +102,7 @@ const PhotoComparisonModal = ({ userId, onClose }) => {
                                     <button
                                         key={v.id}
                                         onClick={() => setView(v.id)}
-                                        className={`px-4 py-2 rounded-lg text-xs font-black transition-all ${view === v.id ? 'bg-white text-slate-900 shadow-lg' : 'text-slate-400 hover:text-white'}`}
+                                        className={`flex-1 sm:flex-none px-3 py-1.5 rounded-lg text-[10px] sm:text-xs font-black transition-all ${view === v.id ? 'bg-white text-slate-900 shadow-lg' : 'text-slate-400 hover:text-white'}`}
                                     >
                                         {v.label}
                                     </button>
@@ -109,29 +110,29 @@ const PhotoComparisonModal = ({ userId, onClose }) => {
                             </div>
 
                             {/* Date Selectors */}
-                            <div className="flex items-center gap-4">
-                                <div className="flex flex-col">
-                                    <span className="text-[10px] font-black text-slate-500 uppercase mb-1">Fecha A</span>
+                            <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto no-scrollbar">
+                                <div className="flex flex-col flex-1 sm:flex-none">
+                                    <span className="text-[8px] sm:text-[10px] font-black text-slate-500 uppercase mb-0.5 sm:mb-1">Fecha A</span>
                                     <select
                                         value={date1 || ''}
                                         onChange={e => setDate1(e.target.value)}
-                                        className="bg-slate-700 text-white rounded-lg px-3 py-1.5 text-xs font-bold border border-slate-600 outline-none"
+                                        className="bg-slate-700 text-white rounded-lg px-2 py-1.5 text-[10px] sm:text-xs font-bold border border-slate-600 outline-none w-full sm:w-auto"
                                     >
                                         {entries.map(e => (
-                                            <option key={e.date} value={e.date}>{format(parseISO(e.date), 'dd/MM/yyyy')}</option>
+                                            <option key={e.date} value={e.date}>{format(parseISO(e.date), 'dd/MM/yy')}</option>
                                         ))}
                                     </select>
                                 </div>
-                                <div className="text-slate-600 font-bold">vs</div>
-                                <div className="flex flex-col">
-                                    <span className="text-[10px] font-black text-slate-500 uppercase mb-1">Fecha B</span>
+                                <div className="text-slate-600 font-bold text-xs pt-3">vs</div>
+                                <div className="flex flex-col flex-1 sm:flex-none">
+                                    <span className="text-[8px] sm:text-[10px] font-black text-slate-500 uppercase mb-0.5 sm:mb-1">Fecha B</span>
                                     <select
                                         value={date2 || ''}
                                         onChange={e => setDate2(e.target.value)}
-                                        className="bg-slate-700 text-white rounded-lg px-3 py-1.5 text-xs font-bold border border-slate-600 outline-none"
+                                        className="bg-slate-700 text-white rounded-lg px-2 py-1.5 text-[10px] sm:text-xs font-bold border border-slate-600 outline-none w-full sm:w-auto"
                                     >
                                         {entries.map(e => (
-                                            <option key={e.date} value={e.date}>{format(parseISO(e.date), 'dd/MM/yyyy')}</option>
+                                            <option key={e.date} value={e.date}>{format(parseISO(e.date), 'dd/MM/yy')}</option>
                                         ))}
                                     </select>
                                 </div>
@@ -139,36 +140,36 @@ const PhotoComparisonModal = ({ userId, onClose }) => {
                         </div>
 
                         {/* Comparison Display */}
-                        <div className="flex-1 p-6 flex gap-4 overflow-hidden">
+                        <div className="flex-1 p-2 sm:p-6 flex gap-1 sm:gap-4 overflow-hidden bg-black/20">
                             {/* Panel 1 */}
-                            <div className="flex-1 flex flex-col gap-4">
+                            <div className="flex-1 flex flex-col gap-2">
                                 <div className="text-center">
-                                    <span className="text-lg font-black text-white">{date1 ? format(parseISO(date1), 'd MMM yyyy') : '-'}</span>
+                                    <span className="text-xs sm:text-lg font-black text-white bg-slate-800/80 px-3 py-1 rounded-full">{date1 ? format(parseISO(date1), 'd MMM yy') : '-'}</span>
                                 </div>
-                                <div className="flex-1 rounded-3xl overflow-hidden bg-slate-900/50 border border-slate-700 relative group">
+                                <div className="flex-1 rounded-2xl overflow-hidden bg-slate-900/50 border border-slate-700 relative group">
                                     {entry1?.photos?.[view] ? (
-                                        <img src={entry1.photos[view]} className="w-full h-full object-contain" alt="Progress 1" />
+                                        <img src={entry1.photos[view]} className="w-full h-full object-cover sm:object-contain object-top" alt="Progress 1" />
                                     ) : (
                                         <div className="w-full h-full flex flex-col items-center justify-center text-slate-600 gap-2">
-                                            <Camera size={48} />
-                                            <span className="text-xs font-bold">Sin foto</span>
+                                            <Camera size={24} />
+                                            <span className="text-[10px] font-bold">Sin foto</span>
                                         </div>
                                     )}
                                 </div>
                             </div>
 
                             {/* Panel 2 */}
-                            <div className="flex-1 flex flex-col gap-4">
+                            <div className="flex-1 flex flex-col gap-2">
                                 <div className="text-center">
-                                    <span className="text-lg font-black text-white">{date2 ? format(parseISO(date2), 'd MMM yyyy') : '-'}</span>
+                                    <span className="text-xs sm:text-lg font-black text-white bg-slate-800/80 px-3 py-1 rounded-full">{date2 ? format(parseISO(date2), 'd MMM yy') : '-'}</span>
                                 </div>
-                                <div className="flex-1 rounded-3xl overflow-hidden bg-slate-900/50 border border-slate-700 relative group">
+                                <div className="flex-1 rounded-2xl overflow-hidden bg-slate-900/50 border border-slate-700 relative group">
                                     {entry2?.photos?.[view] ? (
-                                        <img src={entry2.photos[view]} className="w-full h-full object-contain" alt="Progress 2" />
+                                        <img src={entry2.photos[view]} className="w-full h-full object-cover sm:object-contain object-top" alt="Progress 2" />
                                     ) : (
                                         <div className="w-full h-full flex flex-col items-center justify-center text-slate-600 gap-2">
-                                            <Camera size={48} />
-                                            <span className="text-xs font-bold">Sin foto</span>
+                                            <Camera size={24} />
+                                            <span className="text-[10px] font-bold">Sin foto</span>
                                         </div>
                                     )}
                                 </div>

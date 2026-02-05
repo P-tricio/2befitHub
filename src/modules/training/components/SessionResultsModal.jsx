@@ -11,6 +11,7 @@ const SessionResultsModal = ({ task, session, onClose, userId }) => {
     const [expandedAdjustments, setExpandedAdjustments] = useState(true);
     const [expandedBlocks, setExpandedBlocks] = useState({});
     const [libraryExercises, setLibraryExercises] = useState([]);
+    const [sessionFeedback, setSessionFeedback] = useState(null);
 
     const results = task?.results || {};
     const dateKey = task?.scheduledDate || format(new Date(task?.completedAt || Date.now()), 'yyyy-MM-dd');
@@ -23,8 +24,14 @@ const SessionResultsModal = ({ task, session, onClose, userId }) => {
                     TrainingDB.logs.getBySession(userId, session.id, dateKey),
                     TrainingDB.exercises.getAll()
                 ]);
-                // Filter out metadata logs
+
+                // Identify standard workload logs
                 setLogs(sessionLogs.filter(l => l.moduleId && l.results));
+
+                // Find potential session-level feedback log
+                const feedbackLog = sessionLogs.find(l => l.type === 'SESSION_FEEDBACK');
+                if (feedbackLog) setSessionFeedback(feedbackLog);
+
                 setLibraryExercises(exercises);
             } catch (error) {
                 console.error("Error fetching data:", error);
@@ -38,7 +45,7 @@ const SessionResultsModal = ({ task, session, onClose, userId }) => {
     const libraryMap = new Map(libraryExercises.map(e => [e.id, e]));
 
     // Generic robust normalization for name matching
-    const normalizeName = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '').replace(/s$/, '');
+    const normalizeName = (s) => (s || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
 
     // Enhanced name map for better matching
     const libraryNameMap = new Map();
@@ -47,38 +54,73 @@ const SessionResultsModal = ({ task, session, onClose, userId }) => {
         if (e.nameEs) libraryNameMap.set(normalizeName(e.nameEs), e);
     });
 
-    // Helper to get reps with EMOM inference
+    // Helper to get reps with EMOM inference and string-corruption fix
     const getInferredReps = (log, exIdx, exercise, blockMetadata) => {
+        // PRIORITY 1: Re-calculate sum from per-set data (seriesReps) to fix string concatenation bugs (e.g. "0555")
+        const seriesReps = log.results?.seriesReps?.[exIdx] || log.results?.libreSetReps?.[exIdx];
+        if (seriesReps && Array.isArray(seriesReps) && seriesReps.length > 0) {
+            return seriesReps.reduce((a, b) => (parseInt(a, 10) || 0) + (parseInt(b, 10) || 0), 0);
+        }
+
         let reps = log.results?.reps?.[exIdx];
 
-        // EMOM Reps Inference
-        if ((reps === undefined || reps === 0) && log.protocol === 'E') {
+        // Handle stringified sums (like "0555") by checking if it's unusually long for a sum
+        if (typeof reps === 'string' && reps.length > 3 && reps.startsWith('0')) {
+            return parseInt(reps, 10) || 0;
+        }
+
+        // PRIORITY 2: EMOM Reps Inference
+        if ((reps === undefined || reps === 0) && log.protocol?.includes('E')) {
             const successCount = Object.values(log.results?.emomResults || {}).filter(s => s === 'success').length;
             const targetPerRound = exercise?.targetReps || blockMetadata?.module?.targeting?.[0]?.volume || 0;
             reps = successCount * targetPerRound;
         }
-        return reps || 0;
+        return parseInt(reps, 10) || 0;
     };
 
-    // Helper for fuzzy matching names
     const getSpanishName = (ex, fallbackIdx) => {
-        if (ex?.nameEs) return ex.nameEs;
-
-        const target = normalizeName(ex?.name);
-
-        let libEx = libraryMap.get(ex?.id);
-        if (!libEx && target) libEx = libraryNameMap.get(target);
-
-        return libEx?.nameEs || libEx?.name || ex?.nameEs || ex?.name || `Ejercicio ${fallbackIdx + 1}`;
+        const exId = ex?.id || ex?.exerciseId;
+        if (exId) {
+            const libEx = libraryMap.get(exId);
+            if (libEx?.nameEs) return libEx.nameEs;
+            if (libEx?.name) return libEx.name;
+        }
+        const target = normalizeName(ex?.name || ex?.nameEs);
+        if (target) {
+            const libEx = libraryNameMap.get(target);
+            if (libEx?.nameEs) return libEx.nameEs;
+        }
+        return ex?.nameEs || ex?.name || `Ejercicio ${fallbackIdx + 1}`;
     };
 
-    // Calculate fallback metrics if missing from task
-    const calculatedResults = useMemo(() => {
-        // If task has valid results, use them as primary source
-        if (task?.results && Object.keys(task.results).length > 0 && (task.results.totalVolume > 0 || task.results.efficiency > 0)) {
-            return task.results;
-        }
+    const getProtocolName = (protocol) => {
+        const protocols = {
+            'E': 'EMOM',
+            'A': 'AMRAP',
+            'R': 'REPETICIONES',
+            'T': 'TIEMPO',
+            'F': 'FOR TIME',
+            'LIBRE': 'LIBRE'
+        };
+        const code = protocol?.replace('PDP-', '') || 'LIBRE';
+        return protocols[code] || code;
+    };
 
+    const getVolumeUnit = (exercise, log) => {
+        const exId = exercise?.id || exercise?.exerciseId;
+        const libEx = libraryMap.get(exId);
+        const qualities = libEx?.qualities || (libEx?.quality ? [libEx.quality] : []);
+        const normQualities = qualities.map(q => q.toLowerCase());
+        const isBoost = log?.blockType?.toUpperCase().includes('BOOST');
+
+        if (normQualities.includes('e') || normQualities.includes('energía') || normQualities.includes('energia') || isBoost) {
+            return "seg";
+        }
+        if (exercise?.targetUnit) return exercise.targetUnit;
+        return "reps";
+    };
+
+    const calculatedResults = useMemo(() => {
         if (loading || logs.length === 0) return task?.results || {};
 
         let totalVolume = 0;
@@ -93,28 +135,31 @@ const SessionResultsModal = ({ task, session, onClose, userId }) => {
             exercises.forEach((ex, idx) => {
                 const reps = getInferredReps(log, idx, ex, blockMetadata);
                 const weight = parseFloat(log.results.actualWeights?.[idx] || log.results.weights?.[idx] || 0) || 0;
-                totalVolume += (reps * weight);
+                const unit = getVolumeUnit(ex, log);
+                if (unit === 'reps' && weight > 0) {
+                    totalVolume += (reps * weight);
+                }
             });
 
-            // Basic efficiency estimation for legacy/missing data: 100% if not skipped and has results
-            totalEfficiency += 100;
+            totalEfficiency += log.results.efficiency || 100;
             blocksWithEfficiency++;
         });
 
-        return {
+        const calculated = {
             ...task?.results,
             totalVolume: Math.round(totalVolume),
             efficiency: blocksWithEfficiency > 0 ? Math.round(totalEfficiency / blocksWithEfficiency) : 100,
             durationMinutes: task?.results?.durationMinutes || task?.results?.duration || logs.reduce((acc, l) => acc + (l.results?.durationMinutes || 0), 0) || '--'
         };
+
+        if (task?.results?.totalVolume > 200000 && calculated.totalVolume < 100000) return calculated;
+        return (task?.results?.totalVolume > 0) ? task.results : calculated;
     }, [task?.results, logs, loading, session?.blocks]);
 
     const toggleBlock = (idx) => {
         setExpandedBlocks(prev => ({
             ...prev,
-            [idx]: prev[idx] === false // If explicitly false, set to true. Else (undefined/true) set to false.
-                ? true
-                : false
+            [idx]: prev[idx] === false ? true : false
         }));
     };
 
@@ -137,12 +182,9 @@ const SessionResultsModal = ({ task, session, onClose, userId }) => {
                 className="relative w-full h-[95vh] rounded-t-3xl shadow-[0_-8px_30px_rgba(0,0,0,0.12)] overflow-hidden flex flex-col"
             >
                 <div className="flex-1 flex flex-col max-w-lg mx-auto w-full bg-white h-full shadow-2xl overflow-hidden relative">
-                    {/* Header Section - Premium Light */}
+                    {/* Header Section */}
                     <div className="bg-white p-6 pb-2 text-slate-900 relative shrink-0">
-                        <button
-                            onClick={onClose}
-                            className="absolute top-4 right-4 p-2 bg-slate-100 hover:bg-slate-200 rounded-2xl transition-all"
-                        >
+                        <button onClick={onClose} className="absolute top-4 right-4 p-2 bg-slate-100 hover:bg-slate-200 rounded-2xl transition-all">
                             <X size={20} className="text-slate-500" />
                         </button>
 
@@ -174,49 +216,31 @@ const SessionResultsModal = ({ task, session, onClose, userId }) => {
 
                     {/* Content Area */}
                     <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-white">
-
-                        {/* Gestión de Carga Section (Collapsible) */}
+                        {/* Technical Adjustments */}
                         {results.analysis && results.analysis.length > 0 && (
                             <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden">
-                                <button
-                                    onClick={() => setExpandedAdjustments(!expandedAdjustments)}
-                                    className="w-full px-5 py-4 flex items-center justify-between hover:bg-slate-50 transition-all text-left"
-                                >
+                                <button onClick={() => setExpandedAdjustments(!expandedAdjustments)} className="w-full px-5 py-4 flex items-center justify-between hover:bg-slate-50 transition-all">
                                     <div className="flex items-center gap-3">
                                         <TrendingUp size={16} className="text-indigo-500" />
                                         <h3 className="text-[10px] font-black text-slate-900 uppercase tracking-[0.2em]">Ajustes Técnicos</h3>
                                     </div>
-                                    <div className="text-slate-300">
-                                        {expandedAdjustments ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                                    </div>
+                                    <div className="text-slate-300">{expandedAdjustments ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</div>
                                 </button>
-
                                 <AnimatePresence>
                                     {expandedAdjustments && (
-                                        <motion.div
-                                            initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }}
-                                            className="overflow-hidden"
-                                        >
+                                        <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">
                                             <div className="px-5 pb-5 space-y-2">
                                                 {results.analysis.map((insight, idx) => (
                                                     <div key={idx} className="bg-slate-50 p-3 rounded-2xl border border-slate-100 flex items-center gap-4">
-                                                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${insight.type === 'up' ? 'bg-emerald-100 text-emerald-600' :
-                                                            insight.type === 'down' ? 'bg-rose-100 text-rose-600' :
-                                                                insight.type === 'skipped' ? 'bg-slate-100 text-slate-400' :
-                                                                    'bg-blue-100 text-blue-600'
-                                                            }`}>
+                                                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${insight.type === 'up' ? 'bg-emerald-100 text-emerald-600' : insight.type === 'down' ? 'bg-rose-100 text-rose-600' : insight.type === 'skipped' ? 'bg-slate-100 text-slate-400' : 'bg-blue-100 text-blue-600'}`}>
                                                             {insight.type === 'up' && <TrendingUp size={16} />}
                                                             {insight.type === 'down' && <TrendingDown size={16} />}
                                                             {insight.type === 'skipped' && <X size={16} />}
                                                             {insight.type === 'keep' && <Minus size={16} />}
                                                         </div>
                                                         <div className="min-w-0">
-                                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-tight truncate">
-                                                                {insight.exerciseName || 'Bloque'}
-                                                            </p>
-                                                            <p className="text-xs font-bold text-slate-700 leading-tight">
-                                                                {insight.athleteMsg || insight.msg}
-                                                            </p>
+                                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-tight truncate">{insight.exerciseName || 'Bloque'}</p>
+                                                            <p className="text-xs font-bold text-slate-700 leading-tight">{insight.athleteMsg || insight.msg}</p>
                                                         </div>
                                                     </div>
                                                 ))}
@@ -240,122 +264,118 @@ const SessionResultsModal = ({ task, session, onClose, userId }) => {
                                     <p className="text-xs font-black uppercase tracking-widest">Calculando...</p>
                                 </div>
                             ) : logs.length === 0 ? (
-                                <div className="py-12 text-center text-slate-400 text-[10px] font-black uppercase tracking-widest bg-white rounded-[2rem] border-2 border-dashed border-slate-100">
-                                    Sin registros detallados
-                                </div>
+                                <div className="py-12 text-center text-slate-400 text-[10px] font-black uppercase tracking-widest bg-white rounded-[2rem] border-2 border-dashed border-slate-100">Sin registros detallados</div>
                             ) : (
                                 <div className="space-y-3">
                                     {logs.map((log, lIdx) => {
-                                        const isExpanded = expandedBlocks[lIdx] !== false; // Default expanded
+                                        const isExpanded = expandedBlocks[lIdx] !== false;
                                         const blockMetadata = session.blocks?.find(b => b.id === log.moduleId || b.name === log.blockType);
                                         const exercisesToShow = blockMetadata?.exercises || log.exercises || [];
                                         const hasWork = exercisesToShow.some((ex, idx) => getInferredReps(log, idx, ex, blockMetadata) > 0);
+                                        const proto = log.protocol?.replace('PDP-', '');
 
                                         return (
                                             <div key={log.id || lIdx} className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
-                                                <button
-                                                    onClick={() => toggleBlock(lIdx)}
-                                                    className="w-full px-5 py-4 flex items-center justify-between hover:bg-slate-50 transition-all text-left"
-                                                >
+                                                <button onClick={() => toggleBlock(lIdx)} className="w-full px-5 py-4 flex items-center justify-between hover:bg-slate-50 transition-all text-left">
                                                     <div className="flex items-center gap-3">
-                                                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-[10px] font-black tracking-widest ${log.blockType === 'BOOST' ? 'bg-orange-500/10 text-orange-600' :
-                                                            log.blockType === 'BASE' ? 'bg-emerald-500/10 text-emerald-600' :
-                                                                log.blockType === 'BUILD' ? 'bg-blue-500/10 text-blue-600' :
-                                                                    log.blockType === 'BURN' ? 'bg-rose-500/10 text-rose-600' :
-                                                                        'bg-slate-100 text-slate-600'
-                                                            }`}>
+                                                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-[10px] font-black tracking-widest ${log.blockType === 'BOOST' ? 'bg-orange-500/10 text-orange-600' : log.blockType === 'BASE' ? 'bg-emerald-500/10 text-emerald-600' : log.blockType === 'BUILD' ? 'bg-blue-500/10 text-blue-600' : log.blockType === 'BURN' ? 'bg-rose-500/10 text-rose-600' : 'bg-slate-100 text-slate-600'}`}>
                                                             {log.blockType?.[0] || 'S'}
                                                         </div>
-                                                        <div>
-                                                            <div className="flex items-center gap-2">
-                                                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">
-                                                                    {log.blockType || 'Bloque'}
-                                                                </p>
-                                                                {log.results?.feedback?.rpe && (
-                                                                    <span className="text-[9px] font-black bg-slate-900 text-white px-1.5 py-0.5 rounded ml-1">RPE {log.results.feedback.rpe}</span>
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">{log.blockType || 'Bloque'}</p>
+                                                                <span className="text-[8px] font-black bg-indigo-50 text-indigo-500 px-1.5 py-0.5 rounded border border-indigo-100 uppercase tracking-tighter">{getProtocolName(log.protocol)}</span>
+                                                                {(log.results?.rpe || log.results?.feedback?.rpe) && (
+                                                                    <span className="text-[9px] font-black bg-slate-900 text-white px-1.5 py-0.5 rounded ml-1">RPE {log.results.rpe || log.results.feedback.rpe}</span>
                                                                 )}
                                                             </div>
-                                                            <div className="flex items-center gap-2 text-slate-900 font-black text-[10px] mt-0.5">
-                                                                <Clock size={10} className="text-slate-300" />
-                                                                <span>
-                                                                    {log.results?.skipped
-                                                                        ? <span className="text-slate-400 capitalize">Saltado</span>
-                                                                        : log.protocol === 'R'
-                                                                            ? (log.results?.elapsed > 0
-                                                                                ? `${Math.floor(log.results.elapsed / 60)}:${(log.results.elapsed % 60).toString().padStart(2, '0')}`
-                                                                                : (hasWork ? 'Completado' : '--'))
-                                                                            : log.protocol === 'T'
-                                                                                ? `${Math.floor((log.results?.timeCap || log.module?.targeting?.[0]?.timeCap || 240) / 60)} min`
-                                                                                : `${log.results?.durationMinutes || log.module?.emomParams?.durationMinutes || Object.keys(log.results?.emomResults || {}).length || '--'} min`}
+                                                            <div className="flex items-center gap-2 text-slate-900 font-black text-[11px] mt-1">
+                                                                <Clock size={11} className="text-emerald-500" />
+                                                                <span className="tracking-tight text-slate-700">
+                                                                    {log.results?.skipped ? <span className="text-slate-400 capitalize">Saltado</span> : (
+                                                                        proto === 'R' ? (log.results?.elapsed > 0 ? <span className="flex items-center gap-1"><span className="text-[9px] text-slate-400 uppercase font-black">Tiempo:</span> {Math.floor(log.results.elapsed / 60)}:{(log.results.elapsed % 60).toString().padStart(2, '0')}</span> : (hasWork ? 'Completado' : '--')) :
+                                                                            proto === 'T' ? <span className="flex items-center gap-1"><span className="text-[9px] text-slate-400 uppercase font-black">Meta:</span> {Math.floor((log.results?.timeCap || log.module?.targeting?.[0]?.timeCap || 240) / 60)} min</span> :
+                                                                                `${log.results?.durationMinutes || log.module?.emomParams?.durationMinutes || Object.keys(log.results?.emomResults || {}).length || '--'} min`
+                                                                    )}
                                                                 </span>
-                                                                {(log.results?.rpe || log.feedback?.rpe) && (
-                                                                    <div className="flex items-center gap-1 ml-1 pl-2 border-l border-slate-100">
-                                                                        <Star size={10} className="text-amber-500 fill-amber-500" />
-                                                                        <span className="text-slate-900">RPE {log.results?.rpe || log.feedback?.rpe}</span>
-                                                                    </div>
-                                                                )}
                                                             </div>
                                                         </div>
                                                     </div>
-                                                    <div className="text-slate-300">
-                                                        {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                                                    </div>
+                                                    <div className="text-slate-300">{isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</div>
                                                 </button>
 
                                                 <AnimatePresence>
                                                     {isExpanded && (
-                                                        <motion.div
-                                                            initial={{ height: 0, opacity: 0 }}
-                                                            animate={{ height: 'auto', opacity: 1 }}
-                                                            exit={{ height: 0, opacity: 0 }}
-                                                            className="overflow-hidden"
-                                                        >
+                                                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
                                                             <div className="px-5 pb-5 space-y-2">
-                                                                {log.protocol === 'E' && log.results?.emomResults && (
-                                                                    <div className="flex gap-1.5 overflow-x-auto pb-2 no-scrollbar mb-1">
-                                                                        {Object.entries(log.results.emomResults).map(([round, status]) => (
-                                                                            <div key={round} className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 text-[10px] font-black ${status === 'success' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/10' : status === 'fail' ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/10' : 'bg-slate-200 text-slate-400'}`}>
-                                                                                {round}
-                                                                            </div>
-                                                                        ))}
-                                                                    </div>
+                                                                {proto === 'E' && log.results?.emomResults && (
+                                                                    <>
+                                                                        <div className="flex gap-1.5 overflow-x-auto pb-2 no-scrollbar mb-1">
+                                                                            {Object.entries(log.results.emomResults).map(([round, status]) => (
+                                                                                <div key={round} className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 text-[10px] font-black ${status === 'success' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/10' : status === 'fail' ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/10' : 'bg-slate-200 text-slate-400'}`}>
+                                                                                    {round}
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                        <div className="flex flex-wrap items-center gap-3 mb-2 px-1">
+                                                                            <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-100">
+                                                                                {Object.values(log.results.emomResults).filter(s => s === 'success').length} de {Object.keys(log.results.emomResults).length} rondas completas
+                                                                            </span>
+                                                                            {exercisesToShow[0]?.targetReps && (
+                                                                                <span className="text-[10px] font-black text-slate-500 bg-slate-50 px-2 py-0.5 rounded-lg border border-slate-100 italic">Meta: {exercisesToShow[0].targetReps} reps/ronda</span>
+                                                                            )}
+                                                                        </div>
+                                                                    </>
                                                                 )}
 
                                                                 <div className="grid gap-1.5">
-                                                                    {(() => {
-                                                                        return exercisesToShow.map((exercise, exIdx) => {
-                                                                            const reps = getInferredReps(log, exIdx, exercise, blockMetadata);
-                                                                            const weight = log.results?.actualWeights?.[exIdx] || log.results?.weights?.[exIdx] || 0;
+                                                                    {exercisesToShow.map((exercise, exIdx) => {
+                                                                        const reps = getInferredReps(log, exIdx, exercise, blockMetadata);
+                                                                        const weight = log.results?.actualWeights?.[exIdx] || log.results?.weights?.[exIdx] || 0;
+                                                                        const unit = getVolumeUnit(exercise, log);
+                                                                        const displayName = getSpanishName(exercise, exIdx);
 
-                                                                            // Localization Enrichment
-                                                                            const displayName = getSpanishName(exercise, exIdx);
+                                                                        return (
+                                                                            <div key={exIdx} className="flex flex-col gap-1.5 bg-white p-3 rounded-2xl border border-slate-100 shadow-sm">
+                                                                                <div className="flex justify-between items-start gap-2">
+                                                                                    <div className="flex items-start gap-2 min-w-0 flex-1">
+                                                                                        <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full shrink-0 mt-1.5" />
+                                                                                        <span className="text-xs font-bold text-slate-700 leading-tight">{displayName}</span>
+                                                                                    </div>
+                                                                                    <div className="flex items-center gap-2 shrink-0">
+                                                                                        {!log.results?.seriesReps?.[exIdx] && <span className="text-xs font-black text-slate-900">{reps || 0} <span className="text-[8px] opacity-40 lowercase">{unit}</span></span>}
+                                                                                        {!log.results?.seriesWeights?.[exIdx] && parseFloat(weight) > 0 && <span className="bg-slate-900 text-white px-2 py-0.5 rounded-lg text-[9px] font-black font-mono">{weight}kg</span>}
+                                                                                    </div>
+                                                                                </div>
 
-                                                                            return (
-                                                                                <div key={exIdx} className="flex flex-col gap-1.5 bg-white p-3 rounded-2xl border border-slate-100 shadow-sm">
-                                                                                    <div className="flex justify-between items-start gap-2">
-                                                                                        <div className="flex items-start gap-2 min-w-0 flex-1">
-                                                                                            <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full shrink-0 mt-1.5" />
-                                                                                            <span className="text-xs font-bold text-slate-700 leading-tight break-words">{displayName}</span>
-                                                                                        </div>
-                                                                                        <div className="flex items-center gap-2 shrink-0">
-                                                                                            <span className="text-xs font-black text-slate-900">{reps || 0} <span className="text-[8px] opacity-40 uppercase">reps</span></span>
-                                                                                            {parseFloat(weight) > 0 && (
-                                                                                                <span className="bg-slate-900 text-white px-2 py-0.5 rounded-lg text-[9px] font-black font-mono">
-                                                                                                    {weight}kg
-                                                                                                </span>
-                                                                                            )}
+                                                                                {log.results?.seriesReps?.[exIdx] && (
+                                                                                    <div className="mt-2 bg-slate-50/50 rounded-xl p-2 border border-slate-100/50">
+                                                                                        <div className="flex flex-col divide-y divide-slate-100">
+                                                                                            {log.results.seriesReps[exIdx].map((sReps, sIdx) => {
+                                                                                                const sWeight = log.results.seriesWeights?.[exIdx]?.[sIdx] || 0;
+                                                                                                return (
+                                                                                                    <div key={sIdx} className="flex items-center justify-between py-1.5 px-1 first:pt-0 last:pb-0">
+                                                                                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Serie {sIdx + 1}</span>
+                                                                                                        <div className="flex items-center gap-2">
+                                                                                                            <span className="text-[11px] font-black text-slate-900">{sReps} <span className="text-[8px] opacity-40 lowercase">{unit}</span></span>
+                                                                                                            {parseFloat(sWeight) > 0 && <span className="bg-white border border-slate-200 text-slate-700 px-1.5 py-0.5 rounded-md text-[10px] font-black min-w-[45px] text-center shadow-sm">{sWeight}kg</span>}
+                                                                                                        </div>
+                                                                                                    </div>
+                                                                                                );
+                                                                                            })}
                                                                                         </div>
                                                                                     </div>
-                                                                                    {log.results?.exerciseNotes?.[exIdx] && (
-                                                                                        <div className="mt-1 flex items-start gap-2 bg-slate-50/50 p-2 rounded-lg border border-slate-100/50">
-                                                                                            <MessageSquare size={10} className="text-slate-300 mt-0.5" />
-                                                                                            <p className="text-[10px] text-slate-500 italic leading-tight">"{log.results.exerciseNotes[exIdx]}"</p>
-                                                                                        </div>
-                                                                                    )}
-                                                                                </div>
-                                                                            );
-                                                                        });
-                                                                    })()}
+                                                                                )}
+
+                                                                                {log.results?.exerciseNotes?.[exIdx] && (
+                                                                                    <div className="mt-1 flex items-start gap-2 bg-slate-50/50 p-2 rounded-lg border border-slate-100/50">
+                                                                                        <MessageSquare size={10} className="text-slate-300 mt-0.5" />
+                                                                                        <p className="text-[10px] text-slate-500 italic leading-tight">"{log.results.exerciseNotes[exIdx]}"</p>
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        );
+                                                                    })}
                                                                 </div>
 
                                                                 {log.feedback?.notes && (
@@ -375,47 +395,33 @@ const SessionResultsModal = ({ task, session, onClose, userId }) => {
                             )}
                         </div>
 
-                        {/* Session Notes */}
-                        {results.notes && (
+                        {/* Final Notes */}
+                        {(results.notes || sessionFeedback?.results?.notes) && (
                             <div className="space-y-3 pt-4 border-t border-slate-200">
                                 <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Notas Finales</h3>
                                 <div className="bg-white p-5 rounded-[2rem] border border-slate-200 shadow-sm">
-                                    <p className="text-slate-600 text-xs font-medium leading-relaxed italic">
-                                        "{results.notes}"
-                                    </p>
+                                    <p className="text-slate-600 text-xs font-medium leading-relaxed italic">"{results.notes || sessionFeedback?.results?.notes}"</p>
                                 </div>
                             </div>
                         )}
 
                         {/* Evidence Photo */}
-                        {(results.evidenceUrl || task?.evidenceUrl) && (
+                        {(results.evidenceUrl || task?.evidenceUrl || sessionFeedback?.results?.evidenceUrl) && (
                             <div className="space-y-3 pt-4 border-t border-slate-200">
-                                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2 flex items-center gap-2">
-                                    <Camera size={12} /> Evidencia
-                                </h3>
-                                <div className="relative group rounded-[2rem] overflow-hidden border border-slate-200 bg-slate-50 shadow-sm">
-                                    <img
-                                        src={results.evidenceUrl || task.evidenceUrl}
-                                        alt="Evidencia del entrenamiento"
-                                        className="w-full h-auto aspect-square object-cover"
-                                    />
-                                    <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent pointer-events-none" />
+                                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2 flex items-center gap-2"><Camera size={12} /> Evidencia</h3>
+                                <div className="rounded-[2rem] overflow-hidden border border-slate-200 bg-slate-50 shadow-sm">
+                                    <img src={results.evidenceUrl || task?.evidenceUrl || sessionFeedback?.results?.evidenceUrl} alt="Evidencia" className="w-full h-auto aspect-square object-cover" />
                                 </div>
                             </div>
                         )}
                     </div>
 
-                    {/* Footer Section */}
+                    {/* Footer */}
                     <div className="p-6 bg-white border-t border-slate-200 shrink-0 shadow-lg">
-                        <button
-                            onClick={onClose}
-                            className="w-full py-4 bg-slate-900 hover:bg-slate-800 text-white rounded-[2rem] font-black text-sm uppercase tracking-[0.2em] transition-all"
-                        >
-                            Entendido
-                        </button>
+                        <button onClick={onClose} className="w-full py-4 bg-slate-900 hover:bg-slate-800 text-white rounded-[2rem] font-black text-sm uppercase tracking-[0.2em] transition-all">Entendido</button>
                     </div>
                 </div>
-            </motion.div >
+            </motion.div>
         </div>,
         document.body
     );

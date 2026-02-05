@@ -173,6 +173,7 @@ const SessionRunner = () => {
 
     const [currentIndex, setCurrentIndex] = useState(0);
     const [isProcessing, setIsProcessing] = useState(false);
+    const processingRef = useRef(false);
     const mainContainerRef = useRef(null);
 
     // Auto-scroll to top when index changes
@@ -432,8 +433,10 @@ const SessionRunner = () => {
     };
 
     const handleBlockFeedbackConfirm = async (feedbackData) => {
-        if (isProcessing) return;
+        if (processingRef.current) return;
+        processingRef.current = true;
         setIsProcessing(true);
+        console.log('[handleBlockFeedbackConfirm] Starting block save...', { sessionId: session?.id, block: currentStep?.blockType });
         try {
             const currentStep = timeline[currentIndex];
 
@@ -498,8 +501,11 @@ const SessionRunner = () => {
                     const setWeights = finalResults.seriesWeights?.[idx] || [];
                     const setReps = finalResults.seriesReps?.[idx] || [];
 
-                    // Only log if there's actual weight data
-                    if (weight && parseFloat(weight) > 0) {
+                    // Only log if there's actual weight data (top-level OR series weights)
+                    const hasTopWeight = weight && parseFloat(weight) > 0;
+                    const hasSeriesWeights = setWeights.length > 0 && setWeights.some(w => parseFloat(w) > 0);
+
+                    if (hasTopWeight || hasSeriesWeights) {
                         const sets = setWeights.length > 0
                             ? setWeights.map((w, i) => ({ weight: parseFloat(w) || 0, reps: parseInt(setReps[i]) || 0 }))
                             : [{ weight: parseFloat(weight), reps: parseInt(reps) || 0 }];
@@ -510,13 +516,13 @@ const SessionRunner = () => {
                             date: new Date(),
                             sessionId: session.id,
                             moduleId: currentStep.module.id,
-                            exerciseName: ex.nameEs || ex.name,
+                            exerciseName: ex.nameEs || ex.name || 'Ejercicio',
                             sets: sets,
                             maxWeight: maxWeight,
-                            // 🆕 Context fields for smart lookup
-                            protocol: currentStep.module.protocol,
-                            blockType: currentStep.blockType,
-                            manifestation: currentStep.module.manifestation
+                            // 🆕 Context fields for smart lookup (Sanitized to avoid undefined crashes)
+                            protocol: currentStep.module.protocol || null,
+                            blockType: currentStep.blockType || null,
+                            manifestation: currentStep.module.manifestation || null
                         });
                     }
                 }
@@ -528,10 +534,12 @@ const SessionRunner = () => {
             setShowFeedbackModal(false);
             setPendingResults(null);
             setIsProcessing(false);
+            processingRef.current = false;
             handleNext();
         } catch (err) {
             console.error("Error saving block feedback:", err);
             setIsProcessing(false);
+            processingRef.current = false;
         }
     };
 
@@ -853,42 +861,47 @@ const SessionRunner = () => {
 // --- Sub-components & Logic ---
 
 const ExerciseDetailModal = ({ selectedExercise, onClose, protocol }) => (
-    <div className="fixed inset-0 z-[6000] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[6000] flex items-end justify-center sm:items-center sm:p-4">
         <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             onClick={onClose}
             className="absolute inset-0 bg-black/80 backdrop-blur-sm"
         />
         <motion.div
-            initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
-            className="bg-slate-800 w-full max-w-sm rounded-3xl overflow-hidden relative z-10 shadow-2xl border border-slate-700 max-h-[90vh] flex flex-col"
+            initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+            transition={{ type: "spring", damping: 25, stiffness: 300 }}
+            className="bg-slate-900 w-full sm:max-w-sm rounded-t-[2rem] sm:rounded-3xl overflow-hidden relative z-10 shadow-2xl border-t border-slate-700 sm:border h-[95vh] flex flex-col"
         >
-            <div className="aspect-video bg-black relative shrink-0">
-                <ExerciseMedia exercise={selectedExercise} autoPlay={true} />
+            {/* Header Bar */}
+            <div className="flex items-center justify-between px-4 py-3 bg-slate-900 border-b border-slate-700 shrink-0">
+                <span className="text-white font-black text-sm truncate pr-4">
+                    {selectedExercise.nameEs || selectedExercise.name}
+                </span>
                 <button
                     onClick={onClose}
-                    className="absolute top-4 right-4 bg-black/50 p-2 rounded-full text-white hover:bg-black/70"
+                    className="p-1.5 rounded-full bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors"
                 >
-                    <ChevronLeft size={20} className="rotate-[-90deg]" />
+                    <X size={20} />
                 </button>
-                {/* Protocol Badge Override on Image */}
-                <div className="absolute bottom-4 left-4 flex gap-2">
-                    <span className="px-2 py-1 bg-black/60 backdrop-blur text-white text-[10px] font-black uppercase rounded-md border border-white/10">
-                        {selectedExercise.quality === 'F' ? 'FUERZA' : selectedExercise.quality === 'E' ? 'ENERGÍA' : selectedExercise.quality === 'M' ? 'MOVILIDAD' : 'GENERAL'}
-                    </span>
-                </div>
+            </div>
+
+            <div className="h-[35vh] w-full bg-black relative shrink-0">
+                <ExerciseMedia exercise={selectedExercise} autoPlay={true} showControls={false} className="w-full h-full object-contain" />
+
+                {/* Protocol Badge (Removed as it's now in header) */}
             </div>
 
             <div className="p-6 overflow-y-auto">
                 <div className="mb-4">
-                    <h2 className="text-2xl font-black text-white leading-tight mb-2">{selectedExercise.nameEs || selectedExercise.name}</h2>
-
                     {/* Load/Config Badge */}
                     <div className="inline-flex flex-wrap gap-2">
-                        {protocol === 'T' ? (
+                        <span className="px-2 py-1.5 bg-slate-700/50 text-slate-300 text-[10px] font-black uppercase rounded-lg border border-slate-600/50">
+                            {selectedExercise.quality === 'F' ? 'FUERZA' : selectedExercise.quality === 'E' ? 'ENERGÍA' : selectedExercise.quality === 'M' ? 'MOVILIDAD' : 'GENERAL'}
+                        </span>
+                        {(protocol === 'T' || protocol === 'PDP-T') ? (
                             <div className="px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-2">
                                 <span className="text-xs font-bold text-emerald-500 uppercase tracking-wider">Objetivo:</span>
-                                <span className="text-sm font-black text-white">Máximas Repeticiones</span>
+                                <span className="text-sm font-black text-white">Máximas reps</span>
                             </div>
                         ) : (selectedExercise.targetReps > 0 || selectedExercise.manifestation) && (
                             <div className="px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-2">
@@ -1808,6 +1821,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
     const [heartRates, setHeartRates] = useState({}); // Heart rate per exercise
     const [energyMetrics, setEnergyMetrics] = useState({}); // { idx: { volumeUnit: 'kcal', intensityUnit: 'W' } }
     const [exerciseNotes, setExerciseNotes] = useState({}); // Per-exercise notes
+    const [isNavExpanded, setIsNavExpanded] = useState(false); // Guided navigation state
 
     useEffect(() => {
         const initReps = {};
@@ -1895,9 +1909,8 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
     // Reps Increment Handler
     const incrementReps = (idx) => {
         setRepsDone(prev => {
-            const newReps = { ...prev };
-            newReps[idx] = (newReps[idx] || 0) + 1;
-            return newReps;
+            const current = parseInt(prev[idx] || 0, 10);
+            return { ...prev, [idx]: current + 1 };
         });
     };
 
@@ -1930,6 +1943,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
             }
         }
     }, [repsDone, protocol, isActive, exercises, module]);
+
 
     // EMOM Round Results State
     const [emomResults, setEmomResults] = useState({});
@@ -2110,6 +2124,34 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
         return { targetSets, targetReps, repsPerSet, restSeconds, intensity, isVariableReps, isTime, isDist, volUnit, intUnitLabel, isLoadable };
     };
 
+    // Guided Navigation Logic: Auto-expand when block is "theoretically" complete
+    // MOVED HERE to ensure getLibreConfig and state are defined
+    const isBlockComplete = useMemo(() => {
+        if (protocol === 'R') {
+            return exercises.every((ex, idx) => {
+                const target = ex.targetReps || module.targeting?.[0]?.volume || 0;
+                return target > 0 && (repsDone[idx] || 0) >= target;
+            });
+        }
+        if (protocol === 'T' || protocol === 'E') {
+            return timeLeft === 0;
+        }
+        if (protocol === 'LIBRE') {
+            return exercises.every((ex, idx) => {
+                const { targetSets } = getLibreConfig(ex);
+                return (libreSetsDone[idx] || 0) >= targetSets;
+            });
+        }
+        return false;
+    }, [protocol, exercises, module, repsDone, timeLeft, libreSetsDone]);
+
+    // Auto-expand nav when block complete
+    useEffect(() => {
+        if (isBlockComplete) {
+            setIsNavExpanded(true);
+        }
+    }, [isBlockComplete]);
+
     const getPreviousWeight = (idx) => {
         const currentEx = exercises[idx];
         const exId = currentEx?.id || currentEx?.exerciseId;
@@ -2195,7 +2237,8 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
         const ex = exercises[exIdx];
         const { targetSets, repsPerSet, restSeconds, targetReps } = getLibreConfig(ex);
         const currentSetsDone = libreSetsDone[exIdx] || 0;
-        const repsForSet = customReps ?? currentSetReps[exIdx] ?? repsPerSet[currentSetsDone] ?? targetReps ?? 10;
+        const rawReps = customReps ?? currentSetReps[exIdx] ?? repsPerSet[currentSetsDone] ?? targetReps ?? 10;
+        const repsForSet = parseInt(rawReps, 10) || 0;
         const weightForSet = currentSetWeight[exIdx] || weightsUsed[exIdx] || '';
 
         setLibreSetsDone(prev => {
@@ -2224,8 +2267,8 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
 
         // Update total repsDone for final save
         setRepsDone(prev => {
-            const currentReps = libreSetReps[exIdx] || [];
-            const totalReps = [...currentReps, repsForSet].reduce((a, b) => a + b, 0);
+            const currentRepsArr = libreSetReps[exIdx] || [];
+            const totalReps = [...currentRepsArr, repsForSet].reduce((a, b) => (parseInt(a, 10) || 0) + (parseInt(b, 10) || 0), 0);
             return { ...prev, [exIdx]: totalReps };
         });
 
@@ -2289,10 +2332,10 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
 
         // Update total repsDone
         setRepsDone(prev => {
-            const currentReps = libreSetReps[exIdx] || [];
-            const newReps = [...currentReps];
+            const currentRepsArr = libreSetReps[exIdx] || [];
+            const newReps = [...currentRepsArr];
             newReps.splice(setIdx, 1);
-            const totalReps = newReps.reduce((a, b) => a + b, 0);
+            const totalReps = newReps.reduce((a, b) => (parseInt(a, 10) || 0) + (parseInt(b, 10) || 0), 0);
             return { ...prev, [exIdx]: totalReps };
         });
 
@@ -2309,9 +2352,9 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
 
         // Update total repsDone
         setRepsDone(prev => {
-            const currentReps = [...(libreSetReps[exIdx] || [])];
-            currentReps[setIdx] = newReps;
-            const totalReps = currentReps.reduce((a, b) => a + b, 0);
+            const currentRepsArr = [...(libreSetReps[exIdx] || [])];
+            currentRepsArr[setIdx] = newReps;
+            const totalReps = currentRepsArr.reduce((a, b) => (parseInt(a, 10) || 0) + (parseInt(b, 10) || 0), 0);
             return { ...prev, [exIdx]: totalReps };
         });
 
@@ -2381,8 +2424,10 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
             exerciseNotes, // Pass the per-exercise notes
             emomResults,
             libreSetsDone, // Track completed sets for LIBRE protocol
-            seriesReps: libreSetReps, // Fixed: Rename to match consumer expectation
-            seriesWeights: libreSeriesWeights, // Fixed: Rename to match consumer expectation
+            libreSetReps, // Original keys for SummaryBlock
+            libreSeriesWeights, // Original keys for SummaryBlock
+            seriesReps: libreSetReps, // Legacy compatibility
+            seriesWeights: libreSeriesWeights, // Legacy compatibility
             elapsed: (protocol === 'R' || protocol === 'T') ? elapsed : 0
         });
     };
@@ -3229,9 +3274,17 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                                             {isLoadable ? (
                                                                 <div className="bg-slate-800/50 rounded-2xl p-4 border border-white/5 flex items-center justify-between">
                                                                     <div className="flex flex-col">
-                                                                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">INTENSIDAD / PESO</span>
+                                                                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">PESO</span>
                                                                         <div className="flex items-center gap-2">
-                                                                            <span className="text-2xl font-black text-white">{weight || 0}</span>
+                                                                            <input
+                                                                                type="text"
+                                                                                inputMode="decimal"
+                                                                                value={currentSetWeight[idx] || ''}
+                                                                                onChange={(e) => setCurrentSetWeight(prev => ({ ...prev, [idx]: e.target.value.replace(',', '.') }))}
+                                                                                onClick={(e) => e.target.select()}
+                                                                                className="w-24 bg-transparent text-left text-white font-black text-3xl outline-none"
+                                                                                placeholder="0"
+                                                                            />
                                                                             <span className="text-xs font-bold text-slate-500 uppercase">{intUnitLabel}</span>
                                                                             {(() => {
                                                                                 const prevData = getPreviousWeight(ex.originalIndex);
@@ -3590,7 +3643,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                                         <CheckCircle size={20} />
                                                         <span className="text-lg">Completar Ronda {minSetsCompleted + 1}</span>
                                                     </div>
-                                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">Siguiente Bloque</span>
+                                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">Registrar Serie</span>
                                                 </button>
                                             ) : (
                                                 <div className="p-5 bg-emerald-500/10 border border-emerald-500/20 rounded-[2rem] text-center shadow-inner">
@@ -3801,14 +3854,49 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                 )}
             </div>
 
-            <div className={`fixed bottom-2 left-4 z-20 transition-all w-[calc(100%-2rem)]`}>
-                <button
-                    onClick={handleFinishBlock}
-                    className="bg-slate-800 hover:bg-slate-700 text-white font-black text-lg rounded-2xl border border-slate-700 flex items-center justify-center gap-2 shadow-xl backdrop-blur-md w-full py-4 active:scale-[0.98] transition-all"
+            <div className="fixed bottom-3 left-4 right-4 z-[100] pointer-events-none flex justify-start">
+                <motion.button
+                    layout
+                    initial={false}
+                    animate={{
+                        width: isNavExpanded ? '100%' : '56px',
+                        backgroundColor: isNavExpanded ? '#1e293b' : '#334155'
+                    }}
+                    transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                    onClick={() => {
+                        if (!isNavExpanded) {
+                            setIsNavExpanded(true);
+                        } else {
+                            handleFinishBlock();
+                        }
+                    }}
+                    className="pointer-events-auto h-14 rounded-2xl border border-white/10 flex items-center justify-center gap-3 shadow-2xl backdrop-blur-md overflow-hidden relative group"
                 >
-                    <CheckCircle size={24} />
-                    Siguiente Bloque
-                </button>
+                    <motion.div
+                        layout
+                        className={`flex items-center justify-center shrink-0 ${isNavExpanded ? 'ml-0' : 'w-full'}`}
+                    >
+                        <CheckCircle size={24} className={isNavExpanded ? 'text-emerald-400' : 'text-slate-400'} />
+                    </motion.div>
+
+                    <AnimatePresence>
+                        {isNavExpanded && (
+                            <motion.span
+                                initial={{ opacity: 0, x: -10 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                exit={{ opacity: 0, x: -10 }}
+                                className="text-white font-black text-lg uppercase tracking-wider whitespace-nowrap pr-2"
+                            >
+                                Finalizar Bloque
+                            </motion.span>
+                        )}
+                    </AnimatePresence>
+
+                    {/* Visual hint for minimized state */}
+                    {!isNavExpanded && (
+                        <div className="absolute inset-0 bg-white/5 opacity-0 group-active:opacity-100 transition-opacity" />
+                    )}
+                </motion.button>
             </div>
         </div >
     );
@@ -3835,18 +3923,17 @@ const BlockFeedbackModal = ({ onConfirm, onBack, initialExNotes = {}, blockType,
     };
 
     return (
-        <div className="fixed inset-0 z-[6000] flex items-center justify-center p-6">
+        <div className="fixed inset-0 z-[6000] flex items-end justify-center sm:items-center sm:p-4">
             <motion.div
                 initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                 className="absolute inset-0 bg-slate-900/90 backdrop-blur-md"
             />
             <motion.div
-                initial={{ scale: 0.9, opacity: 0, y: 20 }}
-                animate={{ scale: 1, opacity: 1, y: 0 }}
-                exit={{ scale: 0.9, opacity: 0, y: 20 }}
-                className="bg-slate-800 w-full max-w-sm rounded-[2rem] border border-slate-700 shadow-2xl relative z-10 overflow-hidden"
+                initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+                transition={{ type: "spring", damping: 25, stiffness: 300 }}
+                className="bg-slate-800 w-full sm:max-w-sm rounded-t-[2rem] sm:rounded-[2rem] border-t border-slate-700 sm:border shadow-2xl relative z-10 overflow-hidden flex flex-col h-[85vh]"
             >
-                <div className="p-4 sm:p-6">
+                <div className="flex flex-col h-full p-4 sm:p-6 pb-8 sm:pb-6 overflow-hidden">
                     <div className="flex items-center justify-between mb-8">
                         <div className="flex items-center gap-3">
                             <button
@@ -3874,7 +3961,7 @@ const BlockFeedbackModal = ({ onConfirm, onBack, initialExNotes = {}, blockType,
                         </button>
                     </div>
 
-                    <div className="space-y-6 max-h-[60vh] overflow-y-auto overflow-x-hidden px-1">
+                    <div className="space-y-6 flex-1 overflow-y-auto overflow-x-hidden px-1 -mx-1">
                         <RPESelector
                             value={rpe}
                             onChange={setRpe}

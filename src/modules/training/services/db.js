@@ -405,12 +405,18 @@ export const TrainingDB = {
     // --- LOGS (User Performance) ---
     logs: {
         async create(userId, data) {
-            return await addDoc(collection(db, LOGS), {
-                userId,
-                ...data,
-                date: data.date || serverTimestamp(),
-                timestamp: data.timestamp || new Date().toISOString()
-            });
+            console.log('[TrainingDB.logs.create] Creating log for user:', userId, 'Type:', data.type || 'WORK');
+            try {
+                return await addDoc(collection(db, LOGS), {
+                    userId,
+                    ...data,
+                    date: data.date || serverTimestamp(),
+                    timestamp: data.timestamp || new Date().toISOString()
+                });
+            } catch (err) {
+                console.error('[TrainingDB.logs.create] Error:', err);
+                throw err;
+            }
         },
         async getHistory(userId, moduleId) {
             const q = query(
@@ -539,6 +545,13 @@ export const TrainingDB = {
                 return null;
             }
             try {
+                // Ensure the parent exercise document exists so it can be listed by getAllExercises
+                const exerciseRef = doc(db, 'users', userId, 'exercise_history', exerciseId);
+                await setDoc(exerciseRef, {
+                    lastPerformed: serverTimestamp(),
+                    exerciseName: data.exerciseName || 'Ejercicio'
+                }, { merge: true });
+
                 const ref = collection(db, 'users', userId, 'exercise_history', exerciseId, 'logs');
                 return await addDoc(ref, {
                     ...data,

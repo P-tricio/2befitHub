@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { Camera, TrendingUp, TrendingDown, Activity, ChevronRight, Scale, Footprints, Settings, Trash2, CalendarDays, BarChart, User as UserIcon } from 'lucide-react';
+import { Camera, TrendingUp, TrendingDown, Activity, ChevronRight, Scale, Footprints, Settings, Trash2, CalendarDays, BarChart, User as UserIcon, X } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { TrainingDB } from '../../services/db';
 import { useAuth } from '../../../../context/AuthContext';
 import PhotoComparisonModal from '../../components/PhotoComparisonModal';
+import VisualEvolutionCard from '../../components/VisualEvolutionCard';
+import ExerciseHistoryView from '../components/ExerciseHistoryView';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -18,7 +20,8 @@ const AthleteTracking = () => {
     const [activeMetric, setActiveMetric] = useState('weight');
     const [useSmoothing, setUseSmoothing] = useState(false);
     const [customMetrics, setCustomMetrics] = useState(currentUser?.customMeasurements?.length > 0 ? currentUser.customMeasurements : ['waist', 'hip']);
-    const [collapsedSections, setCollapsedSections] = useState({ kpis: false, analysis: false });
+    const [collapsedSections, setCollapsedSections] = useState({ kpis: false, analysis: true, loads: true, visual: false });
+
 
     const toggleSection = (section) => {
         setCollapsedSections(prev => ({
@@ -42,7 +45,8 @@ const AthleteTracking = () => {
                 const hasWeight = entry.weight !== null && entry.weight !== undefined && entry.weight !== '';
                 const hasSteps = entry.steps !== null && entry.steps !== undefined && entry.steps !== '';
                 const hasMeasurements = entry.measurements && Object.values(entry.measurements).some(v => v !== null && v !== undefined && v !== '');
-                return hasWeight || hasSteps || hasMeasurements;
+                const hasPhotos = entry.photos && Object.values(entry.photos).some(u => u !== null && u !== undefined && u !== '');
+                return hasWeight || hasSteps || hasMeasurements || hasPhotos;
             });
 
             setHistory(filteredData);
@@ -304,39 +308,53 @@ const AthleteTracking = () => {
                 )}
             </AnimatePresence>
 
-            {/* Visual Evolution Section */}
-            <section
-                onClick={() => setIsComparingPhotos(true)}
-                className="bg-slate-900 rounded-[3rem] p-10 text-white shadow-2xl relative overflow-hidden group cursor-pointer active:scale-[0.98] transition-all"
-            >
-                <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 blur-[100px] rounded-full -mr-32 -mt-32 group-hover:bg-emerald-500/20 transition-colors duration-500" />
-                <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-8">
-                    <div className="flex-1 space-y-4">
-                        <div className="bg-emerald-500 text-slate-900 w-16 h-16 rounded-[1.5rem] flex items-center justify-center shadow-lg group-hover:rotate-12 transition-all duration-500">
-                            <Camera size={32} />
+            {/* Load History Section */}
+            <div className="flex items-center justify-between mb-2 px-2">
+                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Historial de Cargas</h4>
+                <button
+                    onClick={() => toggleSection('loads')}
+                    className="text-[10px] font-black text-indigo-600 hover:text-indigo-700 uppercase tracking-widest"
+                >
+                    {collapsedSections.loads ? 'Mostrar' : 'Contraer'}
+                </button>
+            </div>
+            <AnimatePresence initial={false}>
+                {!collapsedSections.loads && (
+                    <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="overflow-hidden border border-slate-100 rounded-[3rem] shadow-sm bg-slate-50 relative mb-8"
+                    >
+                        <div className="min-h-[500px]">
+                            <ExerciseHistoryView userId={currentUser.uid} />
                         </div>
-                        <div>
-                            <h3 className="text-2xl font-black tracking-tight underline decoration-emerald-500/50 underline-offset-8">Evolución Visual</h3>
-                            <p className="text-slate-400 text-sm font-medium leading-relaxed mt-4 max-w-xs">
-                                Compara tus cambios físicos y visualiza tu transformación a través de las fotos de progreso.
-                            </p>
-                        </div>
-                        <div className="flex items-center gap-2 text-emerald-400 font-black text-xs uppercase tracking-[0.2em] mt-2 group-hover:translate-x-2 transition-transform duration-500">
-                            Abrir Galería Comparativa <ChevronRight size={18} />
-                        </div>
-                    </div>
-                    {history.filter(e => e.photos && Object.values(e.photos).some(u => u)).length > 0 && (
-                        <div className="relative hidden sm:block">
-                            <div className="w-32 h-44 rounded-2xl bg-white/10 border-2 border-white/20 rotate-[-12deg] overflow-hidden translate-x-4">
-                                <Activity className="w-full h-full p-8 text-white/5" />
-                            </div>
-                            <div className="absolute top-0 w-32 h-44 rounded-2xl bg-white/5 border-2 border-white/20 rotate-[12deg] overflow-hidden translate-x-12 translate-y-4">
-                                <Activity className="w-full h-full p-8 text-white/10" />
-                            </div>
-                        </div>
-                    )}
-                </div>
-            </section>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Visual Evolution Section (Ported from Admin) */}
+            <div className="flex items-center justify-between mb-2 px-2 pt-4">
+                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Evolución Visual</h4>
+                <button
+                    onClick={() => toggleSection('visual')}
+                    className="text-[10px] font-black text-emerald-500 hover:text-emerald-600 uppercase tracking-widest"
+                >
+                    {collapsedSections.visual ? 'Mostrar' : 'Contraer'}
+                </button>
+            </div>
+            <AnimatePresence initial={false}>
+                {!collapsedSections.visual && (
+                    <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="overflow-hidden"
+                    >
+                        <VisualEvolutionCard history={history} />
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             {/* Photo Comparison Modal */}
             <AnimatePresence>
@@ -347,6 +365,8 @@ const AthleteTracking = () => {
                     />
                 )}
             </AnimatePresence>
+
+
         </div>
     );
 };

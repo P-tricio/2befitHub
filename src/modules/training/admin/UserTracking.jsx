@@ -9,6 +9,7 @@ import AthleteHabits from '../athlete/pages/AthleteHabits';
 import UserPlanning from './UserPlanning';
 import UserSessionHistory from './UserSessionHistory';
 import ExerciseHistoryView from '../athlete/components/ExerciseHistoryView';
+import VisualEvolutionCard from '../components/VisualEvolutionCard';
 
 const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
     const scrollContainerRef = useRef(null);
@@ -23,9 +24,7 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
     const [customMetrics, setCustomMetrics] = useState(user.customMeasurements?.length > 0 ? user.customMeasurements : ['waist', 'hip']);
     const [activeMetric, setActiveMetric] = useState('weight');
     const [useSmoothing, setUseSmoothing] = useState(false);
-    const [compareDate1, setCompareDate1] = useState(null);
-    const [compareDate2, setCompareDate2] = useState(null);
-    const [compareView, setCompareView] = useState('front');
+
     const [collapsedSections, setCollapsedSections] = useState({
         kpis: false,
         analysis: false,
@@ -128,16 +127,6 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
     const weightChange = currentWeight && startWeight ? (currentWeight - startWeight).toFixed(1) : 0;
 
     const lastEntry = history.length > 0 ? history[history.length - 1] : null;
-    const photoEntries = history.filter(e => e.photos && Object.values(e.photos).some(u => u));
-
-    useEffect(() => {
-        if (photoEntries.length >= 2) {
-            setCompareDate1(photoEntries[photoEntries.length - 1].date);
-            setCompareDate2(photoEntries[photoEntries.length - 2].date);
-        } else if (photoEntries.length === 1) {
-            setCompareDate1(photoEntries[0].date);
-        }
-    }, [history]);
 
     const getSmoothedData = (data, metric) => {
         if (!useSmoothing) return data;
@@ -506,98 +495,8 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
                                         exit={{ height: 0, opacity: 0 }}
                                         className="overflow-hidden"
                                     >
-                                        <div className="bg-slate-900 rounded-[3rem] p-10 text-white shadow-2xl relative overflow-hidden">
-                                            <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 blur-[120px] rounded-full -mr-48 -mt-48" />
-                                            <div className="relative z-10 space-y-8">
-                                                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                                                    <div>
-                                                        <h3 className="text-2xl font-black tracking-tight">Evolución Visual</h3>
-                                                        <p className="text-[10px] text-emerald-400 font-bold uppercase tracking-widest mt-1">Comparativa físico</p>
-                                                    </div>
-                                                    <div className="flex bg-white/10 p-1 rounded-2xl gap-1 w-full md:w-auto overflow-x-auto">
-                                                        {['front', 'side', 'back'].map(v => (
-                                                            <button
-                                                                key={v}
-                                                                onClick={() => setCompareView(v)}
-                                                                className={`px-4 py-2 rounded-xl text-[10px] font-black transition-all uppercase ${compareView === v ? 'bg-white text-slate-900 shadow-lg' : 'text-slate-400 hover:text-white'}`}
-                                                            >
-                                                                {v === 'front' ? 'Frente' : v === 'side' ? 'Perfil' : 'Espalda'}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                </div>
-
-                                                {photoEntries.length >= 1 ? (
-                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                                        {/* Comparison Main Area */}
-                                                        <div className="flex gap-4 min-h-[400px]">
-                                                            {[compareDate1, compareDate2].map((date, idx) => {
-                                                                const entry = history.find(e => e.date === date);
-                                                                const photo = entry?.photos?.[compareView];
-                                                                return (
-                                                                    <div key={idx} className="flex-1 flex flex-col gap-4">
-                                                                        <div className="flex flex-col items-center">
-                                                                            <select
-                                                                                value={date || ''}
-                                                                                onChange={e => idx === 0 ? setCompareDate1(e.target.value) : setCompareDate2(e.target.value)}
-                                                                                className="bg-white/10 text-white rounded-xl px-4 py-2 text-[10px] font-black uppercase tracking-widest border border-white/20 outline-none hover:bg-white/20 transition-all cursor-pointer"
-                                                                            >
-                                                                                {photoEntries.map(e => (
-                                                                                    <option key={e.date} value={e.date} className="bg-slate-800">{format(new Date(e.date + 'T12:00:00'), 'dd MMM yyyy', { locale: es })}</option>
-                                                                                ))}
-                                                                            </select>
-                                                                        </div>
-                                                                        <div
-                                                                            onClick={() => photo && setSelectedPhoto(photo)}
-                                                                            className="flex-1 rounded-[2.5rem] overflow-hidden bg-white/5 border border-white/10 relative group cursor-pointer shadow-inner"
-                                                                        >
-                                                                            {photo ? (
-                                                                                <img src={photo} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" alt={`Progreso ${idx}`} />
-                                                                            ) : (
-                                                                                <div className="w-full h-full flex flex-col items-center justify-center text-white/20 gap-3">
-                                                                                    <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center"><Camera size={32} /></div>
-                                                                                    <span className="text-[10px] font-black uppercase tracking-widest">Sin foto</span>
-                                                                                </div>
-                                                                            )}
-                                                                            <div className="absolute inset-0 bg-gradient-to-t from-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity" />
-                                                                        </div>
-                                                                    </div>
-                                                                );
-                                                            })}
-                                                        </div>
-
-                                                        {/* Photo History Timeline */}
-                                                        <div className="space-y-4">
-                                                            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Historial de Galería</h4>
-                                                            <div className="grid grid-cols-3 gap-3">
-                                                                {[...photoEntries].reverse().slice(0, 9).map((entry, idx) => (
-                                                                    <button
-                                                                        key={entry.date}
-                                                                        onClick={() => {
-                                                                            setCompareDate1(entry.date);
-                                                                            // Optionally set date2 to the previous one
-                                                                        }}
-                                                                        className="aspect-square rounded-2xl overflow-hidden border-2 border-transparent hover:border-emerald-500 transition-all relative group"
-                                                                    >
-                                                                        <img src={entry.photos.front || entry.photos.side || entry.photos.back} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all" alt="Thumb" />
-                                                                        <div className="absolute bottom-0 left-0 right-0 bg-black/60 p-1">
-                                                                            <span className="text-[8px] font-black">{format(new Date(entry.date + 'T12:00:00'), 'dd MMM', { locale: es })}</span>
-                                                                        </div>
-                                                                    </button>
-                                                                ))}
-                                                            </div>
-                                                            {photoEntries.length > 9 && (
-                                                                <p className="text-[8px] text-slate-500 font-bold uppercase tracking-widest text-center">Y {photoEntries.length - 9} registros más...</p>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                ) : (
-                                                    <div className="py-20 text-center space-y-4 bg-white/5 rounded-[3rem] border border-dashed border-white/10">
-                                                        <Camera size={48} className="mx-auto text-white/20" />
-                                                        <p className="text-slate-400 font-black text-xs uppercase tracking-widest">Aún no hay fotos de progreso</p>
-                                                    </div>
-                                                )}
-                                            </div>
+                                        <div className="bg-slate-900 rounded-[3rem] p-0 overflow-hidden shadow-2xl">
+                                            <VisualEvolutionCard history={history} />
                                         </div>
                                     </motion.div>
                                 )}
@@ -753,21 +652,7 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
                 </div>
             </div >
 
-            {
-                selectedPhoto && (
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => setSelectedPhoto(null)}>
-                        <div className="relative max-w-4xl w-full h-[80vh] flex items-center justify-center">
-                            <img src={selectedPhoto} alt="Full Progress" className="max-w-full max-h-full object-contain rounded-lg" />
-                            <button
-                                onClick={() => setSelectedPhoto(null)}
-                                className="absolute top-4 right-4 p-2 bg-white/20 hover:bg-white/40 rounded-full text-white transition-colors"
-                            >
-                                <X size={24} />
-                            </button>
-                        </div>
-                    </div>
-                )
-            }
+
         </div >
     );
 };
