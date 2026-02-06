@@ -151,6 +151,12 @@ const ExerciseMedia = ({
         );
     }
 
+    // Helper to check if string is a video file
+    const isVideo = (url) => {
+        if (!url) return false;
+        return url.match(/\.(mp4|webm|ogg|mov)$/i);
+    };
+
     return (
         <div
             className={`relative overflow-hidden flex items-center justify-center bg-slate-100 ${className}`}
@@ -161,23 +167,36 @@ const ExerciseMedia = ({
             }}
         >
             {currentImage ? (
-                <img
-                    src={currentImage}
-                    alt={exercise.name_es || exercise.name}
-                    className={`w-full h-full object-contain ${thumbnailMode ? 'object-cover' : ''} transition-opacity duration-300 ${loading ? 'opacity-0' : 'opacity-100'}`}
-                    onLoad={() => setLoading(false)}
-                    onError={(e) => {
-                        // YouTube Fallback Logic (HQ -> MQ)
-                        if (currentImage && currentImage.includes('hqdefault.jpg')) {
-                            const mqUrl = currentImage.replace('hqdefault.jpg', 'mqdefault.jpg');
-                            setCurrentImage(mqUrl);
-                            // Don't stop loading yet, let the new src try
-                        } else {
-                            setLoading(false);
-                            e.target.style.display = 'none';
-                        }
-                    }}
-                />
+                isVideo(currentImage) ? (
+                    <video
+                        src={currentImage}
+                        className={`w-full h-full object-contain ${thumbnailMode ? 'object-cover' : ''} ${loading ? 'opacity-0' : 'opacity-100'}`}
+                        muted
+                        playsInline
+                        loop={thumbnailMode || isHovered}
+                        autoPlay={thumbnailMode || isHovered}
+                        onLoadedData={() => setLoading(false)}
+                        onCanPlay={() => setLoading(false)}
+                    />
+                ) : (
+                    <img
+                        src={currentImage}
+                        alt={exercise.name_es || exercise.name}
+                        className={`w-full h-full object-contain ${thumbnailMode ? 'object-cover' : ''} transition-opacity duration-300 ${loading ? 'opacity-0' : 'opacity-100'}`}
+                        onLoad={() => setLoading(false)}
+                        onError={(e) => {
+                            // YouTube Fallback Logic (HQ -> MQ)
+                            if (currentImage && currentImage.includes('hqdefault.jpg')) {
+                                const mqUrl = currentImage.replace('hqdefault.jpg', 'mqdefault.jpg');
+                                setCurrentImage(mqUrl);
+                                // Don't stop loading yet, let the new src try
+                            } else {
+                                setLoading(false);
+                                e.target.style.display = 'none';
+                            }
+                        }}
+                    />
+                )
             ) : (
                 <div className="flex flex-col items-center gap-2 text-slate-300">
                     {shouldLazyLoad && !isHovered && !loading ? (
@@ -195,7 +214,7 @@ const ExerciseMedia = ({
             )}
 
             {loading && currentImage && (
-                <div className="absolute inset-0 flex items-center justify-center bg-slate-50/50 backdrop-blur-sm">
+                <div className="absolute inset-0 flex items-center justify-center bg-slate-50/50 backdrop-blur-sm pointer-events-none">
                     <Loader2 className="animate-spin text-emerald-500" size={24} />
                 </div>
             )}
@@ -210,8 +229,8 @@ const ExerciseMedia = ({
             )}
 
             {/* Video signifier for thumbnails */}
-            {thumbnailMode && youtubeId && (
-                <div className="absolute bottom-1 right-1 bg-black/60 text-white p-0.5 rounded text-[8px] font-black uppercase flex items-center gap-0.5 px-1">
+            {thumbnailMode && (youtubeId || isVideo(currentImage)) && (
+                <div className="absolute bottom-1 right-1 bg-black/60 text-white p-0.5 rounded text-[8px] font-black uppercase flex items-center gap-0.5 px-1 pointer-events-none">
                     <Play size={8} fill="currentColor" />
                     Video
                 </div>

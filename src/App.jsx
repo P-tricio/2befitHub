@@ -9,6 +9,7 @@ import InstallPWA from './components/common/InstallPWA';
 import { AuthProvider } from './context/AuthContext';
 import Login from './modules/auth/Login';
 import PrivateRoute from './modules/auth/PrivateRoute';
+import NutritionTest from './modules/nutrition/NutritionTest';
 
 const router = createBrowserRouter([
   {
@@ -60,6 +61,12 @@ const router = createBrowserRouter([
       <PrivateRoute>
         <Navigate to="/training/profile" replace />
       </PrivateRoute>
+    ),
+  },
+  {
+    path: "/nutrition-test",
+    element: (
+      <NutritionTest />
     ),
   },
   {

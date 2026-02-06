@@ -219,7 +219,7 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                             calories: (recipe.totalMacros.calories || 0) * ratio,
                             protein: (recipe.totalMacros.protein || 0) * ratio,
                             carbs: (recipe.totalMacros.carbs || 0) * ratio,
-                            fat: (recipe.totalMacros.fats || 0) * ratio
+                            fats: (recipe.totalMacros.fats || 0) * ratio
                         };
                     }
                 }
@@ -228,14 +228,14 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                 t.calories += m.calories;
                 t.protein += m.protein;
                 t.carbs += m.carbs;
-                t.fats += m.fat;
+                t.fats += m.fats;
 
                 // Add to Current if consumed
                 if (isConsumed) {
                     c.calories += m.calories;
                     c.protein += m.protein;
                     c.carbs += m.carbs;
-                    c.fats += m.fat;
+                    c.fats += m.fats;
                 }
             });
         });

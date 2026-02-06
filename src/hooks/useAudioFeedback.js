@@ -29,7 +29,7 @@ export const useAudioFeedback = () => {
     }, []);
 
     // Helper to generic oscillator beep
-    const playTone = useCallback((freq, type = 'sine', duration = 0.1, volume = 0.2) => {
+    const playTone = useCallback((freq, type = 'sine', duration = 0.1, volume = 0.5) => {
         if (!audioCtx.current) return;
 
         // Resume context if suspended (browser autoplay policy)
@@ -56,19 +56,19 @@ export const useAudioFeedback = () => {
 
     // Patterns mit increased volume (approx double)
     const playTick = useCallback(() => {
-        playTone(880, 'sine', 0.05, 0.2);
+        playTone(880, 'sine', 0.05, 0.4);
         vibrate(30);
     }, [playTone, vibrate]);
 
     // Countdown: 3.. 2.. (Short) - Pulse
     const playCountdownShort = useCallback(() => {
-        playTone(660, 'sine', 0.15, 0.4);
+        playTone(660, 'sine', 0.15, 0.8);
         vibrate(100);
     }, [playTone, vibrate]);
 
     // Countdown: 1 (Long/Finish) - Sharp
     const playCountdownFinal = useCallback(() => {
-        playTone(440, 'square', 0.5, 0.3);
+        playTone(440, 'square', 0.5, 0.6);
         vibrate([100, 50, 200]); // Pattern: vibrate-pause-vibrate
     }, [playTone, vibrate]);
 
@@ -84,14 +84,14 @@ export const useAudioFeedback = () => {
 
     // Warning: Halfway point - Speech + Beep + Vibrate
     const playHalfway = useCallback(() => {
-        playTone(523, 'sine', 0.1, 0.3);
+        playTone(523, 'sine', 0.1, 0.6);
         vibrate([100, 50, 100]); // Double pulse
         speak("Falta la mitad");
     }, [playTone, vibrate, speak]);
 
     // Warning: 1 Minute - Speech + Beep + Vibrate
     const playMinuteWarning = useCallback(() => {
-        playTone(330, 'triangle', 0.3, 0.4);
+        playTone(330, 'triangle', 0.3, 0.8);
         vibrate([150, 75, 150]); // Double pulse, slightly longer
         speak("Un minuto");
     }, [playTone, vibrate, speak]);
@@ -99,14 +99,14 @@ export const useAudioFeedback = () => {
     const playSuccess = useCallback(() => {
         if (!audioCtx.current) return;
         [523.25, 659.25, 783.99, 1046.50].forEach((freq, i) => {
-            setTimeout(() => playTone(freq, 'sine', 0.15, 0.3), i * 100);
+            setTimeout(() => playTone(freq, 'sine', 0.15, 0.6), i * 100);
         });
         // Victory pattern: escalating pulses
         vibrate([50, 30, 75, 30, 100, 30, 150]);
     }, [playTone, vibrate]);
 
     const playFailure = useCallback(() => {
-        playTone(150, 'sawtooth', 0.4, 0.45);
+        playTone(150, 'sawtooth', 0.4, 0.9);
         vibrate([300, 100, 300]); // Long-short-long error pattern
     }, [playTone, vibrate]);
 

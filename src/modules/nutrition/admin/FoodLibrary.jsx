@@ -9,6 +9,18 @@ const FoodLibrary = () => {
     const [foods, setFoods] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [isEditing, setIsEditing] = useState(false);
+    const [selectedCategory, setSelectedCategory] = useState('all');
+
+    const categories = [
+        { id: 'all', label: 'Todos', color: 'bg-slate-100 text-slate-600' },
+        { id: 'protein', label: 'Proteínas', color: 'bg-red-50 text-red-600' },
+        { id: 'carb', label: 'Hidratos', color: 'bg-orange-50 text-orange-600' },
+        { id: 'fat', label: 'Grasas', color: 'bg-amber-50 text-amber-600' },
+        { id: 'vegetable', label: 'Vegetales', color: 'bg-emerald-50 text-emerald-600' },
+        { id: 'fruit', label: 'Frutas', color: 'bg-orange-50 text-orange-600' },
+        { id: 'dairy', label: 'Lácteos', color: 'bg-blue-50 text-blue-600' },
+        { id: 'other', label: 'Otros', color: 'bg-slate-50 text-slate-600' }
+    ];
 
     // Editor State
     const [currentFood, setCurrentFood] = useState(null);
@@ -20,6 +32,7 @@ const FoodLibrary = () => {
     const [category, setCategory] = useState('protein');
     const [unit, setUnit] = useState('g'); // g, ml, unit
     const [image, setImage] = useState('');
+    const [micros, setMicros] = useState({});
 
     useEffect(() => {
         loadFoods();
@@ -36,8 +49,9 @@ const FoodLibrary = () => {
             setCategory(currentFood.category || 'other');
             setUnit(currentFood.unit || 'g');
             setImage(currentFood.image || '');
+            setMicros(currentFood.micros || {});
         } else if (isEditing && !currentFood) {
-            // Only reset if creating NEW (handled by handleCreate, but safety check)
+            setMicros({});
         }
     }, [currentFood, isEditing]); // Depend on currentFood to populate
 
@@ -96,7 +110,8 @@ const FoodLibrary = () => {
             fats: Number(fats),
             category,
             unit,
-            image
+            image,
+            micros
         };
 
 
@@ -114,21 +129,45 @@ const FoodLibrary = () => {
         }
     };
 
-    const filteredFoods = foods.filter(f =>
-        f.name.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const filteredFoods = foods.filter(f => {
+        const matchesSearch = f.name.toLowerCase().includes(searchTerm.toLowerCase());
+
+        const cat = (f.category || '').toLowerCase();
+        const sel = selectedCategory.toLowerCase();
+        const matchesCategory = selectedCategory === 'all' ||
+            cat.includes(sel) ||
+            (sel === 'protein' && (cat.includes('prote') || cat.includes('carn') || cat.includes('pesc') || cat.includes('maris'))) ||
+            (sel === 'carb' && (cat.includes('carb') || cat.includes('hidra') || cat.includes('pan') || cat.includes('pasta') || cat.includes('arroz') || cat.includes('legum'))) ||
+            (sel === 'fat' && cat.includes('gras')) ||
+            (sel === 'vegetable' && (cat.includes('veg') || cat.includes('verd'))) ||
+            (sel === 'fruit' && cat.includes('frut')) ||
+            (sel === 'dairy' && (cat.includes('láct') || cat.includes('lact')));
+
+        return matchesSearch && matchesCategory;
+    });
 
     const getCategoryColor = (cat) => {
         const colors = {
-            protein: 'bg-red-100 text-red-700',
-            carb: 'bg-blue-100 text-blue-700', // Changed from amber
-            fat: 'bg-yellow-100 text-yellow-700',
-            vegetable: 'bg-green-100 text-green-700',
-            fruit: 'bg-orange-100 text-orange-700',
-            dairy: 'bg-blue-100 text-blue-700',
-            other: 'bg-slate-100 text-slate-700'
+            protein: 'bg-red-50 text-red-600',
+            proteínas: 'bg-red-50 text-red-600',
+            carb: 'bg-orange-50 text-orange-600',
+            carbohidratos: 'bg-orange-50 text-orange-600',
+            fat: 'bg-amber-50 text-amber-600',
+            grasas: 'bg-amber-50 text-amber-600',
+            vegetable: 'bg-emerald-50 text-emerald-600',
+            vegetales: 'bg-emerald-50 text-emerald-600',
+            legumbres: 'bg-emerald-50 text-emerald-600',
+            fruit: 'bg-orange-50 text-orange-600',
+            frutas: 'bg-orange-50 text-orange-600',
+            dairy: 'bg-blue-50 text-blue-600',
+            lácteos: 'bg-blue-50 text-blue-600',
+            pescados: 'bg-cyan-50 text-cyan-600',
+            mariscos: 'bg-cyan-50 text-cyan-600',
+            carnes: 'bg-rose-50 text-rose-600',
+            other: 'bg-slate-50 text-slate-600'
         };
-        return colors[cat] || colors.other;
+        const lowCat = (cat || '').toLowerCase();
+        return colors[lowCat] || colors.other;
     };
 
     return (
@@ -161,6 +200,21 @@ const FoodLibrary = () => {
                     </div>
                 </header>
 
+                <div className="flex flex-wrap gap-2 mb-8">
+                    {categories.map(cat => (
+                        <button
+                            key={cat.id}
+                            onClick={() => setSelectedCategory(cat.id)}
+                            className={`px-4 py-2 rounded-full text-xs font-black uppercase tracking-wider transition-all border-2 ${selectedCategory === cat.id
+                                ? 'border-slate-900 bg-slate-900 text-white shadow-lg'
+                                : 'border-transparent bg-white text-slate-400 hover:bg-slate-50'
+                                }`}
+                        >
+                            {cat.label}
+                        </button>
+                    ))}
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                     {filteredFoods.map(food => (
                         <div key={food.id} className="bg-white p-5 rounded-[24px] border border-slate-100 hover:shadow-xl hover:shadow-slate-200/50 transition-all group relative">
@@ -180,15 +234,17 @@ const FoodLibrary = () => {
                             </h3>
 
                             <div className="flex justify-between items-end border-t border-slate-50 pt-3 mt-2">
-                                <div className="text-xs font-medium text-slate-400">
-                                    {food.unit === 'unit' ? 'Por Unidad' : `Por 100${food.unit}`}
+                                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">
+                                    {food.unit === 'unit' ? 'Por Unidad' : `Por 100${food.unit || 'g'}`}
                                 </div>
                                 <div className="text-right">
-                                    <div className="text-xl font-black text-slate-900">{food.calories} <span className="text-[10px] text-slate-400 font-bold uppercase">kcal</span></div>
-                                    <div className="text-[10px] font-bold text-slate-400 space-x-2">
-                                        <span className="text-red-500">P: {food.protein}</span>
-                                        <span className="text-blue-500">C: {food.carbs}</span>
-                                        <span className="text-yellow-500">G: {food.fats}</span>
+                                    <div className="text-2xl font-black text-slate-900 tracking-tighter">
+                                        {Math.max(0, food.calories)} <span className="text-[10px] text-slate-400 font-bold uppercase">kcal</span>
+                                    </div>
+                                    <div className="flex gap-2 text-[10px] font-black mt-0.5 justify-end">
+                                        <div className="bg-red-50 text-red-600 px-1.5 py-0.5 rounded">P: {Math.max(0, food.protein || 0)}</div>
+                                        <div className="bg-orange-50 text-orange-600 px-1.5 py-0.5 rounded">C: {Math.max(0, food.carbs || 0)}</div>
+                                        <div className="bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded">G: {Math.max(0, food.fats || 0)}</div>
                                     </div>
                                 </div>
                             </div>
@@ -290,6 +346,40 @@ const FoodLibrary = () => {
                                                 <label className="block text-[10px] font-black text-yellow-400 uppercase tracking-widest mb-1">Grasas (g)</label>
                                                 <input type="number" step="0.1" className="w-full bg-yellow-50 border border-yellow-100 rounded-xl px-4 py-2.5 font-black text-yellow-900" value={fats} onChange={e => setFats(e.target.value)} />
                                             </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Micronutrients Section */}
+                                    <div className="space-y-4 pt-6 border-t border-slate-100">
+                                        <div className="flex justify-between items-center">
+                                            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest">Micronutrientes</label>
+                                            <span className="text-[10px] font-bold text-slate-300">Opcional (mg o µg)</span>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+                                            {[
+                                                { key: 'iron', label: 'Hierro (Fer)', unit: 'mg' },
+                                                { key: 'calcium', label: 'Calcio', unit: 'mg' },
+                                                { key: 'potassium', label: 'Potasio', unit: 'mg' },
+                                                { key: 'magnesium', label: 'Magnesio', unit: 'mg' },
+                                                { key: 'vitaminC', label: 'Vit C', unit: 'mg' },
+                                                { key: 'vitaminD', label: 'Vit D', unit: 'µg' },
+                                                { key: 'b12', label: 'Vit B12', unit: 'µg' },
+                                                { key: 'zinc', label: 'Zinc', unit: 'mg' }
+                                            ].map(micro => (
+                                                <div key={micro.key} className="flex items-center gap-2">
+                                                    <div className="flex-1">
+                                                        <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">{micro.label}</label>
+                                                        <input
+                                                            type="number"
+                                                            step="0.01"
+                                                            className="w-full bg-slate-50 border border-slate-100 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-600 focus:border-indigo-300"
+                                                            value={micros[micro.key] || ''}
+                                                            onChange={e => setMicros({ ...micros, [micro.key]: e.target.value })}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            ))}
                                         </div>
                                     </div>
                                 </div>

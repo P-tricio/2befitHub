@@ -13,7 +13,8 @@ const DayEditor = ({ isOpen, onClose, initialDayId, onSave, availableDays }) => 
     // Search State (for adding items)
     const [activeMealIndex, setActiveMealIndex] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
-    const [searchResults, setSearchResults] = useState([]); // { type: 'food'|'recipe', data: ... }
+    const [selectedType, setSelectedType] = useState('all'); // all | food | recipe
+    const [selectedCategory, setSelectedCategory] = useState('all');
 
     // Cache
     const [allFoods, setAllFoods] = useState([]);
@@ -139,7 +140,7 @@ const DayEditor = ({ isOpen, onClose, initialDayId, onSave, availableDays }) => 
                         total.calories += m.calories;
                         total.protein += m.protein;
                         total.carbs += m.carbs;
-                        total.fats += m.fat;
+                        total.fats += m.fats;
                     }
                 } else if (item.type === 'recipe') {
                     const recipe = allRecipes.find(r => r.id === item.refId);
@@ -163,19 +164,51 @@ const DayEditor = ({ isOpen, onClose, initialDayId, onSave, availableDays }) => 
 
     // --- Search Filtering ---
     const getFilteredResults = () => {
-        if (!searchTerm) return [];
         const term = searchTerm.toLowerCase();
 
-        const fResults = allFoods.filter(f => f.name.toLowerCase().includes(term))
-            .map(f => ({ type: 'food', data: f }));
+        // 1. Filter Recipes
+        let rResults = [];
+        if (selectedType === 'all' || selectedType === 'recipe') {
+            rResults = allRecipes
+                .filter(r => !searchTerm || r.name.toLowerCase().includes(term))
+                .map(r => ({ type: 'recipe', data: r }));
+        }
 
-        const rResults = allRecipes.filter(r => r.name.toLowerCase().includes(term))
-            .map(r => ({ type: 'recipe', data: r }));
+        // 2. Filter Foods
+        let fResults = [];
+        if (selectedType === 'all' || selectedType === 'food') {
+            fResults = allFoods.filter(f => {
+                const matchesSearch = !searchTerm || f.name.toLowerCase().includes(term);
 
-        return [...rResults, ...fResults]; // Recipes first
+                const cat = (f.category || '').toLowerCase();
+                const sel = selectedCategory.toLowerCase();
+                const matchesCategory = selectedCategory === 'all' ||
+                    cat.includes(sel) ||
+                    (sel === 'protein' && (cat.includes('prote') || cat.includes('carn') || cat.includes('pesc') || cat.includes('maris'))) ||
+                    (sel === 'carb' && (cat.includes('carb') || cat.includes('hidra') || cat.includes('pan') || cat.includes('pasta') || cat.includes('arroz') || cat.includes('legum'))) ||
+                    (sel === 'fat' && cat.includes('gras')) ||
+                    (sel === 'vegetable' && (cat.includes('veg') || cat.includes('verd'))) ||
+                    (sel === 'fruit' && cat.includes('frut')) ||
+                    (sel === 'dairy' && (cat.includes('láct') || cat.includes('lact')));
+
+                return matchesSearch && matchesCategory;
+            }).map(f => ({ type: 'food', data: f }));
+        }
+
+        return [...rResults, ...fResults];
     };
 
     const results = getFilteredResults();
+
+    const categories = [
+        { id: 'all', label: 'Todos' },
+        { id: 'protein', label: 'Proteínas' },
+        { id: 'carb', label: 'Hidratos' },
+        { id: 'fat', label: 'Grasas' },
+        { id: 'vegetable', label: 'Vegetales' },
+        { id: 'fruit', label: 'Frutas' },
+        { id: 'dairy', label: 'Lácteos' }
+    ];
 
     return (
         <motion.div
@@ -321,14 +354,57 @@ const DayEditor = ({ isOpen, onClose, initialDayId, onSave, availableDays }) => 
                         <button onClick={() => setActiveMealIndex(null)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200"><X size={20} /></button>
                     </div>
 
-                    <div className="relative mb-6">
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-                        <input
-                            autoFocus
-                            className="w-full pl-12 pr-6 py-4 bg-white border-2 border-slate-100 rounded-2xl shadow-xl shadow-slate-200/50 font-bold text-lg text-slate-900 focus:outline-none focus:border-indigo-500"
-                            placeholder="Buscar alimentos o recetas..."
-                            onChange={e => setSearchTerm(e.target.value)}
-                        />
+                    <div className="flex flex-col gap-4 mb-6">
+                        <div className="relative">
+                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+                            <input
+                                autoFocus
+                                className="w-full pl-12 pr-6 py-4 bg-white border-2 border-slate-100 rounded-2xl shadow-sm font-bold text-lg text-slate-900 focus:outline-none focus:border-indigo-500 transition-all"
+                                placeholder="Buscar alimentos o recetas..."
+                                value={searchTerm}
+                                onChange={e => setSearchTerm(e.target.value)}
+                            />
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-4">
+                            <div className="bg-slate-100 p-1 rounded-xl flex text-[10px] font-black uppercase tracking-widest">
+                                <button
+                                    onClick={() => setSelectedType('all')}
+                                    className={`px-4 py-2 rounded-lg transition-all ${selectedType === 'all' ? 'bg-white shadow text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
+                                >
+                                    Todo
+                                </button>
+                                <button
+                                    onClick={() => setSelectedType('recipe')}
+                                    className={`px-4 py-2 rounded-lg transition-all ${selectedType === 'recipe' ? 'bg-white shadow text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
+                                >
+                                    Recetas
+                                </button>
+                                <button
+                                    onClick={() => setSelectedType('food')}
+                                    className={`px-4 py-2 rounded-lg transition-all ${selectedType === 'food' ? 'bg-white shadow text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
+                                >
+                                    Ingredientes
+                                </button>
+                            </div>
+
+                            {(selectedType === 'all' || selectedType === 'food') && (
+                                <div className="flex flex-wrap gap-1.5 border-l border-slate-200 pl-4">
+                                    {categories.map(cat => (
+                                        <button
+                                            key={cat.id}
+                                            onClick={() => setSelectedCategory(cat.id)}
+                                            className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${selectedCategory === cat.id
+                                                ? 'bg-slate-900 text-white shadow-md'
+                                                : 'bg-white text-slate-400 hover:bg-slate-50 border border-slate-100'
+                                                }`}
+                                        >
+                                            {cat.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                     </div>
 
                     <div className="flex-1 overflow-y-auto space-y-2">
@@ -345,13 +421,20 @@ const DayEditor = ({ isOpen, onClose, initialDayId, onSave, availableDays }) => 
                                     <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs ${res.type === 'recipe' ? 'bg-indigo-500' : 'bg-slate-400'}`}>
                                         {res.type === 'recipe' ? 'R' : 'A'}
                                     </div>
-                                    <div>
-                                        <div className="font-bold text-slate-900">{res.data.name}</div>
-                                        <div className="text-xs text-slate-400">
-                                            {res.type === 'food'
-                                                ? `${res.data.calories} kcal / 100${res.data.unit}`
-                                                : `${Math.round(res.data.totalMacros?.calories)} kcal total`
-                                            }
+                                    <div className="flex-1 min-w-0">
+                                        <div className="font-bold text-slate-900 truncate">{res.data.name}</div>
+                                        <div className="flex items-center gap-3 mt-1">
+                                            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">
+                                                {res.type === 'food'
+                                                    ? `${Math.round(res.data.calories)} kcal / 100${res.data.unit || 'g'}`
+                                                    : `${Math.round(res.data.totalMacros?.calories || 0)} kcal total`
+                                                }
+                                            </div>
+                                            <div className="flex gap-2 text-[10px] font-black items-center border-l border-slate-100 pl-3">
+                                                <span className="text-red-500">P: {Math.round(res.type === 'food' ? (res.data.protein || 0) : (res.data.totalMacros?.protein || 0))}</span>
+                                                <span className="text-orange-500">C: {Math.round(res.type === 'food' ? (res.data.carbs || 0) : (res.data.totalMacros?.carbs || 0))}</span>
+                                                <span className="text-amber-500">G: {Math.round(res.type === 'food' ? (res.data.fats || 0) : (res.data.totalMacros?.fats || 0))}</span>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>

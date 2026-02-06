@@ -16,8 +16,8 @@ import {
 } from 'firebase/firestore';
 
 // Collection References
-const FOODS = 'nutrition_foods';
-const RECIPES = 'nutrition_recipes';
+const FOODS = 'nutri_ingredients';
+const RECIPES = 'nutri_recipes';
 const DAYS = 'nutrition_days';
 const PLANS = 'nutrition_plans';
 const LOGS = 'nutrition_logs';

@@ -56,7 +56,7 @@ export const calculateItemMacros = (food, quantity) => {
     return {
         protein: Math.round((food.protein || 0) * ratio),
         carbs: Math.round((food.carbs || 0) * ratio),
-        fat: Math.round((food.fats || 0) * ratio), // Note: DB field might be 'fats' or 'fat'
+        fats: Math.round((food.fats || 0) * ratio),
         calories: Math.round((food.calories || 0) * ratio)
     };
 };

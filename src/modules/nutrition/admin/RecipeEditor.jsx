@@ -11,6 +11,7 @@ const RecipeEditor = () => {
     const [foods, setFoods] = useState([]); // Cache of all foods for selection
     const [searchTerm, setSearchTerm] = useState('');
     const [isEditing, setIsEditing] = useState(false);
+    const [expandedRecipeId, setExpandedRecipeId] = useState(null);
 
     // Editor State
     const [currentRecipe, setCurrentRecipe] = useState(null);
@@ -93,7 +94,7 @@ const RecipeEditor = () => {
                 calories: acc.calories + m.calories,
                 protein: acc.protein + m.protein,
                 carbs: acc.carbs + m.carbs,
-                fats: acc.fats + m.fat
+                fats: acc.fats + m.fats
             };
         }, { calories: 0, protein: 0, carbs: 0, fats: 0 });
 
@@ -127,7 +128,11 @@ const RecipeEditor = () => {
             foodId: food.id,
             name: food.name, // Snapshot name
             unit: food.unit || 'g',
-            quantity: defaultQty
+            quantity: defaultQty,
+            protein: food.protein || 0,
+            carbs: food.carbs || 0,
+            fats: food.fats || 0,
+            calories: food.calories || 0
         }]);
         setActiveFoodSearch(false);
     };
@@ -151,7 +156,7 @@ const RecipeEditor = () => {
             calories: acc.calories + m.calories,
             protein: acc.protein + m.protein,
             carbs: acc.carbs + m.carbs,
-            fats: acc.fats + m.fat
+            fats: acc.fats + m.fats
         };
     }, { calories: 0, protein: 0, carbs: 0, fats: 0 });
 
@@ -191,41 +196,93 @@ const RecipeEditor = () => {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {filteredRecipes.map(recipe => (
-                        <div key={recipe.id} className="bg-white p-6 rounded-[32px] border border-slate-100 hover:shadow-2xl hover:shadow-slate-200/50 transition-all group relative flex flex-col justify-between min-h-[180px]">
-                            <div>
+                        <motion.div
+                            key={recipe.id}
+                            layout
+                            className={`bg-white rounded-[32px] border border-slate-100 hover:shadow-2xl hover:shadow-slate-200/50 transition-all group relative flex flex-col overflow-hidden ${expandedRecipeId === recipe.id ? 'ring-2 ring-indigo-500 shadow-2xl' : ''}`}
+                        >
+                            <div className="p-6 cursor-pointer" onClick={() => setExpandedRecipeId(expandedRecipeId === recipe.id ? null : recipe.id)}>
                                 <div className="flex justify-between items-start mb-4">
                                     <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl">
                                         <ChefHat size={24} />
                                     </div>
                                     <ActionMenu actions={[
-                                        { label: 'Editar', icon: <Edit2 size={16} />, onClick: () => handleEdit(recipe) },
-                                        { label: 'Duplicar', icon: <Copy size={16} />, onClick: () => handleDuplicate(recipe) },
-                                        { label: 'Eliminar', icon: <Trash2 size={16} />, onClick: () => handleDelete(recipe.id), variant: 'danger' }
+                                        { label: 'Editar', icon: <Edit2 size={16} />, onClick: (e) => { e.stopPropagation(); handleEdit(recipe); } },
+                                        { label: 'Duplicar', icon: <Copy size={16} />, onClick: (e) => { e.stopPropagation(); handleDuplicate(recipe); } },
+                                        { label: 'Eliminar', icon: <Trash2 size={16} />, onClick: (e) => { e.stopPropagation(); handleDelete(recipe.id); }, variant: 'danger' }
                                     ]} />
                                 </div>
 
                                 <h3 className="text-xl font-black text-slate-900 leading-tight mb-2">{recipe.name}</h3>
                                 <p className="text-sm text-slate-400 line-clamp-2">{recipe.description || 'Sin descripción'}</p>
+
+                                <div className="flex justify-between items-end border-t border-slate-50 pt-4 mt-4">
+                                    <div className="flex -space-x-2">
+                                        {recipe.ingredients && recipe.ingredients.slice(0, 3).map((ing, i) => (
+                                            <div key={i} className="w-8 h-8 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-[10px] font-bold text-slate-500" title={ing.name}>
+                                                {ing.name[0]}
+                                            </div>
+                                        ))}
+                                        {recipe.ingredients?.length > 3 && (
+                                            <div className="w-8 h-8 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-[10px] font-bold text-slate-500">
+                                                +{recipe.ingredients.length - 3}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="text-2xl font-black text-slate-900 tracking-tighter">
+                                            {Math.round(recipe.totalMacros?.calories || 0)} <span className="text-xs text-slate-400 font-bold uppercase">kcal</span>
+                                        </div>
+                                        <div className="flex gap-2 text-[10px] font-black mt-1 justify-end">
+                                            <span className="text-red-500">P: {Math.round(recipe.totalMacros?.protein || 0)}</span>
+                                            <span className="text-orange-500">C: {Math.round(recipe.totalMacros?.carbs || 0)}</span>
+                                            <span className="text-amber-500">G: {Math.round(recipe.totalMacros?.fats || 0)}</span>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
-                            <div className="flex justify-between items-end border-t border-slate-50 pt-4 mt-4">
-                                <div className="flex -space-x-2">
-                                    {recipe.ingredients && recipe.ingredients.slice(0, 3).map((ing, i) => (
-                                        <div key={i} className="w-8 h-8 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-[10px] font-bold text-slate-500" title={ing.name}>
-                                            {ing.name[0]}
+                            <AnimatePresence>
+                                {expandedRecipeId === recipe.id && (
+                                    <motion.div
+                                        initial={{ height: 0, opacity: 0 }}
+                                        animate={{ height: 'auto', opacity: 1 }}
+                                        exit={{ height: 0, opacity: 0 }}
+                                        className="border-t border-slate-50 bg-slate-50/50"
+                                    >
+                                        <div className="p-6 space-y-4">
+                                            <div>
+                                                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Ingredientes</h4>
+                                                <div className="grid grid-cols-1 gap-2">
+                                                    {(recipe.ingredients || []).map((ing, idx) => (
+                                                        <div key={idx} className="flex justify-between text-xs font-bold bg-white p-2 rounded-xl border border-slate-100">
+                                                            <span className="text-slate-700">{ing.name}</span>
+                                                            <span className="text-slate-400">{ing.quantity}{ing.unit === 'unit' ? 'ud' : ing.unit}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            <div className="flex justify-between items-center bg-slate-900 rounded-2xl p-4 text-white shadow-lg">
+                                                <div className="text-[10px] font-black uppercase text-slate-500">Macros</div>
+                                                <div className="flex gap-4 text-xs font-black">
+                                                    <span className="text-red-400">P: {Math.round(recipe.totalMacros?.protein || 0)}</span>
+                                                    <span className="text-orange-400">C: {Math.round(recipe.totalMacros?.carbs || 0)}</span>
+                                                    <span className="text-amber-400">G: {Math.round(recipe.totalMacros?.fats || 0)}</span>
+                                                </div>
+                                            </div>
+
+                                            {recipe.instructions && (
+                                                <div className="bg-white p-4 rounded-2xl border border-slate-100">
+                                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Instrucciones</h4>
+                                                    <p className="text-xs text-slate-600 font-medium leading-relaxed whitespace-pre-wrap">{recipe.instructions}</p>
+                                                </div>
+                                            )}
                                         </div>
-                                    ))}
-                                    {recipe.ingredients?.length > 3 && (
-                                        <div className="w-8 h-8 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-[10px] font-bold text-slate-500">
-                                            +{recipe.ingredients.length - 3}
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="text-right">
-                                    <div className="text-2xl font-black text-slate-900">{Math.round(recipe.totalMacros?.calories || 0)} <span className="text-xs text-slate-400 font-bold uppercase">kcal</span></div>
-                                </div>
-                            </div>
-                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </motion.div>
                     ))}
                 </div>
 
@@ -337,11 +394,11 @@ const RecipeEditor = () => {
                                             {/* Totals Footer */}
                                             <div className="bg-slate-900 p-4 text-white flex justify-between items-center">
                                                 <span className="text-xs font-black uppercase tracking-widest text-slate-400">Total Macros</span>
-                                                <div className="flex gap-4 text-sm font-bold">
+                                                <div className="flex gap-4 text-sm font-black">
                                                     <span className="text-red-400">P: {Math.round(editorTotals.protein)}</span>
-                                                    <span className="text-blue-400">C: {Math.round(editorTotals.carbs)}</span>
-                                                    <span className="text-yellow-400">G: {Math.round(editorTotals.fats)}</span>
-                                                    <span className="text-white border-l border-slate-700 pl-4">{Math.round(editorTotals.calories)} kcal</span>
+                                                    <span className="text-orange-400">C: {Math.round(editorTotals.carbs)}</span>
+                                                    <span className="text-amber-400">G: {Math.round(editorTotals.fats)}</span>
+                                                    <span className="text-white border-l border-slate-700 pl-4 tracking-tighter">{Math.round(editorTotals.calories)} kcal</span>
                                                 </div>
                                             </div>
                                         </div>
