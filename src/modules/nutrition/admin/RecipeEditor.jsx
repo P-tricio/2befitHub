@@ -89,7 +89,7 @@ const RecipeEditor = () => {
         const totalMacros = ingredients.reduce((acc, item) => {
             const food = foods.find(f => f.id === item.foodId);
             if (!food) return acc;
-            const m = calculateItemMacros(food, item.quantity);
+            const m = calculateItemMacros(food, item.quantity, item.unit);
             return {
                 calories: acc.calories + m.calories,
                 protein: acc.protein + m.protein,
@@ -122,7 +122,8 @@ const RecipeEditor = () => {
 
     const addIngredient = (food) => {
         // Default quantity 100g or 1 unit
-        const defaultQty = food.unit === 'unit' ? 1 : 100;
+        const isPortion = food.unit === 'unit' || food.unit === 'unidad' || food.unit === 'porción' || food.unit === 'ración';
+        const defaultQty = isPortion ? 1 : 100;
 
         setIngredients([...ingredients, {
             foodId: food.id,
@@ -151,7 +152,7 @@ const RecipeEditor = () => {
     const editorTotals = ingredients.reduce((acc, item) => {
         const food = foods.find(f => f.id === item.foodId);
         if (!food) return acc;
-        const m = calculateItemMacros(food, item.quantity);
+        const m = calculateItemMacros(food, item.quantity, item.unit);
         return {
             calories: acc.calories + m.calories,
             protein: acc.protein + m.protein,
@@ -257,7 +258,7 @@ const RecipeEditor = () => {
                                                     {(recipe.ingredients || []).map((ing, idx) => (
                                                         <div key={idx} className="flex justify-between text-xs font-bold bg-white p-2 rounded-xl border border-slate-100">
                                                             <span className="text-slate-700">{ing.name}</span>
-                                                            <span className="text-slate-400">{ing.quantity}{ing.unit === 'unit' ? 'ud' : ing.unit}</span>
+                                                            <span className="text-slate-400">{ing.quantity}{ing.unit}</span>
                                                         </div>
                                                     ))}
                                                 </div>
@@ -366,8 +367,30 @@ const RecipeEditor = () => {
                                                 <div className="divide-y divide-slate-50">
                                                     {ingredients.map((ing, idx) => (
                                                         <div key={idx} className="p-4 flex items-center justify-between gap-4 group hover:bg-slate-50 transition-colors">
-                                                            <div className="flex-1">
-                                                                <div className="font-bold text-slate-900">{ing.name}</div>
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className="font-bold text-slate-900 truncate">{ing.name}</div>
+                                                                    <div className="hidden md:flex items-center gap-2 ml-1 border-l border-slate-200 pl-2">
+                                                                        <span className="text-[9px] font-bold text-slate-400">
+                                                                            {(() => {
+                                                                                const m = calculateItemMacros(foods.find(f => f.id === ing.foodId), ing.quantity, ing.unit);
+                                                                                return `${Math.round(m.calories)} kcal`;
+                                                                            })()}
+                                                                        </span>
+                                                                        <div className="flex gap-1.5 text-[8px] font-black uppercase tracking-tighter opacity-60">
+                                                                            {(() => {
+                                                                                const m = calculateItemMacros(foods.find(f => f.id === ing.foodId), ing.quantity, ing.unit);
+                                                                                return (
+                                                                                    <>
+                                                                                        <span className="text-red-500">P:{Math.round(m.protein)}</span>
+                                                                                        <span className="text-orange-500">C:{Math.round(m.carbs)}</span>
+                                                                                        <span className="text-amber-500">G:{Math.round(m.fats)}</span>
+                                                                                    </>
+                                                                                );
+                                                                            })()}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
                                                                 <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
                                                                     {foods.find(f => f.id === ing.foodId)?.category || 'Otro'}
                                                                 </div>
@@ -380,7 +403,12 @@ const RecipeEditor = () => {
                                                                     onChange={e => updateIngredientQty(idx, e.target.value)}
                                                                 />
                                                                 <span className="text-xs font-bold text-slate-400 w-8">
-                                                                    {ing.unit === 'unit' ? 'ud' : ing.unit}
+                                                                    {ing.unit}
+                                                                    {foods.find(f => f.id === ing.foodId)?.portionWeight && (
+                                                                        <span className="ml-1 text-[9px] opacity-60">
+                                                                            ({Math.round(ing.quantity * (foods.find(f => f.id === ing.foodId).portionWeight))}g)
+                                                                        </span>
+                                                                    )}
                                                                 </span>
                                                                 <button onClick={() => removeIngredient(idx)} className="text-slate-300 hover:text-red-500 transition-colors p-1">
                                                                     <X size={16} />
@@ -466,7 +494,7 @@ const RecipeEditor = () => {
                                                         >
                                                             <div>
                                                                 <div className="font-bold text-slate-900">{food.name}</div>
-                                                                <div className="text-xs text-slate-400">{food.calories} kcal / 100{food.unit}</div>
+                                                                <div className="text-xs text-slate-400">{food.calories} kcal / 100g</div>
                                                             </div>
                                                             <div className="text-indigo-600 opacity-0 group-hover:opacity-100 font-bold text-xs uppercase tracking-wider">
                                                                 + Añadir

@@ -2,7 +2,7 @@ import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format, subDays } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { X, Check, Footprints, Utensils, ClipboardList, Scale, Ruler, Camera, CheckSquare, Clock, History, Dumbbell } from 'lucide-react';
+import { X, Check, Footprints, Utensils, ClipboardList, Scale, Ruler, Camera, CheckSquare, Clock, History, Dumbbell, Zap } from 'lucide-react';
 
 const TaskResultsModal = ({ task, onClose, availableForms }) => {
     if (!task) return null;
@@ -21,7 +21,7 @@ const TaskResultsModal = ({ task, onClose, availableForms }) => {
 
     const getColorClass = () => {
         if (type === 'neat') return 'emerald';
-        if (type === 'nutrition') return 'orange';
+        if (type === 'nutrition' || type === 'nutrition_day') return 'orange';
         if (type === 'tracking' || type === 'checkin') return 'blue';
         if (type === 'free_training') return 'indigo';
         return 'slate';
@@ -60,7 +60,7 @@ const TaskResultsModal = ({ task, onClose, availableForms }) => {
                         <div>
                             <div className="flex items-center gap-2">
                                 <p className="text-white/60 text-[10px] font-black uppercase tracking-[0.2em]">
-                                    {type === 'nutrition' ? 'Hábitos' :
+                                    {type === 'nutrition' || type === 'nutrition_day' ? 'Nutrición' :
                                         type === 'neat' ? 'Movimiento' :
                                             type === 'free_training' ? 'Entrenamiento' :
                                                 type === 'tracking' || type === 'checkin' ? 'Seguimiento' : type}
@@ -71,7 +71,7 @@ const TaskResultsModal = ({ task, onClose, availableForms }) => {
                                     </span>
                                 )}
                             </div>
-                            <h2 className="text-xl font-black leading-tight">{task.title || 'Resultados de Tarea'}</h2>
+                            <h2 className="text-xl font-black leading-tight">{task.title || task.name || 'Resultados de Tarea'}</h2>
                         </div>
                     </div>
                 </div>
@@ -106,8 +106,8 @@ const TaskResultsModal = ({ task, onClose, availableForms }) => {
                                         results.adherence === 'partial' ? 'bg-amber-500 text-white' :
                                             'bg-rose-500 text-white'
                                         }`}>
-                                        {results.adherence === 'perfect' && <Check size={20} />}
-                                        {results.adherence === 'partial' && <Clock size={20} />}
+                                        {results.adherence === 'perfect' && <Zap size={20} />}
+                                        {results.adherence === 'partial' && <Scale size={20} />}
                                         {results.adherence === 'missed' && <X size={20} />}
                                     </div>
                                     <div>
@@ -125,14 +125,31 @@ const TaskResultsModal = ({ task, onClose, availableForms }) => {
 
                             {/* Macros Summary */}
                             {results.consumed && results.target && (
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div className="p-3 bg-orange-50 rounded-xl border border-orange-100">
-                                        <p className="text-[9px] font-black text-orange-400 uppercase tracking-widest">Consumido</p>
-                                        <p className="text-lg font-black text-orange-900">{Math.round(results.consumed.calories)} kcal</p>
+                                <div className="space-y-3">
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="p-3 bg-orange-50 rounded-xl border border-orange-100">
+                                            <p className="text-[9px] font-black text-orange-400 uppercase tracking-widest">Consumido</p>
+                                            <p className="text-lg font-black text-orange-900">{Math.round(results.consumed.calories)} kcal</p>
+                                        </div>
+                                        <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Objetivo</p>
+                                            <p className="text-lg font-black text-slate-700">{Math.round(results.target.calories)} kcal</p>
+                                        </div>
                                     </div>
-                                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Objetivo</p>
-                                        <p className="text-lg font-black text-slate-700">{Math.round(results.target.calories)} kcal</p>
+
+                                    <div className="grid grid-cols-3 gap-2 px-1">
+                                        <div className="flex flex-col">
+                                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Proteína</span>
+                                            <span className="text-xs font-black text-slate-700">{Math.round(results.consumed.protein)}g <span className="text-[10px] text-slate-300">/ {Math.round(results.target.protein)}g</span></span>
+                                        </div>
+                                        <div className="flex flex-col">
+                                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Carbs</span>
+                                            <span className="text-xs font-black text-slate-700">{Math.round(results.consumed.carbs)}g <span className="text-[10px] text-slate-300">/ {Math.round(results.target.carbs)}g</span></span>
+                                        </div>
+                                        <div className="flex flex-col">
+                                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Grasas</span>
+                                            <span className="text-xs font-black text-slate-700">{Math.round(results.consumed.fats)}g <span className="text-[10px] text-slate-300">/ {Math.round(results.target.fats)}g</span></span>
+                                        </div>
                                     </div>
                                 </div>
                             )}
@@ -141,15 +158,31 @@ const TaskResultsModal = ({ task, onClose, availableForms }) => {
                             {results.completedItems && Object.keys(results.completedItems).length > 0 && (
                                 <div className="space-y-2">
                                     <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest px-1">Items Completados</h3>
-                                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-sm text-slate-600 space-y-1">
-                                        {Object.entries(results.completedItems).map(([key, val]) => (
-                                            <div key={key} className="flex items-center gap-2">
-                                                <div className={`w-4 h-4 rounded-full flex items-center justify-center ${val ? 'bg-emerald-500' : 'bg-slate-200'}`}>
-                                                    {val && <Check size={10} className="text-white" />}
+                                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-sm text-slate-600 space-y-2 font-medium">
+                                        {Object.entries(results.completedItems).map(([key, val]) => {
+                                            const isObject = val && typeof val === 'object';
+                                            const name = isObject ? val.name : `Comida ${key.split('-')[0]}, Item ${key.split('-')[1]}`;
+                                            const detail = isObject ? `${val.quantity} ${val.unit}` : null;
+                                            const isDone = isObject ? val.completed : val === true;
+
+                                            return (
+                                                <div key={key} className="flex items-center gap-3">
+                                                    <div className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 ${isDone ? 'bg-emerald-500' : 'bg-slate-200'}`}>
+                                                        {isDone && <Check size={10} className="text-white" />}
+                                                    </div>
+                                                    <div className="flex flex-col min-w-0 leading-tight">
+                                                        <span className={`font-bold truncate ${isDone ? 'text-slate-700' : 'text-slate-400'}`}>
+                                                            {name}
+                                                        </span>
+                                                        {detail && (
+                                                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">
+                                                                {detail}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </div>
-                                                <span className="font-medium">Comida {key.split('-')[0]}, Item {key.split('-')[1]}</span>
-                                            </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 </div>
                             )}

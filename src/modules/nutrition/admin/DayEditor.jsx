@@ -20,6 +20,9 @@ const DayEditor = ({ isOpen, onClose, initialDayId, onSave, availableDays }) => 
     const [allFoods, setAllFoods] = useState([]);
     const [allRecipes, setAllRecipes] = useState([]);
 
+    // Expanded Recipes in List
+    const [expandedRecipes, setExpandedRecipes] = useState({}); // { 'meal-item': true }
+
     useEffect(() => {
         loadResources();
         if (initialDayId) {
@@ -101,11 +104,13 @@ const DayEditor = ({ isOpen, onClose, initialDayId, onSave, availableDays }) => 
         // item is Food or Recipe object
         // We structure the Item in the meal
 
+        const isPortion = item.unit === 'unit' || item.unit === 'unidad' || item.unit === 'porción' || item.unit === 'ración';
+
         let newItem = {
             type, // 'food' | 'recipe'
             refId: item.id,
             name: item.name,
-            quantity: type === 'food' ? (item.unit === 'unit' ? 1 : 100) : 1, // Recipe usually 1 serving
+            quantity: type === 'food' ? (isPortion ? 1 : 100) : 1, // Recipe usually 1 serving
             unit: type === 'food' ? (item.unit || 'g') : 'ración'
         };
 
@@ -136,11 +141,11 @@ const DayEditor = ({ isOpen, onClose, initialDayId, onSave, availableDays }) => 
                 if (item.type === 'food') {
                     const food = allFoods.find(f => f.id === item.refId);
                     if (food) {
-                        const m = calculateItemMacros(food, item.quantity);
-                        total.calories += m.calories;
-                        total.protein += m.protein;
-                        total.carbs += m.carbs;
-                        total.fats += m.fats;
+                        const macros = calculateItemMacros(food, item.quantity, item.unit);
+                        total.calories += macros.calories;
+                        total.protein += macros.protein;
+                        total.carbs += macros.carbs;
+                        total.fats += macros.fats;
                     }
                 } else if (item.type === 'recipe') {
                     const recipe = allRecipes.find(r => r.id === item.refId);
@@ -218,10 +223,10 @@ const DayEditor = ({ isOpen, onClose, initialDayId, onSave, availableDays }) => 
         >
             {/* Header */}
             {/* Header */}
-            <div className="p-6 border-b border-slate-100 bg-white z-10 flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
+            <div className="p-4 sm:p-6 border-b border-slate-100 bg-white z-10 flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
                 <div>
-                    <h2 className="text-2xl font-black text-slate-900 leading-tight">Editor de Día Nutricional</h2>
-                    <p className="text-xs font-black text-slate-400 uppercase tracking-widest mt-1">Configura las comidas y macros</p>
+                    <h2 className="text-xl sm:text-2xl font-black text-slate-900 leading-tight">Editor de Día Nutricional</h2>
+                    <p className="text-[10px] sm:text-xs font-black text-slate-400 uppercase tracking-widest mt-1">Configura las comidas y macros</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
                     <div className="bg-slate-100 p-1 rounded-xl flex text-[10px] font-black uppercase tracking-widest">
@@ -249,9 +254,9 @@ const DayEditor = ({ isOpen, onClose, initialDayId, onSave, availableDays }) => 
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto bg-slate-50/50 p-8 space-y-6">
+            <div className="flex-1 overflow-y-auto bg-slate-50/50 p-4 sm:p-8 space-y-4 sm:space-y-6">
                 {/* Day Name */}
-                <div className="bg-white p-6 rounded-[24px] shadow-sm border border-slate-100">
+                <div className="bg-white p-4 sm:p-6 rounded-[24px] shadow-sm border border-slate-100">
                     <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Nombre del Día</label>
                     <input
                         className="w-full text-xl font-black text-slate-900 border-b-2 border-slate-100 pb-2 focus:outline-none focus:border-slate-900 placeholder:text-slate-200"
@@ -262,7 +267,7 @@ const DayEditor = ({ isOpen, onClose, initialDayId, onSave, availableDays }) => 
                 </div>
 
                 {/* Stats Summary - Sticky implementation optional but useful */}
-                <div className="bg-slate-900 text-white p-6 rounded-[24px] shadow-lg flex justify-between items-center sticky top-0 z-20 mx-[-8px] md:mx-0 backdrop-blur-md bg-opacity-95">
+                <div className="bg-slate-900 text-white p-4 sm:p-6 rounded-[24px] shadow-lg flex justify-between items-center sticky top-0 z-20 mx-[-4px] sm:mx-0 backdrop-blur-md bg-opacity-95">
                     <div className="flex items-center gap-4">
                         <PieChart className="text-indigo-400" />
                         <div>
@@ -288,9 +293,9 @@ const DayEditor = ({ isOpen, onClose, initialDayId, onSave, availableDays }) => 
                 </div>
 
                 {/* Meals */}
-                <div className="space-y-6">
+                <div className="space-y-4 sm:space-y-6">
                     {meals.map((meal, mIdx) => (
-                        <div key={mIdx} className="bg-white p-6 rounded-[24px] shadow-sm border border-slate-100 relative group/meal">
+                        <div key={mIdx} className="bg-white p-4 sm:p-6 rounded-[24px] shadow-sm border border-slate-100 relative group/meal">
                             <div className="flex justify-between items-start mb-4">
                                 <input
                                     className="font-black text-lg text-slate-900 border-b border-transparent hover:border-slate-100 focus:border-indigo-500 focus:outline-none max-w-[200px]"
@@ -314,28 +319,104 @@ const DayEditor = ({ isOpen, onClose, initialDayId, onSave, availableDays }) => 
                                         Sin alimentos añadidos
                                     </div>
                                 )}
-                                {meal.items.map((item, iIdx) => (
-                                    <div key={iIdx} className="flex items-center justify-between p-3 bg-slate-50/50 rounded-xl hover:bg-slate-50 transition-colors">
-                                        <div className="flex items-center gap-3">
-                                            {item.type === 'recipe' && <UtensilsIcon size={14} className="text-indigo-500" />}
-                                            <span className="font-bold text-slate-900 text-sm">{item.name}</span>
+                                {meal.items.map((item, iIdx) => {
+                                    const key = `${mIdx}-${iIdx}`;
+                                    const isExpanded = !!expandedRecipes[key];
+                                    const recipe = item.type === 'recipe' ? allRecipes.find(r => r.id === item.refId) : null;
+                                    const food = item.type === 'food' ? allFoods.find(f => f.id === item.refId) : null;
+
+                                    return (
+                                        <div key={iIdx} className="space-y-2">
+                                            <div className="flex items-center justify-between p-3 bg-slate-50/50 rounded-xl hover:bg-slate-50 transition-colors group/item">
+                                                <div className="flex items-center gap-3 overflow-hidden">
+                                                    {item.type === 'recipe' && (
+                                                        <button
+                                                            onClick={() => setExpandedRecipes(prev => ({ ...prev, [key]: !prev[key] }))}
+                                                            className={`p-1 rounded-lg border transition-all ${isExpanded ? 'bg-indigo-500 border-indigo-500 text-white' : 'bg-white border-slate-200 text-slate-400 group-hover/item:border-indigo-200 group-hover/item:text-indigo-400'}`}
+                                                        >
+                                                            <Info size={14} />
+                                                        </button>
+                                                    )}
+                                                    <span className="font-bold text-slate-900 text-sm truncate">{item.name}</span>
+                                                    <div className="hidden md:flex items-center gap-3 ml-2 border-l border-slate-200 pl-3">
+                                                        <span className="text-[10px] font-bold text-slate-400">
+                                                            {(() => {
+                                                                const m = item.type === 'recipe'
+                                                                    ? (allRecipes.find(r => r.id === item.refId)?.totalMacros || { calories: 0 })
+                                                                    : calculateItemMacros(food, item.quantity, item.unit);
+                                                                return `${Math.round(m.calories)} kcal`;
+                                                            })()}
+                                                        </span>
+                                                        <div className="flex gap-2 text-[9px] font-black uppercase tracking-tighter">
+                                                            {(() => {
+                                                                const m = item.type === 'recipe'
+                                                                    ? (allRecipes.find(r => r.id === item.refId)?.totalMacros || { protein: 0, carbs: 0, fats: 0 })
+                                                                    : calculateItemMacros(food, item.quantity, item.unit);
+                                                                return (
+                                                                    <>
+                                                                        <span className="text-red-500/70">P {Math.round(m.protein)}</span>
+                                                                        <span className="text-orange-500/70">C {Math.round(m.carbs)}</span>
+                                                                        <span className="text-amber-500/70">G {Math.round(m.fats || m.fat || 0)}</span>
+                                                                    </>
+                                                                );
+                                                            })()}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-3">
+                                                    <input
+                                                        type="number"
+                                                        className={`w-16 bg-white border border-slate-200 rounded px-2 py-1 text-right font-bold text-sm focus:outline-none focus:border-indigo-500 ${item.type === 'recipe' ? 'text-indigo-600' : 'text-slate-700'}`}
+                                                        value={item.quantity}
+                                                        onChange={e => updateItemQty(mIdx, iIdx, e.target.value)}
+                                                    />
+                                                    <span className="text-[10px] font-black text-slate-400 min-w-[60px]">
+                                                        {item.unit}
+                                                        {food?.portionWeight && (
+                                                            <span className="ml-1 text-[9px] font-bold opacity-60">
+                                                                ({Math.round(item.quantity * food.portionWeight)}g)
+                                                            </span>
+                                                        )}
+                                                    </span>
+                                                    <button onClick={() => removeItemFromMeal(mIdx, iIdx)} className="text-slate-300 hover:text-red-500 p-1">
+                                                        <X size={14} />
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            {/* Recipe Breakdown (Admin) */}
+                                            {isExpanded && recipe && (
+                                                <motion.div
+                                                    initial={{ opacity: 0, height: 0 }}
+                                                    animate={{ opacity: 1, height: 'auto' }}
+                                                    className="mx-4 p-4 bg-slate-100 rounded-xl border border-slate-200/50 space-y-3"
+                                                >
+                                                    {recipe.ingredients && (
+                                                        <div>
+                                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Ingredientes:</p>
+                                                            <div className="grid grid-cols-1 gap-1">
+                                                                {recipe.ingredients.map((ing, k) => (
+                                                                    <div key={k} className="text-[11px] text-slate-600 flex justify-between border-b border-slate-200/50 pb-1 last:border-0">
+                                                                        <span>• {ing.name}</span>
+                                                                        <span className="font-bold">{ing.quantity || ing.amount} {ing.unit}</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    {recipe.instructions && (
+                                                        <div>
+                                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Preparación:</p>
+                                                            <p className="text-[11px] text-slate-500 leading-relaxed italic whitespace-pre-line">
+                                                                {recipe.instructions}
+                                                            </p>
+                                                        </div>
+                                                    )}
+                                                </motion.div>
+                                            )}
                                         </div>
-                                        <div className="flex items-center gap-3">
-                                            <input
-                                                type="number"
-                                                className={`w-16 bg-white border border-slate-200 rounded px-2 py-1 text-right font-bold text-sm focus:outline-none focus:border-indigo-500 ${item.type === 'recipe' ? 'text-indigo-600' : 'text-slate-700'}`}
-                                                value={item.quantity}
-                                                onChange={e => updateItemQty(mIdx, iIdx, e.target.value)}
-                                            />
-                                            <span className="text-xs font-bold text-slate-400 w-12 truncate">
-                                                {item.unit}
-                                            </span>
-                                            <button onClick={() => removeItemFromMeal(mIdx, iIdx)} className="text-slate-300 hover:text-red-500 p-1">
-                                                <X size={14} />
-                                            </button>
-                                        </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
                     ))}
@@ -348,7 +429,7 @@ const DayEditor = ({ isOpen, onClose, initialDayId, onSave, availableDays }) => 
 
             {/* Search Overlay (Nested) */}
             {activeMealIndex !== null && (
-                <div className="absolute inset-0 z-50 bg-white/80 backdrop-blur-md flex flex-col p-8">
+                <div className="absolute inset-0 z-50 bg-white/80 backdrop-blur-md flex flex-col p-4 sm:p-8">
                     <div className="flex justify-between items-center mb-6">
                         <h3 className="text-xl font-black text-slate-900">Añadir a {meals[activeMealIndex].name}</h3>
                         <button onClick={() => setActiveMealIndex(null)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200"><X size={20} /></button>
@@ -426,11 +507,11 @@ const DayEditor = ({ isOpen, onClose, initialDayId, onSave, availableDays }) => 
                                         <div className="flex items-center gap-3 mt-1">
                                             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">
                                                 {res.type === 'food'
-                                                    ? `${Math.round(res.data.calories)} kcal / 100${res.data.unit || 'g'}`
+                                                    ? `${Math.round(res.data.calories)} kcal / 100g`
                                                     : `${Math.round(res.data.totalMacros?.calories || 0)} kcal total`
                                                 }
                                             </div>
-                                            <div className="flex gap-2 text-[10px] font-black items-center border-l border-slate-100 pl-3">
+                                            <div className="flex gap-1.5 sm:gap-2 text-[10px] font-black items-center border-l border-slate-100 pl-2 sm:pl-3">
                                                 <span className="text-red-500">P: {Math.round(res.type === 'food' ? (res.data.protein || 0) : (res.data.totalMacros?.protein || 0))}</span>
                                                 <span className="text-orange-500">C: {Math.round(res.type === 'food' ? (res.data.carbs || 0) : (res.data.totalMacros?.carbs || 0))}</span>
                                                 <span className="text-amber-500">G: {Math.round(res.type === 'food' ? (res.data.fats || 0) : (res.data.totalMacros?.fats || 0))}</span>

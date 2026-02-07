@@ -46,18 +46,32 @@ export const portionsToGrams = (portions) => {
  * @param {number} quantity - Quantity in grams (or units)
  * @returns {Object} { protein, carbs, fat, calories }
  */
-export const calculateItemMacros = (food, quantity) => {
-    // Assuming food data is per 100g/ml if unit is weight/volume
-    // If unit is 'unit', then food data is per 1 unit.
+export const calculateItemMacros = (food, quantity, itemUnit) => {
+    // 1. Determine if we are calculating based on portions or raw grams.
+    // If itemUnit is provided, we trust it. Otherwise we fall back to food.unit.
+    const currentUnit = itemUnit || food.unit;
+    const isPortionBased = currentUnit === 'unit' || currentUnit === 'unidad' || currentUnit === 'porción' || currentUnit === 'ración';
 
-    const isPer100 = food.unit !== 'unit' && food.unit !== 'serving';
-    const ratio = isPer100 ? (quantity / 100) : quantity;
+    let grams = quantity;
+
+    // If it's a portion-based entry and we know the portion weight, convert to grams
+    if (isPortionBased && food.portionWeight) {
+        grams = quantity * food.portionWeight;
+    }
+
+    // 2. Decide if we use the "per 100g" ratio or direct multiplier
+    // Weight-based units (g, ml) always use per 100 ratio.
+    // Portion-based units with portionWeight also use per 100 ratio (because macros are per 100g).
+    // Portion-based units WITHOUT portionWeight use direct multiplier (macros are per unit).
+
+    const isWeightRatio = !isPortionBased || (isPortionBased && food.portionWeight);
+    const ratio = isWeightRatio ? (grams / 100) : quantity;
 
     return {
-        protein: Math.round((food.protein || 0) * ratio),
-        carbs: Math.round((food.carbs || 0) * ratio),
-        fats: Math.round((food.fats || 0) * ratio),
-        calories: Math.round((food.calories || 0) * ratio)
+        protein: Math.round((food.protein || food.macros?.protein || 0) * ratio),
+        carbs: Math.round((food.carbs || food.macros?.carbs || 0) * ratio),
+        fats: Math.round((food.fats || food.macros?.fat || 0) * ratio),
+        calories: Math.round((food.calories || food.macros?.kcal || 0) * ratio)
     };
 };
 

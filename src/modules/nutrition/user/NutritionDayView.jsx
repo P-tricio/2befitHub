@@ -224,8 +224,30 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
         }
 
         try {
+            const { t, c } = getStats();
             const pct = t.calories > 0 ? Math.round((c.calories / t.calories) * 100) : 0;
             const summary = `${Math.round(c.calories)}/${Math.round(t.calories)} kcal (${pct}%)`;
+
+            // Enriquecer completedItems con metadatos de los ítems para la revisión del admin
+            const enrichedCompletedItems = {};
+            if (log.completedItems && day?.meals) {
+                Object.keys(log.completedItems).forEach(key => {
+                    const [mIdx, iIdx] = key.split('-').map(Number);
+                    const meal = day.meals[mIdx];
+                    const item = meal?.items?.[iIdx];
+                    if (item) {
+                        enrichedCompletedItems[key] = {
+                            name: item.name,
+                            quantity: item.quantity,
+                            unit: item.unit,
+                            completed: true
+                        };
+                    } else {
+                        // Fallback por si acaso
+                        enrichedCompletedItems[key] = true;
+                    }
+                });
+            }
 
             await TrainingDB.users.updateTaskInSchedule(userId, date, taskId, {
                 status: 'completed',
@@ -236,7 +258,7 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                     target: t,
                     notes: stats.notes,
                     adherence: stats.adherence,
-                    completedItems: log.completedItems || {}
+                    completedItems: enrichedCompletedItems
                 }
             });
             onClose();
@@ -273,7 +295,7 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
 
                 if (item.type === 'food') {
                     const food = resources.foods.find(f => f.id === item.refId);
-                    if (food) m = calculateItemMacros(food, item.quantity);
+                    if (food) m = calculateItemMacros(food, item.quantity, item.unit);
                 } else if (item.type === 'recipe') {
                     const recipe = resources.recipes.find(r => r.id === item.refId);
                     if (recipe && recipe.totalMacros) {

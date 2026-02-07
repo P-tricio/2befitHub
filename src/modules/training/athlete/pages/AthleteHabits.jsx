@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, subMonths, addMonths, startOfWeek, endOfWeek, addDays, isAfter, startOfDay, getDay, isSameMonth } from 'date-fns';
+import React, { useState, useEffect, useMemo } from 'react';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, subMonths, addMonths, startOfWeek, endOfWeek, addDays, isAfter, startOfDay, getDay, isSameMonth, isBefore } from 'date-fns';
 import { Link } from 'react-router-dom';
 import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, X, Utensils, Footprints, Heart, Calendar as CalendarIcon, ChevronLeft, ChevronRight, Info, Target, Plus, User as UserIcon } from 'lucide-react';
+import { Check, X, Utensils, Footprints, Heart, Calendar as CalendarIcon, ChevronLeft, ChevronRight, Info, Target, Plus, User as UserIcon, Dumbbell } from 'lucide-react';
 import { TrainingDB } from '../../services/db';
 import { useAuth } from '../../../../context/AuthContext';
 
@@ -11,6 +11,11 @@ const CATEGORIES = [
     { id: 'nutrition', label: 'Alimentación', shortLabel: 'Alim.', icon: <Utensils size={14} />, color: 'orange' },
     { id: 'movement', label: 'Movimiento', shortLabel: 'Mov.', icon: <Footprints size={14} />, color: 'emerald' },
     { id: 'health', label: 'Salud', shortLabel: 'Salud', icon: <Heart size={14} />, color: 'rose' },
+];
+
+const AUTO_CATEGORIES = [
+    { id: 'training_auto', label: 'Entrenamiento (Pautado)', shortLabel: 'Entr.', icon: <Dumbbell size={14} />, color: 'indigo' },
+    { id: 'nutrition_auto', label: 'Nutrición (Pautada)', shortLabel: 'Nutri.', icon: <Utensils size={14} />, color: 'amber' },
 ];
 
 const AthleteHabits = ({ userId, isAdminView = false }) => {
@@ -23,7 +28,7 @@ const AthleteHabits = ({ userId, isAdminView = false }) => {
     const [loading, setLoading] = useState(true);
     const [newHabit, setNewHabit] = useState('');
     const [showAddHabit, setShowAddHabit] = useState(false);
-    const [activeFilters, setActiveFilters] = useState(['nutrition', 'movement', 'health', 'uncategorized']);
+    const [activeFilters, setActiveFilters] = useState(['nutrition', 'movement', 'health', 'training_auto', 'nutrition_auto']);
     const isWeekly = userProfile?.habitFrequency === 'weekly';
 
     // Normalize selectedDate for Weekly Mode (Always use Sunday)
@@ -43,13 +48,11 @@ const AthleteHabits = ({ userId, isAdminView = false }) => {
 
     const loadData = async () => {
         try {
-            // Fetch User Profile for Categorized Minimums
+            // Fetch User Profile for Categorized Minimums and Schedule
             const profile = await TrainingDB.users.getById(currentUserId);
             setUserProfile(profile);
 
             // Fetch History for the visible month
-            const start = startOfMonth(viewDate);
-            const end = endOfMonth(viewDate);
             const history = await TrainingDB.tracking.getHistory(currentUserId, 62);
 
             const dataMap = {};
@@ -62,6 +65,42 @@ const AthleteHabits = ({ userId, isAdminView = false }) => {
         } finally {
             setLoading(false);
         }
+    };
+
+    const getAutomatedStatus = (date) => {
+        const dateKey = format(date, 'yyyy-MM-dd');
+        const daySchedule = userProfile?.schedule?.[dateKey] || [];
+        const isPastDate = isAfter(today, date); // date is before today
+
+        let results = {
+            training: null, // null | 'success' | 'fail'
+            nutrition: null // null | 'success' | 'partial' | 'fail'
+        };
+
+        // Training Logic
+        const trainingTasks = daySchedule.filter(t => t.type === 'session' || t.type === 'free_training');
+        if (trainingTasks.length > 0) {
+            const allCompleted = trainingTasks.every(t => t.status === 'completed');
+            if (allCompleted) results.training = 'success';
+            else if (isPastDate) results.training = 'fail';
+        }
+
+        // Nutrition Logic
+        const nutritionTasks = daySchedule.filter(t => t.type === 'nutrition_day');
+        if (nutritionTasks.length > 0) {
+            const mainTask = nutritionTasks[0];
+            if (mainTask.status === 'completed') {
+                const adherence = mainTask.results?.adherence;
+                if (adherence === 'perfect') results.nutrition = 'success';
+                else if (adherence === 'partial') results.nutrition = 'partial';
+                else if (adherence === 'missed') results.nutrition = 'fail';
+                else results.nutrition = 'success'; // Default if completed but no adherence set
+            } else if (isPastDate) {
+                results.nutrition = 'fail';
+            }
+        }
+
+        return results;
     };
 
     const handleSetStatus = async (habit, date, targetStatus) => {
@@ -124,46 +163,17 @@ const AthleteHabits = ({ userId, isAdminView = false }) => {
         }
     };
 
-    const getDayStatus = (date) => {
-        const dateKey = format(isWeekly ? endOfWeek(date, { weekStartsOn: 1 }) : date, 'yyyy-MM-dd');
-        const entry = monthlyData[dateKey];
-        if (!entry || !entry.habitsResults) return 'pending';
+    const getFilteredMinimums = () => {
+        if (!userProfile?.minimums) return [];
+        const m = userProfile.minimums;
+        if (Array.isArray(m)) return activeFilters.includes('nutrition') ? m : [];
 
-        const results = entry.habitsResults;
-        const rawHabits = getFilteredMinimums();
-
-        if (rawHabits.length === 0) return 'pending';
-
-        if (isWeekly) {
-            // Success if all targets are met
-            const allTargetsMet = rawHabits.every(h => {
-                const hName = typeof h === 'string' ? h : h.name;
-                const hTarget = typeof h === 'string' ? 7 : (h.target || 7);
-                const val = results[hName];
-                return val !== undefined && val !== null && parseInt(val) >= hTarget;
-            });
-            if (allTargetsMet) return 'success';
-
-            // Partial if any progress made
-            const someProgress = rawHabits.some(h => {
-                const hName = typeof h === 'string' ? h : h.name;
-                const val = results[hName];
-                return val !== undefined && val !== null && parseInt(val) > 0;
-            });
-            return someProgress ? 'partial' : 'pending';
-        }
-
-        const habits = rawHabits.map(h => typeof h === 'string' ? h : h.name);
-        const activeResults = habits.filter(hName => results[hName] !== undefined && results[hName] !== null);
-        if (activeResults.length === 0) return 'pending';
-
-        const failed = habits.some(h => results[h] === false);
-        if (failed) return 'fail';
-
-        const allDone = habits.every(h => results[h] === true);
-        if (allDone) return 'success';
-
-        return 'partial';
+        let filtered = [];
+        if (activeFilters.includes('nutrition')) filtered = [...filtered, ...(m.nutrition || [])];
+        if (activeFilters.includes('movement')) filtered = [...filtered, ...(m.movement || [])];
+        if (activeFilters.includes('health')) filtered = [...filtered, ...(m.health || [])];
+        if (activeFilters.includes('uncategorized')) filtered = [...filtered, ...(m.uncategorized || [])];
+        return filtered;
     };
 
     const getAllMinimums = () => {
@@ -178,18 +188,142 @@ const AthleteHabits = ({ userId, isAdminView = false }) => {
         ].map(h => typeof h === 'string' ? { name: h, target: 7 } : h);
     };
 
-    const getFilteredMinimums = () => {
-        if (!userProfile?.minimums) return [];
-        const m = userProfile.minimums;
-        if (Array.isArray(m)) return activeFilters.includes('nutrition') ? m : [];
+    const getDayStatus = (date) => {
+        const dateKey = format(isWeekly ? endOfWeek(date, { weekStartsOn: 1 }) : date, 'yyyy-MM-dd');
+        const entry = monthlyData[dateKey];
+        const auto = getAutomatedStatus(date);
 
-        let filtered = [];
-        if (activeFilters.includes('nutrition')) filtered = [...filtered, ...(m.nutrition || [])];
-        if (activeFilters.includes('movement')) filtered = [...filtered, ...(m.movement || [])];
-        if (activeFilters.includes('health')) filtered = [...filtered, ...(m.health || [])];
-        if (activeFilters.includes('uncategorized')) filtered = [...filtered, ...(m.uncategorized || [])];
-        return filtered;
+        // Analyze Automated
+        let autoResults = [];
+        if (activeFilters.includes('training_auto') && auto.training) autoResults.push(auto.training);
+        if (activeFilters.includes('nutrition_auto') && auto.nutrition) autoResults.push(auto.nutrition);
+
+        const anyAutoFail = autoResults.includes('fail');
+        const anyAutoPartial = autoResults.includes('partial');
+        const allAutoSuccess = autoResults.length > 0 && autoResults.every(r => r === 'success');
+        const hasAuto = autoResults.length > 0;
+
+        // Check Manual Habits
+        const rawHabits = getFilteredMinimums();
+        let manualStatus = 'pending';
+
+        if (rawHabits.length > 0 && entry && entry.habitsResults) {
+            const results = entry.habitsResults;
+
+            if (isWeekly) {
+                const allTargetsMet = rawHabits.every(h => {
+                    const hName = typeof h === 'string' ? h : h.name;
+                    const hTarget = typeof h === 'string' ? 7 : (h.target || 7);
+                    const val = results[hName];
+                    return val !== undefined && val !== null && parseInt(val) >= hTarget;
+                });
+                if (allTargetsMet) manualStatus = 'success';
+                else {
+                    const someProgress = rawHabits.some(h => {
+                        const hName = typeof h === 'string' ? h : h.name;
+                        const val = results[hName];
+                        return val !== undefined && val !== null && parseInt(val) > 0;
+                    });
+                    if (someProgress) manualStatus = 'partial';
+                }
+            } else {
+                const habits = rawHabits.map(h => typeof h === 'string' ? h : h.name);
+                const activeResults = habits.filter(hName => results[hName] !== undefined && results[hName] !== null);
+                if (activeResults.length > 0) {
+                    const failed = habits.some(h => results[h] === false);
+                    if (failed) manualStatus = 'fail';
+                    else {
+                        const allDone = habits.every(h => results[h] === true);
+                        if (allDone) manualStatus = 'success';
+                        else manualStatus = 'partial';
+                    }
+                }
+            }
+        }
+
+        // Final Merge Priority: Fail > Partial > Success > Pending
+        if (anyAutoFail || manualStatus === 'fail') return 'fail';
+        if (anyAutoPartial || manualStatus === 'partial') return 'partial';
+
+        // Success conditions:
+        // 1. All active auto things are success AND manual is success
+        if (allAutoSuccess && manualStatus === 'success') return 'success';
+        // 2. All active auto things are success AND manual is pending (no manual habits to report)
+        if (allAutoSuccess && manualStatus === 'pending') return 'success';
+        // 3. No active auto things AND manual is success
+        if (!hasAuto && manualStatus === 'success') return 'success';
+
+        // If we have some success but others pending -> partial
+        return (hasAuto || manualStatus !== 'pending') ? 'partial' : 'pending';
     };
+
+    const monthlyCompliance = useMemo(() => {
+        const monthStart = startOfMonth(viewDate);
+        const monthEnd = endOfMonth(viewDate);
+        const allDays = eachDayOfInterval({ start: monthStart, end: monthEnd });
+
+        const today = startOfDay(new Date());
+
+        // Check if we are only filtering for automated tasks
+        const hasHabitFilters = activeFilters.some(f => ['nutrition', 'movement', 'health'].includes(f));
+        const hasAutoFilters = activeFilters.some(f => ['training_auto', 'nutrition_auto'].includes(f));
+
+        let successCount = 0;
+        let potentialDays = 0;
+
+        allDays.forEach(date => {
+            const status = getDayStatus(date);
+            const isPast = isBefore(date, today);
+
+            const dateKey = format(date, 'yyyy-MM-dd');
+            const daySchedule = userProfile?.schedule?.[dateKey] || [];
+
+            const hasScheduledTraining = daySchedule.some(t => t.type === 'session' || t.type === 'free_training');
+            const hasScheduledNutrition = daySchedule.some(t => t.type === 'nutrition_day');
+
+            // If only automated filters are active, we ONLY count days where something WAS scheduled
+            if (!hasHabitFilters && hasAutoFilters) {
+                const isTrainingFiltered = activeFilters.includes('training_auto');
+                const isNutritionFiltered = activeFilters.includes('nutrition_auto');
+
+                // A day is "potential" only if it has a scheduled task that matches active filters
+                const matchesScheduled = (isTrainingFiltered && hasScheduledTraining) ||
+                    (isNutritionFiltered && hasScheduledNutrition);
+
+                if (matchesScheduled) {
+                    if (status === 'success') successCount++;
+                    if (isPast) potentialDays++;
+                }
+            } else {
+                // Default logic (Habitos or mixed): continuous days until yesterday
+                if (status === 'success') successCount++;
+                if (isPast) potentialDays++;
+            }
+        });
+
+        const isCurrentMonthView = isSameMonth(viewDate, today);
+        const isFutureMonthView = isAfter(monthStart, today);
+
+        let denominator;
+        if (isFutureMonthView) {
+            denominator = 0;
+        } else if (isCurrentMonthView) {
+            denominator = potentialDays;
+        } else {
+            // For past months, if it's automated-only, we might want the count of scheduled days in that month
+            denominator = potentialDays || (allDays.length);
+        }
+
+        const percentage = denominator > 0 ? Math.round((successCount / denominator) * 100) : 0;
+
+        return {
+            success: successCount,
+            total: denominator,
+            percentage,
+            isFuture: isFutureMonthView
+        };
+    }, [viewDate, monthlyData, activeFilters, userProfile]);
+
 
     const toggleFilter = (catId) => {
         setActiveFilters(prev =>
@@ -271,44 +405,143 @@ const AthleteHabits = ({ userId, isAdminView = false }) => {
                     </div>
                 </div>
 
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-2xl border border-slate-100 shadow-sm">
-                        <button onClick={() => setViewDate(subMonths(viewDate, 1))} className="p-1 hover:bg-slate-50 rounded-lg text-slate-400">
-                            <ChevronLeft size={20} />
-                        </button>
-                        <span className="text-xs font-black uppercase text-slate-900 min-w-[100px] text-center">
-                            {format(viewDate, 'MMMM yyyy', { locale: es })}
-                        </span>
-                        <button onClick={() => setViewDate(addMonths(viewDate, 1))} className="p-1 hover:bg-slate-50 rounded-lg text-slate-400">
-                            <ChevronRight size={20} />
-                        </button>
+                {/* Filters Row */}
+                <div className="space-y-4 px-2">
+                    {/* Manual Habits Group */}
+                    <div className="space-y-2">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Compromisos</p>
+                        <div className="flex flex-wrap gap-2">
+                            {CATEGORIES.map(cat => (
+                                <button
+                                    key={cat.id}
+                                    onClick={() => toggleFilter(cat.id)}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all text-[11px] font-black ${activeFilters.includes(cat.id) ? `bg-${cat.color}-500 text-white border-${cat.color}-500 shadow-md shadow-${cat.color}-500/10` : 'bg-white text-slate-400 border-slate-100'}`}
+                                >
+                                    {activeFilters.includes(cat.id) ? <Check size={12} strokeWidth={4} /> : cat.icon}
+                                    <span className="hidden sm:inline">{cat.label}</span>
+                                    <span className="sm:hidden">{cat.shortLabel}</span>
+                                </button>
+                            ))}
+                        </div>
                     </div>
 
-                    <div className="flex flex-wrap gap-1.5">
-                        {CATEGORIES.map(cat => (
-                            <button
-                                key={cat.id}
-                                onClick={() => toggleFilter(cat.id)}
-                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all text-[11px] font-black ${activeFilters.includes(cat.id) ? `bg-${cat.color}-500 text-white border-${cat.color}-500 shadow-md shadow-${cat.color}-500/10` : 'bg-white text-slate-400 border-slate-100'}`}
-                            >
-                                {activeFilters.includes(cat.id) ? <Check size={12} strokeWidth={4} /> : cat.icon}
-                                <span className="hidden sm:inline">{cat.label}</span>
-                                <span className="sm:hidden">{cat.shortLabel}</span>
+                    {/* Automated Programados Group */}
+                    <div className="space-y-2">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Planificación</p>
+                        <div className="flex flex-wrap gap-2">
+                            {AUTO_CATEGORIES.map(cat => (
+                                <button
+                                    key={cat.id}
+                                    onClick={() => toggleFilter(cat.id)}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all text-[11px] font-black ${activeFilters.includes(cat.id) ? `bg-${cat.color}-500 text-white border-${cat.color}-500 shadow-md shadow-${cat.color}-500/10` : 'bg-white text-slate-400 border-slate-100'}`}
+                                >
+                                    {activeFilters.includes(cat.id) ? <Check size={12} strokeWidth={4} /> : cat.icon}
+                                    <span className="hidden sm:inline">{cat.label}</span>
+                                    <span className="sm:hidden">{cat.shortLabel}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pt-4 border-t border-slate-50">
+                    <div className="flex items-center justify-between w-full">
+                        <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-2xl border border-slate-100 shadow-sm">
+                            <button onClick={() => setViewDate(subMonths(viewDate, 1))} className="p-1 hover:bg-slate-50 rounded-lg text-slate-400">
+                                <ChevronLeft size={20} />
                             </button>
-                        ))}
-                        <button
-                            onClick={() => toggleFilter('uncategorized')}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all text-[11px] font-black ${activeFilters.includes('uncategorized') ? 'bg-slate-800 text-white border-slate-800 shadow-md' : 'bg-white text-slate-400 border-slate-100'}`}
-                        >
-                            {activeFilters.includes('uncategorized') ? <Check size={12} strokeWidth={4} /> : <Target size={12} />}
-                            <span className="hidden sm:inline">Pendientes</span>
-                            <span className="sm:hidden">Pend.</span>
-                        </button>
+                            <span className="text-xs font-black uppercase text-slate-900 min-w-[100px] text-center">
+                                {format(viewDate, 'MMMM yyyy', { locale: es })}
+                            </span>
+                            <button onClick={() => setViewDate(addMonths(viewDate, 1))} className="p-1 hover:bg-slate-50 rounded-lg text-slate-400">
+                                <ChevronRight size={20} />
+                            </button>
+                        </div>
+
+                        <div className="flex flex-col items-end">
+                            <div className="flex items-center gap-1.5 font-black text-slate-900">
+                                <span className="text-sm">{monthlyCompliance.success}</span>
+                                <span className="text-slate-300 text-[10px]/none">/</span>
+                                <span className="text-sm text-slate-400">{monthlyCompliance.total}</span>
+                                <div className={`ml-1 px-2 py-0.5 rounded-full text-[10px] ${monthlyCompliance.percentage >= 80 ? 'bg-emerald-100 text-emerald-600' : monthlyCompliance.percentage >= 50 ? 'bg-amber-100 text-amber-600' : 'bg-rose-100 text-rose-600'}`}>
+                                    {monthlyCompliance.percentage}%
+                                </div>
+                            </div>
+                            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Cumplimiento Mensual</p>
+                        </div>
                     </div>
                 </div>
             </header>
 
             {renderCalendar()}
+
+            {/* Automated Pautados Section */}
+            {
+                (activeFilters.includes('training_auto') || activeFilters.includes('nutrition_auto')) && (
+                    <section className="space-y-6">
+                        <div className="flex items-center gap-2 px-2">
+                            <div className="p-2 bg-indigo-50 text-indigo-500 rounded-xl">
+                                <Target size={18} />
+                            </div>
+                            <h2 className="text-xl font-black text-slate-900 leading-none">Programados</h2>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-4">
+                            {activeFilters.includes('training_auto') && (
+                                <div className={`p-5 rounded-[2rem] border transition-all ${getAutomatedStatus(selectedDate).training === 'success' ? 'bg-emerald-50 border-emerald-100' : getAutomatedStatus(selectedDate).training === 'fail' ? 'bg-rose-50 border-rose-100' : 'bg-white border-slate-100 shadow-sm'}`}>
+                                    <div className="flex justify-between items-center">
+                                        <div className="flex items-center gap-3">
+                                            <div className={`p-3 rounded-2xl ${getAutomatedStatus(selectedDate).training === 'success' ? 'bg-emerald-500 text-white' : getAutomatedStatus(selectedDate).training === 'fail' ? 'bg-rose-500 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                                                <Dumbbell size={20} />
+                                            </div>
+                                            <div>
+                                                <h4 className="font-black text-slate-900">Entrenamiento</h4>
+                                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Sesión Planificada</p>
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            {getAutomatedStatus(selectedDate).training === 'success' ? (
+                                                <span className="text-[10px] font-black text-emerald-600 bg-emerald-100 px-3 py-1 rounded-full uppercase tracking-widest">Completado</span>
+                                            ) : getAutomatedStatus(selectedDate).training === 'fail' ? (
+                                                <span className="text-[10px] font-black text-rose-600 bg-rose-100 px-3 py-1 rounded-full uppercase tracking-widest">No Realizado</span>
+                                            ) : (
+                                                <span className="text-[10px] font-black text-slate-400 bg-slate-100 px-3 py-1 rounded-full uppercase tracking-widest">Pendiente</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeFilters.includes('nutrition_auto') && (
+                                <div className={`p-5 rounded-[2rem] border transition-all ${getAutomatedStatus(selectedDate).nutrition === 'success' ? 'bg-emerald-50 border-emerald-100' : getAutomatedStatus(selectedDate).nutrition === 'partial' ? 'bg-amber-50 border-amber-100' : getAutomatedStatus(selectedDate).nutrition === 'fail' ? 'bg-rose-50 border-rose-100' : 'bg-white border-slate-100 shadow-sm'}`}>
+                                    <div className="flex justify-between items-center">
+                                        <div className="flex items-center gap-3">
+                                            <div className={`p-3 rounded-2xl ${getAutomatedStatus(selectedDate).nutrition === 'success' ? 'bg-emerald-500 text-white' : getAutomatedStatus(selectedDate).nutrition === 'partial' ? 'bg-amber-400 text-white' : getAutomatedStatus(selectedDate).nutrition === 'fail' ? 'bg-rose-500 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                                                <Utensils size={20} />
+                                            </div>
+                                            <div>
+                                                <h4 className="font-black text-slate-900">Nutrición</h4>
+                                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Plan de Alimentación</p>
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            {getAutomatedStatus(selectedDate).nutrition === 'success' ? (
+                                                <span className="text-[10px] font-black text-emerald-600 bg-emerald-100 px-3 py-1 rounded-full uppercase tracking-widest">Perfecto</span>
+                                            ) : getAutomatedStatus(selectedDate).nutrition === 'partial' ? (
+                                                <span className="text-[10px] font-black text-amber-600 bg-amber-100 px-3 py-1 rounded-full uppercase tracking-widest">Parcial</span>
+                                            ) : getAutomatedStatus(selectedDate).nutrition === 'fail' ? (
+                                                <span className="text-[10px] font-black text-rose-600 bg-rose-100 px-3 py-1 rounded-full uppercase tracking-widest">No Cumplido</span>
+                                            ) : (
+                                                <span className="text-[10px] font-black text-slate-400 bg-slate-100 px-3 py-1 rounded-full uppercase tracking-widest">Sin Registro</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </section>
+                )
+            }
 
             <section className="space-y-6">
                 <div className="flex justify-between items-end px-2">
@@ -555,7 +788,7 @@ const AthleteHabits = ({ userId, isAdminView = false }) => {
                     </div>
                 )}
             </AnimatePresence>
-        </div>
+        </div >
     );
 };
 
