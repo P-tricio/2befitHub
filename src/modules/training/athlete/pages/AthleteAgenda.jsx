@@ -4,13 +4,15 @@ import { useAuth } from '../../../../context/AuthContext';
 import { db } from '../../../../lib/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { TrainingDB } from '../../services/db';
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Bell, Zap, Clock, Footprints, Utensils, ClipboardList, LayoutGrid, Dumbbell, Scale, Plus, Camera, Check, X, User as UserIcon, CheckSquare } from 'lucide-react';
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Bell, Zap, Clock, Footprints, Utensils, ClipboardList, LayoutGrid, Dumbbell, Scale, Plus, Camera, Check, X, User as UserIcon, CheckSquare, ShoppingBasket } from 'lucide-react';
 import CheckinModal from '../components/CheckinModal';
 import SessionResultsModal from '../../components/SessionResultsModal';
 import { format, startOfWeek, endOfWeek, addDays, isSameDay, isSameMonth, subWeeks, addWeeks, startOfMonth, endOfMonth, eachDayOfInterval, subMonths, addMonths, getDay } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
 import NutritionDayView from '../../../nutrition/user/NutritionDayView';
+import ShoppingListView from '../../../nutrition/user/ShoppingListView';
+import { ShoppingListService } from '../../../nutrition/services/shoppingListService';
 
 const AthleteAgenda = () => {
     const { currentUser } = useAuth();
@@ -26,6 +28,9 @@ const AthleteAgenda = () => {
     const [userCustomMetrics, setUserCustomMetrics] = useState([]);
     const [userMinimums, setUserMinimums] = useState(null);
     const [habitFrequency, setHabitFrequency] = useState('daily');
+    const [showWeeklyShoppingList, setShowWeeklyShoppingList] = useState(false);
+    const [weeklyDayIds, setWeeklyDayIds] = useState([]);
+    const [hasRealNutrition, setHasRealNutrition] = useState(false);
 
     useEffect(() => {
         if (!currentUser) return;
@@ -40,6 +45,31 @@ const AthleteAgenda = () => {
         });
         return () => unsub();
     }, [currentUser]);
+
+    useEffect(() => {
+        const checkNutrition = async () => {
+            const ids = [];
+            weekDays.forEach(date => {
+                const key = format(date, 'yyyy-MM-dd');
+                const tasks = schedule[key] || [];
+                tasks.forEach(t => {
+                    if (t.type === 'nutrition_day' && (t.dayId || t.config?.dayId)) {
+                        ids.push(t.dayId || t.config?.dayId);
+                    }
+                });
+            });
+
+            if (ids.length > 0) {
+                const real = await ShoppingListService.hasRealIngredients(ids);
+                setHasRealNutrition(real);
+                setWeeklyDayIds(ids);
+            } else {
+                setHasRealNutrition(false);
+                setWeeklyDayIds([]);
+            }
+        };
+        checkNutrition();
+    }, [schedule, currentDate]);
 
     useEffect(() => {
         const loadSessions = async () => {
@@ -176,6 +206,7 @@ const AthleteAgenda = () => {
 
     const weekDays = getWeekDays();
     const monthDays = getMonthDays();
+
     const currentMonthLabel = format(currentDate, 'MMMM yyyy', { locale: es });
     const selectedTasks = getTasksForDate(selectedDate);
     const showTasks = !isFutureRestricted(selectedDate);
@@ -197,6 +228,15 @@ const AthleteAgenda = () => {
                     </div>
                 </div>
                 <div className="flex gap-2">
+                    {viewMode === 'week' && hasRealNutrition && (
+                        <button
+                            onClick={() => setShowWeeklyShoppingList(true)}
+                            className="flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-600 rounded-2xl border border-indigo-100 text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all shadow-sm"
+                        >
+                            <ShoppingBasket size={14} />
+                            <span className="hidden sm:inline">Lista Semanal</span>
+                        </button>
+                    )}
                     <button
                         onClick={() => setViewMode(viewMode === 'week' ? 'month' : 'week')}
                         className={`p-3 rounded-2xl border transition-all shadow-sm ${viewMode === 'month' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-400 border-slate-100'}`}
@@ -431,6 +471,14 @@ const AthleteAgenda = () => {
                         dayId={nutritionDayTask.dayId || nutritionDayTask.config?.dayId}
                         taskId={nutritionDayTask.id}
                         onClose={() => setNutritionDayTask(null)}
+                    />
+                )}
+
+                {showWeeklyShoppingList && (
+                    <ShoppingListView
+                        dayIds={weeklyDayIds}
+                        title={`Compra Semanal (${format(weekDays[0], 'd MMM', { locale: es })} - ${format(weekDays[6], 'd MMM', { locale: es })})`}
+                        onClose={() => setShowWeeklyShoppingList(false)}
                     />
                 )}
 

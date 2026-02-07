@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, CheckSquare, ChevronDown, ChevronUp, PieChart, Info, Scale, Zap, X } from 'lucide-react';
+import { Check, CheckSquare, ChevronDown, ChevronUp, PieChart, Info, Scale, Zap, X, ShoppingBasket } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { NutritionDB } from '../services/nutritionDB';
 import { calculateItemMacros, formatMacroDisplay, gramsToPortions, PORTION_CONSTANTS } from '../services/portionService';
+import { GENERIC_INGREDIENT_IDS } from '../services/shoppingListService';
 import { TrainingDB } from '../../training/services/db';
+import ShoppingListView from './ShoppingListView';
 
 const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayId is the assigned plan day
     const [day, setDay] = useState(null);
@@ -12,6 +14,9 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
     const [loading, setLoading] = useState(true);
     const [viewMode, setViewMode] = useState('GRAMS'); // GRAMS | PORTIONS
     const [stats, setStats] = useState({ notes: '', adherence: null }); // 'perfect', 'partial', 'missed'
+    const [showShoppingList, setShowShoppingList] = useState(false);
+    const [isGenericPlan, setIsGenericPlan] = useState(false);
+    const [expandedRecipes, setExpandedRecipes] = useState({}); // { 'meal-item': true }
 
     // Expanded meals state
     const [expandedMeals, setExpandedMeals] = useState({});
@@ -33,10 +38,43 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
             const logData = await NutritionDB.logs.getDailyLog(userId, date);
 
             setDay(dayData);
-            setLog(logData || { userId, date, completedItems: {} });
+
+            // Scoping fix: If log exists but dayId has changed, it might be stale testing data
+            // We'll keep the log but if dayId differs significantly, we might want to alert or just store dayId.
+            // For now, let's just initialize if null or store current dayId in log if it doesn't have it.
+            if (!logData) {
+                setLog({ userId, date, dayId, completedItems: {} });
+            } else if (logData.dayId && logData.dayId !== dayId) {
+                // If dayId exists and is different, it's definitely another plan.
+                // Resetting for clean test/plan switch.
+                setLog({ userId, date, dayId, completedItems: {} });
+            } else {
+                setLog({ ...logData, dayId }); // Ensure current dayId is associated
+            }
+
+            // Check if it's a generic plan (only generic ingredients)
+            let foundReal = false;
+            if (dayData && dayData.meals) {
+                for (const meal of dayData.meals) {
+                    if (meal.items) {
+                        for (const item of meal.items) {
+                            if (item.type === 'food') {
+                                if (!GENERIC_INGREDIENT_IDS.includes(item.refId)) {
+                                    foundReal = true;
+                                    break;
+                                }
+                            } else if (item.type === 'recipe') {
+                                foundReal = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (foundReal) break;
+                }
+            }
+            setIsGenericPlan(!foundReal);
 
             // Default expand current meal based on time? 
-            // For now expand all or just first.
             if (dayData && dayData.meals) {
                 const initialExpand = {};
                 dayData.meals.forEach((_, i) => initialExpand[i] = true);
@@ -73,6 +111,30 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
 
     const toggleMealExpand = (idx) => {
         setExpandedMeals(prev => ({ ...prev, [idx]: !prev[idx] }));
+    };
+
+    const toggleMealComplete = async (mIdx) => {
+        if (!day || !day.meals[mIdx]) return;
+        const meal = day.meals[mIdx];
+
+        // Check if all items in this meal are completed
+        let allInMealDone = true;
+        meal.items?.forEach((_, iIdx) => {
+            if (!log.completedItems[`${mIdx}-${iIdx}`]) allInMealDone = false;
+        });
+
+        const newStatus = !allInMealDone;
+        const newCompletedItems = { ...log.completedItems };
+
+        meal.items?.forEach((_, iIdx) => {
+            const key = `${mIdx}-${iIdx}`;
+            if (newStatus) newCompletedItems[key] = true;
+            else delete newCompletedItems[key];
+        });
+
+        const newLog = { ...log, completedItems: newCompletedItems };
+        setLog(newLog);
+        await NutritionDB.logs.saveDailyLog(userId, date, newLog.completedItems, dayId);
     };
 
     const toggleCompleteAll = async () => {
@@ -116,7 +178,8 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
         // Let's check updateMealStatus implementation in mind -> it updates a specific field.
         // I will implement a saveLog method or similar if needed, but for now let's assume updateLog or loop.
         // Actually, let's just save the whole completedItems map.
-        await NutritionDB.logs.saveDailyLog(userId, date, newLog.completedItems);
+        // Update log with current dayId
+        await NutritionDB.logs.saveDailyLog(userId, date, newLog.completedItems, dayId);
     };
 
     // Calculation
@@ -328,8 +391,16 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                                 onClick={toggleCompleteAll}
                                 className="bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border border-emerald-200 flex items-center gap-2 shadow-sm text-emerald-600 active:scale-95"
                             >
-                                <CheckSquare size={12} /> <span>Todo</span>
+                                <CheckSquare size={12} /> <span>Marcar Todo</span>
                             </button>
+                            {!isGenericPlan && (
+                                <button
+                                    onClick={() => setShowShoppingList(true)}
+                                    className="bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border border-indigo-200 flex items-center gap-2 shadow-sm text-indigo-600 active:scale-95"
+                                >
+                                    <ShoppingBasket size={12} /> <span>Lista</span>
+                                </button>
+                            )}
                             <button
                                 onClick={() => setViewMode(prev => prev === 'GRAMS' ? 'PORTIONS' : 'GRAMS')}
                                 className="bg-slate-50 hover:bg-slate-100 px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border border-slate-200 flex items-center gap-2 shadow-sm active:scale-95"
@@ -383,7 +454,18 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                                     onClick={() => toggleMealExpand(mIdx)}
                                     className="p-5 flex justify-between items-center cursor-pointer bg-white hover:bg-slate-50 transition-colors"
                                 >
-                                    <h3 className="font-black text-lg text-slate-900">{meal.name}</h3>
+                                    <div className="flex items-center gap-3">
+                                        <h3 className="font-black text-lg text-slate-900">{meal.name}</h3>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                toggleMealComplete(mIdx);
+                                            }}
+                                            className="p-1 px-2 bg-slate-100 hover:bg-emerald-500 hover:text-white rounded-lg text-[8px] font-black uppercase tracking-widest transition-all text-slate-400 border border-slate-200"
+                                        >
+                                            Marcar Todo
+                                        </button>
+                                    </div>
                                     <div className="flex items-center gap-3">
                                         {expandedMeals[mIdx] ? <ChevronUp size={20} className="text-slate-300" /> : <ChevronDown size={20} className="text-slate-300" />}
                                     </div>
@@ -399,33 +481,79 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                                             {meal.items?.map((item, iIdx) => {
                                                 const key = `${mIdx}-${iIdx}`;
                                                 const isChecked = !!log?.completedItems?.[key];
+                                                const isExpanded = !!expandedRecipes[key];
+                                                const recipe = item.type === 'recipe' ? resources.recipes.find(r => r.id === item.refId) : null;
 
                                                 return (
-                                                    <div
-                                                        key={iIdx}
-                                                        onClick={() => toggleItem(mIdx, iIdx)}
-                                                        className={`p-4 flex items-center gap-4 cursor-pointer transition-all border-b border-slate-50 last:border-0
-                                                            ${isChecked ? 'bg-slate-50/50 opacity-50' : 'bg-white hover:bg-indigo-50/30'}
-                                                        `}
-                                                    >
-                                                        <div className={`
-                                                            w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all shrink-0
-                                                            ${isChecked ? 'bg-indigo-600 border-indigo-600' : 'border-slate-200'}
-                                                        `}>
-                                                            {isChecked && <Check size={14} className="text-white" />}
-                                                        </div>
+                                                    <div key={iIdx} className="border-b border-slate-50 last:border-0">
+                                                        <div
+                                                            onClick={() => toggleItem(mIdx, iIdx)}
+                                                            className={`p-4 flex items-center gap-4 cursor-pointer transition-all
+                                                                    ${isChecked ? 'bg-slate-50/50 opacity-40' : 'bg-white hover:bg-indigo-50/30'}
+                                                                `}
+                                                        >
+                                                            <div className={`
+                                                                    w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all shrink-0
+                                                                    ${isChecked ? 'bg-indigo-600 border-indigo-600' : 'border-slate-200'}
+                                                                `}>
+                                                                {isChecked && <Check size={14} className="text-white" />}
+                                                            </div>
 
-                                                        <div className="flex-1">
-                                                            <div className={`font-bold text-sm ${isChecked ? 'text-slate-400 line-through' : 'text-slate-900'}`}>{item.name}</div>
-                                                            <div className="text-xs text-slate-400 font-medium">
-                                                                {item.quantity} {item.unit}
-                                                                {viewMode === 'PORTIONS' && item.type === 'food' && (
-                                                                    <span className="ml-2 text-indigo-400 font-bold bg-indigo-50 px-1 rounded">
-                                                                        {/* Estimate Portions for Item */}
-                                                                    </span>
-                                                                )}
+                                                            <div className="flex-1">
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className={`font-bold text-sm ${isChecked ? 'text-slate-400 line-through' : 'text-slate-900'}`}>{item.name}</div>
+                                                                    {recipe && (
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                setExpandedRecipes(prev => ({ ...prev, [key]: !prev[key] }));
+                                                                            }}
+                                                                            className={`p-1 rounded-lg border transition-all ${isExpanded ? 'bg-indigo-500 border-indigo-500 text-white' : 'bg-slate-50 border-slate-100 text-slate-400'}`}
+                                                                        >
+                                                                            <Info size={18} />
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                                <div className="text-xs text-slate-400 font-medium">
+                                                                    {item.quantity} {item.unit}
+                                                                    {item.type === 'recipe' && <span className="ml-2 text-[8px] font-black uppercase text-indigo-400 tracking-widest border border-indigo-100 px-1 rounded">Receta</span>}
+                                                                </div>
                                                             </div>
                                                         </div>
+
+                                                        {/* Recipe Details */}
+                                                        <AnimatePresence>
+                                                            {isExpanded && recipe && (
+                                                                <motion.div
+                                                                    initial={{ height: 0, opacity: 0 }}
+                                                                    animate={{ height: 'auto', opacity: 1 }}
+                                                                    exit={{ height: 0, opacity: 0 }}
+                                                                    className="px-14 pb-4 bg-slate-50 overflow-hidden"
+                                                                >
+                                                                    {recipe.ingredients && (
+                                                                        <div className="mb-3 pt-2">
+                                                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Ingredientes:</p>
+                                                                            <ul className="space-y-1">
+                                                                                {recipe.ingredients.map((ing, k) => (
+                                                                                    <li key={k} className="text-xs text-slate-600 flex justify-between">
+                                                                                        <span>• {ing.name}</span>
+                                                                                        <span className="font-bold text-slate-400">{ing.quantity || ing.amount} {ing.unit}</span>
+                                                                                    </li>
+                                                                                ))}
+                                                                            </ul>
+                                                                        </div>
+                                                                    )}
+                                                                    {recipe.instructions && (
+                                                                        <div>
+                                                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Preparación:</p>
+                                                                            <p className="text-xs text-slate-500 leading-relaxed whitespace-pre-line italic">
+                                                                                {recipe.instructions}
+                                                                            </p>
+                                                                        </div>
+                                                                    )}
+                                                                </motion.div>
+                                                            )}
+                                                        </AnimatePresence>
                                                     </div>
                                                 );
                                             })}
@@ -499,6 +627,15 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                     )}
                 </div>
             </motion.div>
+
+            <AnimatePresence>
+                {showShoppingList && dayId && (
+                    <ShoppingListView
+                        dayIds={[dayId]}
+                        onClose={() => setShowShoppingList(false)}
+                    />
+                )}
+            </AnimatePresence>
         </div>,
         document.body
     );
