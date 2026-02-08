@@ -288,33 +288,55 @@ const AthleteHome = () => {
                                     const blocks = session.blocks || [];
                                     sessionMetadata.blocks = blocks.length;
 
-                                    if (sessionMetadata.isCardio) {
-                                        // Use overrides if available
-                                        if (task.config?.overrides?.duration) {
-                                            sessionMetadata.duration = parseInt(task.config.overrides.duration);
-                                        } else {
-                                            // Sum up all exercise durations if volType is TIME
-                                            let totalSeconds = 0;
-                                            blocks.forEach(b => {
-                                                b.exercises?.forEach(ex => {
-                                                    if (ex.config?.volType === 'TIME') {
-                                                        ex.config.sets?.forEach(s => {
-                                                            totalSeconds += (parseInt(s.reps) || 0);
-                                                        });
-                                                    }
-                                                });
-                                            });
-                                            sessionMetadata.duration = Math.ceil(totalSeconds / 60) || 10;
-                                        }
-                                    } else {
+                                    // 1. Calculate duration based on overrides first (Accurate)
+                                    const overrides = task.config?.overrides || {};
+                                    if ((overrides.volUnit === 'TIME' || !overrides.volUnit) && overrides.volVal) {
+                                        sessionMetadata.duration = parseInt(overrides.volVal);
+                                    } else if (overrides.sets?.length > 0) {
+                                        // Sum all sets if they use TIME + Recoveries
+                                        const totalMin = overrides.sets.reduce((acc, set) => {
+                                            const setTime = (set.volUnit === 'TIME' || !set.volUnit) ? (parseInt(set.volVal || set.reps || set.duration) || 0) : 0;
+                                            const recTime = parseInt(set.recovery) || 0;
+                                            return acc + setTime + recTime;
+                                        }, 0);
+                                        if (totalMin > 0) sessionMetadata.duration = totalMin;
+                                    } else if (overrides.duration) {
+                                        sessionMetadata.duration = parseInt(overrides.duration);
+                                    }
+
+                                    // 2. If no overrides, calculate based on session structure
+                                    if (!sessionMetadata.duration) {
                                         let totalSeconds = 0;
                                         blocks.forEach(b => {
-                                            totalSeconds += b.targeting?.[0]?.timeCap || 240;
+                                            // Priority: EMOM Params
+                                            if (b.params?.emomMinutes) {
+                                                totalSeconds += (parseInt(b.params.emomMinutes) * 60);
+                                            }
+                                            // Priority: Time Cap
+                                            else if (b.params?.timeCap || b.targeting?.[0]?.timeCap) {
+                                                totalSeconds += (parseInt(b.params?.timeCap || b.targeting[0].timeCap));
+                                            }
+                                            // General Fallback: Sum time-based exercises or default to 5 min
+                                            else {
+                                                let blockTimeSum = 0;
+                                                b.exercises?.forEach(ex => {
+                                                    if (ex.config?.volType === 'TIME' && ex.config.sets) {
+                                                        ex.config.sets.forEach(s => blockTimeSum += (parseInt(s.reps) || 0));
+                                                    }
+                                                });
+
+                                                if (blockTimeSum > 0) {
+                                                    totalSeconds += sessionMetadata.isCardio ? blockTimeSum : Math.max(blockTimeSum, 300);
+                                                } else {
+                                                    totalSeconds += 300;
+                                                }
+                                            }
                                         });
-                                        // Base duration + 3 mins transition between blocks
+
+                                        // Base duration + 3 mins transition between blocks (for non-cardio)
                                         const baseDuration = Math.ceil(totalSeconds / 60);
-                                        const transitionTime = blocks.length > 1 ? (blocks.length - 1) * 3 : 0;
-                                        sessionMetadata.duration = baseDuration + transitionTime;
+                                        const transitionTime = (!sessionMetadata.isCardio && blocks.length > 1) ? (blocks.length - 1) * 3 : 0;
+                                        sessionMetadata.duration = baseDuration + transitionTime || 10;
                                     }
                                 }
 
@@ -330,7 +352,7 @@ const AthleteHome = () => {
                                             className={`rounded-[2rem] shadow-sm border overflow-hidden transition-all ${isCompleted ? 'bg-white border-emerald-100' : 'bg-white border-slate-100'}`}
                                         >
                                             <button
-                                                onClick={() => isCompleted ? setSessionResultsTask({ task, session }) : toggleSession(task.id)}
+                                                onClick={() => isCompleted ? setSessionResultsTask({ task, session: { ...session, ...sessionMetadata } }) : toggleSession(task.id)}
                                                 className="w-full p-5 flex items-center gap-4 text-left hover:bg-slate-50/50 transition-colors"
                                             >
                                                 <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 transition-all relative ${isCompleted

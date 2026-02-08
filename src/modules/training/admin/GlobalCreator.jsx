@@ -114,6 +114,7 @@ const ExerciseItem = ({ ex, idx, isGrouped, isFirstInGroup, isLastInGroup, onCon
 
     // Smart Summary Logic
     const getSummary = () => {
+        if (isSessionCardio) return ''; // Hide structural summary for cardio sessions
         const sets = ex.config?.sets || [];
         if (sets.length === 0) return '0 Sets';
 
@@ -225,55 +226,65 @@ const ExerciseItem = ({ ex, idx, isGrouped, isFirstInGroup, isLastInGroup, onCon
                             <p className="text-[10px] text-amber-600 truncate font-bold italic">{ex.notes}</p>
                         </div>
                     )}
-                    <div className="flex items-center gap-1.5 mt-0.5" onClick={(e) => e.stopPropagation()}>
-                        <div className="relative group/sel">
-                            <select
-                                value={ex.config?.volType || 'REPS'}
-                                onChange={(e) => onUpdateExercise?.({ ...ex, config: { ...(ex.config || {}), volType: e.target.value } })}
-                                className={`appearance-none text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-wider outline-none cursor-pointer transition-colors ${ex.config?.sharedTime
-                                    ? 'bg-orange-100 text-orange-700'
-                                    : ex.config?.isEMOM
-                                        ? 'bg-emerald-100 text-emerald-700'
-                                        : isResistanceExercise(ex, isSessionCardio)
-                                            ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-                                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                                    }`}
-                            >
-                                <option value="REPS">REPS</option>
-                                <option value="TIME">TIME</option>
-                                {isResistanceExercise(ex, isSessionCardio) && (
-                                    <>
-                                        <option value="KCAL">KCAL</option>
-                                        <option value="METROS">METROS</option>
-                                        <option value="KM">KM</option>
-                                    </>
-                                )}
-                            </select>
-                        </div>
+                    {/* Summary & Quick Selectors - Hide for Cardio Sessions */}
+                    {!isSessionCardio ? (
+                        <div className="flex items-center gap-1.5 mt-0.5" onClick={(e) => e.stopPropagation()}>
+                            <div className="relative group/sel">
+                                <select
+                                    value={ex.config?.volType || 'REPS'}
+                                    onChange={(e) => onUpdateExercise?.({ ...ex, config: { ...(ex.config || {}), volType: e.target.value } })}
+                                    className={`appearance-none text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-wider outline-none cursor-pointer transition-colors ${ex.config?.sharedTime
+                                        ? 'bg-orange-100 text-orange-700'
+                                        : ex.config?.isEMOM
+                                            ? 'bg-emerald-100 text-emerald-700'
+                                            : isResistanceExercise(ex, isSessionCardio)
+                                                ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                        }`}
+                                >
+                                    <option value="REPS">REPS</option>
+                                    <option value="TIME">TIME</option>
+                                    {isResistanceExercise(ex, isSessionCardio) && (
+                                        <>
+                                            <option value="KCAL">KCAL</option>
+                                            <option value="METROS">METROS</option>
+                                            <option value="KM">KM</option>
+                                        </>
+                                    )}
+                                </select>
+                            </div>
 
-                        <div className="relative group/sel">
-                            <select
-                                value={ex.config?.intType || 'RIR'}
-                                onChange={(e) => onUpdateExercise?.({ ...ex, config: { ...(ex.config || {}), intType: e.target.value } })}
-                                className="appearance-none text-[8px] px-1.5 py-0.5 rounded font-bold uppercase tracking-tight bg-white border border-slate-100 text-slate-400 outline-none cursor-pointer hover:border-slate-300 transition-all font-mono"
-                            >
-                                <option value="RIR">RIR</option>
-                                <option value="PESO">KG</option>
-                                <option value="RPE">RPE</option>
-                                <option value="%">%MAX</option>
-                                {isResistanceExercise(ex, isSessionCardio) && (
-                                    <>
-                                        <option value="WATTS">W</option>
-                                        <option value="BPM">BPM</option>
-                                    </>
-                                )}
-                            </select>
-                        </div>
+                            <div className="relative group/sel">
+                                <select
+                                    value={ex.config?.intType || 'RIR'}
+                                    onChange={(e) => onUpdateExercise?.({ ...ex, config: { ...(ex.config || {}), intType: e.target.value } })}
+                                    className="appearance-none text-[8px] px-1.5 py-0.5 rounded font-bold uppercase tracking-tight bg-white border border-slate-100 text-slate-400 outline-none cursor-pointer hover:border-slate-300 transition-all font-mono"
+                                >
+                                    <option value="RIR">RIR</option>
+                                    <option value="PESO">KG</option>
+                                    <option value="RPE">RPE</option>
+                                    <option value="%">%MAX</option>
+                                    {isResistanceExercise(ex, isSessionCardio) && (
+                                        <>
+                                            <option value="WATTS">W</option>
+                                            <option value="BPM">BPM</option>
+                                        </>
+                                    )}
+                                </select>
+                            </div>
 
-                        <p className="text-xs text-slate-400 font-bold ml-1">
-                            {getSummary()}
-                        </p>
-                    </div>
+                            <p className="text-xs text-slate-400 font-bold ml-1">
+                                {getSummary()}
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="mt-1 flex items-center gap-1.5 opacity-60">
+                            <span className="text-[9px] font-black text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full uppercase tracking-tighter flex items-center gap-1">
+                                <Zap size={10} /> Configuración Inline
+                            </span>
+                            <p className="text-[10px] text-slate-400 font-bold italic">Planificar carga en calendario</p>
+                        </div>
+                    )}
                 </div>
 
                 <div className="flex items-center gap-1">
@@ -628,202 +639,215 @@ const ExerciseConfigDrawer = ({ isOpen, onClose, exercise, onSave, isGrouped, is
                         </div>
 
                         {/* Sets Editor */}
-                        <div className="mb-6">
-                            <div className="flex justify-between items-center mb-3">
-                                <div className="flex items-center gap-2">
-                                    <label className="text-[10px] uppercase font-black text-slate-400 tracking-wider">Series / Rondas</label>
+                        {isSessionCardio ? (
+                            <div className="mb-6 bg-blue-50 border border-blue-100 rounded-2xl p-6 text-center space-y-3">
+                                <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto text-blue-600">
+                                    <Zap size={24} />
+                                </div>
+                                <h4 className="text-sm font-black text-blue-900 uppercase">Sin Carga Estructural</h4>
+                                <p className="text-[10px] text-blue-700 leading-relaxed font-medium">
+                                    Esta sesión es de tipo <b>CARDIO</b>. <br />
+                                    La carga (series, tiempo, intensidad, zonas) se configura de forma <b>inline</b> directamente en la planificación para cada atleta.
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="mb-6">
+                                <div className="flex justify-between items-center mb-3">
+                                    <div className="flex items-center gap-2">
+                                        <label className="text-[10px] uppercase font-black text-slate-400 tracking-wider">Series / Rondas</label>
 
-                                    {/* Compact Cardio Trigger */}
-                                    <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[9px] font-bold transition-all ${isSessionCardio
-                                        ? 'bg-blue-50 border-blue-200 text-blue-600'
-                                        : config.forceCardio
-                                            ? 'bg-indigo-50 border-indigo-200 text-indigo-600 shadow-sm'
-                                            : 'bg-slate-50 border-slate-100 text-slate-400'
-                                        }`}>
-                                        <Zap size={10} className={isSessionCardio || config.forceCardio ? 'text-blue-500' : 'text-slate-300'} />
-                                        <span>CARDIO</span>
-                                        {!isSessionCardio && (
-                                            <button
-                                                onClick={() => setConfig({ ...config, forceCardio: !config.forceCardio })}
-                                                className={`w-6 h-3 rounded-full relative transition-colors ${config.forceCardio ? 'bg-indigo-500' : 'bg-slate-300'}`}
+                                        {/* Compact Cardio Trigger */}
+                                        <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[9px] font-bold transition-all ${isSessionCardio
+                                            ? 'bg-blue-50 border-blue-200 text-blue-600'
+                                            : config.forceCardio
+                                                ? 'bg-indigo-50 border-indigo-200 text-indigo-600 shadow-sm'
+                                                : 'bg-slate-50 border-slate-100 text-slate-400'
+                                            }`}>
+                                            <Zap size={10} className={isSessionCardio || config.forceCardio ? 'text-blue-500' : 'text-slate-300'} />
+                                            <span>CARDIO</span>
+                                            {!isSessionCardio && (
+                                                <button
+                                                    onClick={() => setConfig({ ...config, forceCardio: !config.forceCardio })}
+                                                    className={`w-6 h-3 rounded-full relative transition-colors ${config.forceCardio ? 'bg-indigo-500' : 'bg-slate-300'}`}
+                                                >
+                                                    <div className={`absolute top-0.5 w-2 h-2 rounded-full bg-white transition-all ${config.forceCardio ? 'right-0.5' : 'left-0.5'}`} />
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <span className="text-[10px] text-slate-400 font-mono">Total Vol: {config.sets.length}</span>
+                                </div>
+
+                                <div className="space-y-2">
+                                    {/* Header Row with Dropdowns */}
+                                    <div className="grid grid-cols-[24px_1fr_1fr_1fr_52px] gap-1 text-[10px] font-bold text-slate-400 text-center mb-1 items-end">
+                                        <span>#</span>
+
+                                        {/* Volume Type Selector */}
+                                        <div className="relative group">
+                                            <select
+                                                value={config.volType || 'REPS'}
+                                                onChange={(e) => setConfig({ ...config, volType: e.target.value })}
+                                                className="appearance-none bg-transparent text-center outline-none font-bold uppercase cursor-pointer w-full text-slate-400 hover:text-slate-600"
                                             >
-                                                <div className={`absolute top-0.5 w-2 h-2 rounded-full bg-white transition-all ${config.forceCardio ? 'right-0.5' : 'left-0.5'}`} />
+                                                <option value="REPS">REPS</option>
+                                                <option value="TIME">TIEMPO (s)</option>
+                                                {isResistanceExercise(exercise, isSessionCardio) && (
+                                                    <>
+                                                        <option value="KCAL">KCAL</option>
+                                                        <option value="METROS">METROS</option>
+                                                        <option value="KM">KILÓMETROS</option>
+                                                    </>
+                                                )}
+                                            </select>
+                                            <ChevronDown size={10} className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none opacity-50" />
+                                        </div>
+
+                                        {/* Intensity Type Selector */}
+                                        <div className="relative group">
+                                            <select
+                                                value={config.intType || 'RIR'}
+                                                onChange={(e) => setConfig({ ...config, intType: e.target.value })}
+                                                className="appearance-none bg-transparent text-center outline-none font-bold uppercase cursor-pointer w-full text-slate-400 hover:text-slate-600"
+                                            >
+                                                <option value="RIR">RIR</option>
+                                                <option value="PESO">PESO</option>
+                                                <option value="%">% MAX</option>
+                                                <option value="RPE">RPE</option>
+                                                {isResistanceExercise(exercise, isSessionCardio) && (
+                                                    <>
+                                                        <option value="WATTS">WATTS (W)</option>
+                                                        <option value="BPM">PULSO (BPM)</option>
+                                                        <option value="RITMO">RITMO</option>
+                                                        <option value="NIVEL">NIVEL</option>
+                                                    </>
+                                                )}
+                                            </select>
+                                            <ChevronDown size={10} className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none opacity-50" />
+                                        </div>
+
+                                        <span>DESC (s)</span>
+                                        <span></span>
+                                    </div>
+
+                                    {/* Shared Time Toggle (only for TIME volType) */}
+                                    {config.volType === 'TIME' && (
+                                        <div className="mt-3 mb-2 flex items-center justify-between p-3 bg-orange-50 border border-orange-200 rounded-xl">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-lg">⏱️</span>
+                                                <div>
+                                                    <p className="text-xs font-bold text-slate-800">Tiempo Compartido</p>
+                                                    <p className="text-[10px] text-slate-500">AMRAP - Los ejercicios del par comparten el tiempo total</p>
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={() => setConfig({
+                                                    ...config,
+                                                    sharedTime: !config.sharedTime
+                                                })}
+                                                className={`w-11 h-6 rounded-full p-1 transition-colors ${config.sharedTime ? 'bg-orange-500' : 'bg-slate-300'
+                                                    }`}
+                                            >
+                                                <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${config.sharedTime ? 'translate-x-5' : 'translate-x-0'
+                                                    }`} />
                                             </button>
-                                        )}
-                                    </div>
-                                </div>
-                                <span className="text-[10px] text-slate-400 font-mono">Total Vol: {config.sets.length}</span>
-                            </div>
+                                        </div>
+                                    )}
 
-                            <div className="space-y-2">
-                                {/* Header Row with Dropdowns */}
-                                <div className="grid grid-cols-[24px_1fr_1fr_1fr_52px] gap-1 text-[10px] font-bold text-slate-400 text-center mb-1 items-end">
-                                    <span>#</span>
+                                    {/* EMOM Toggle (only for REPS volType) */}
+                                    {config.volType === 'REPS' && (
+                                        <div className="mt-3 mb-2 flex items-center justify-between p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-lg">🕐</span>
+                                                <div>
+                                                    <p className="text-xs font-bold text-slate-800">EMOM</p>
+                                                    <p className="text-[10px] text-slate-500">Every Minute On the Minute - Timer por minutos</p>
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={() => setConfig({
+                                                    ...config,
+                                                    isEMOM: !config.isEMOM
+                                                })}
+                                                className={`w-11 h-6 rounded-full p-1 transition-colors ${config.isEMOM ? 'bg-emerald-500' : 'bg-slate-300'
+                                                    }`}
+                                            >
+                                                <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${config.isEMOM ? 'translate-x-5' : 'translate-x-0'
+                                                    }`} />
+                                            </button>
+                                        </div>
+                                    )}
 
-                                    {/* Volume Type Selector */}
-                                    <div className="relative group">
-                                        <select
-                                            value={config.volType || 'REPS'}
-                                            onChange={(e) => setConfig({ ...config, volType: e.target.value })}
-                                            className="appearance-none bg-transparent text-center outline-none font-bold uppercase cursor-pointer w-full text-slate-400 hover:text-slate-600"
-                                        >
-                                            <option value="REPS">REPS</option>
-                                            <option value="TIME">TIEMPO (s)</option>
-                                            {isResistanceExercise(exercise, isSessionCardio) && (
-                                                <>
-                                                    <option value="KCAL">KCAL</option>
-                                                    <option value="METROS">METROS</option>
-                                                    <option value="KM">KILÓMETROS</option>
-                                                </>
-                                            )}
-                                        </select>
-                                        <ChevronDown size={10} className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none opacity-50" />
-                                    </div>
-
-                                    {/* Intensity Type Selector */}
-                                    <div className="relative group">
-                                        <select
-                                            value={config.intType || 'RIR'}
-                                            onChange={(e) => setConfig({ ...config, intType: e.target.value })}
-                                            className="appearance-none bg-transparent text-center outline-none font-bold uppercase cursor-pointer w-full text-slate-400 hover:text-slate-600"
-                                        >
-                                            <option value="RIR">RIR</option>
-                                            <option value="PESO">PESO</option>
-                                            <option value="%">% MAX</option>
-                                            <option value="RPE">RPE</option>
-                                            {isResistanceExercise(exercise, isSessionCardio) && (
-                                                <>
-                                                    <option value="WATTS">WATTS (W)</option>
-                                                    <option value="BPM">PULSO (BPM)</option>
-                                                    <option value="RITMO">RITMO</option>
-                                                    <option value="NIVEL">NIVEL</option>
-                                                </>
-                                            )}
-                                        </select>
-                                        <ChevronDown size={10} className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none opacity-50" />
-                                    </div>
-
-                                    <span>DESC (s)</span>
-                                    <span></span>
-                                </div>
-
-                                {/* Shared Time Toggle (only for TIME volType) */}
-                                {config.volType === 'TIME' && (
-                                    <div className="mt-3 mb-2 flex items-center justify-between p-3 bg-orange-50 border border-orange-200 rounded-xl">
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-lg">⏱️</span>
-                                            <div>
-                                                <p className="text-xs font-bold text-slate-800">Tiempo Compartido</p>
-                                                <p className="text-[10px] text-slate-500">AMRAP - Los ejercicios del par comparten el tiempo total</p>
+                                    {config.sets.map((set, sIdx) => (
+                                        <div key={sIdx} className="grid grid-cols-[24px_1fr_1fr_1fr_52px] gap-1 items-center">
+                                            <div className="w-6 h-6 rounded bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500 shrink-0">
+                                                {sIdx + 1}
+                                            </div>
+                                            <input
+                                                type="text" // numeric text
+                                                value={set.reps || ''}
+                                                onChange={(e) => handleUpdateSet(sIdx, 'reps', e.target.value)}
+                                                placeholder={
+                                                    config.volType === 'TIME' ? "45s" :
+                                                        config.volType === 'KCAL' ? "200" :
+                                                            (config.volType === 'METROS' || config.volType === 'KM') ? "500" : "10"
+                                                }
+                                                className="bg-slate-50 border border-slate-200 rounded-lg py-1.5 text-center text-xs font-bold text-slate-700 outline-none focus:border-blue-400 min-w-0 w-full"
+                                            />
+                                            <input
+                                                type="text"
+                                                value={set.rir || ''}
+                                                onChange={(e) => handleUpdateSet(sIdx, 'rir', e.target.value)}
+                                                placeholder={
+                                                    config.intType === 'PESO' ? "20kg" :
+                                                        config.intType === '%' ? "75%" :
+                                                            config.intType === 'WATTS' ? "250W" :
+                                                                config.intType === 'BPM' ? "150" :
+                                                                    config.intType === 'RITMO' ? "5:00" : "2"
+                                                }
+                                                className="bg-slate-50 border border-slate-200 rounded-lg py-1.5 text-center text-xs font-bold text-slate-700 outline-none focus:border-blue-400 min-w-0 w-full"
+                                            />
+                                            <input
+                                                type="number"
+                                                value={set.rest || ''}
+                                                onChange={(e) => handleUpdateSet(sIdx, 'rest', e.target.value)}
+                                                placeholder="60"
+                                                className="bg-slate-50 border border-slate-200 rounded-lg py-1.5 text-center text-xs font-bold text-slate-700 outline-none focus:border-blue-400 min-w-0 w-full"
+                                            />
+                                            <div className="flex items-center gap-0.5 shrink-0 justify-center">
+                                                <button onClick={() => handleDuplicateSet(sIdx)} className="p-1 text-slate-300 hover:text-blue-500 hover:bg-blue-50 rounded">
+                                                    <Copy size={13} />
+                                                </button>
+                                                <button onClick={() => handleRemoveSet(sIdx)} className="p-1 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded">
+                                                    <X size={13} />
+                                                </button>
                                             </div>
                                         </div>
-                                        <button
-                                            onClick={() => setConfig({
-                                                ...config,
-                                                sharedTime: !config.sharedTime
-                                            })}
-                                            className={`w-11 h-6 rounded-full p-1 transition-colors ${config.sharedTime ? 'bg-orange-500' : 'bg-slate-300'
-                                                }`}
-                                        >
-                                            <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${config.sharedTime ? 'translate-x-5' : 'translate-x-0'
-                                                }`} />
-                                        </button>
-                                    </div>
-                                )}
+                                    ))}
+                                </div>
 
-                                {/* EMOM Toggle (only for REPS volType) */}
-                                {config.volType === 'REPS' && (
-                                    <div className="mt-3 mb-2 flex items-center justify-between p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-lg">🕐</span>
-                                            <div>
-                                                <p className="text-xs font-bold text-slate-800">EMOM</p>
-                                                <p className="text-[10px] text-slate-500">Every Minute On the Minute - Timer por minutos</p>
-                                            </div>
-                                        </div>
-                                        <button
-                                            onClick={() => setConfig({
-                                                ...config,
-                                                isEMOM: !config.isEMOM
-                                            })}
-                                            className={`w-11 h-6 rounded-full p-1 transition-colors ${config.isEMOM ? 'bg-emerald-500' : 'bg-slate-300'
-                                                }`}
-                                        >
-                                            <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${config.isEMOM ? 'translate-x-5' : 'translate-x-0'
-                                                }`} />
-                                        </button>
-                                    </div>
-                                )}
+                                {/* Rest Logic Info */}
+                                <div className="mt-3 p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-start gap-2">
+                                    < MoreVertical size={14} className="text-slate-400 mt-0.5 shrink-0" />
+                                    {isGrouped ? (
+                                        <p className="text-[10px] text-blue-600 font-bold leading-tight">
+                                            Este ejercicio es parte de una Súper Serie/Circuito. El descanso configurado aquí actúa como el "Descanso de Ronda".
+                                        </p>
+                                    ) : (
+                                        <p className="text-[10px] text-slate-500 italic leading-tight">
+                                            Tiempo de descanso después de completar la serie.
+                                        </p>
+                                    )}
+                                </div>
 
-                                {config.sets.map((set, sIdx) => (
-                                    <div key={sIdx} className="grid grid-cols-[24px_1fr_1fr_1fr_52px] gap-1 items-center">
-                                        <div className="w-6 h-6 rounded bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500 shrink-0">
-                                            {sIdx + 1}
-                                        </div>
-                                        <input
-                                            type="text" // numeric text
-                                            value={set.reps || ''}
-                                            onChange={(e) => handleUpdateSet(sIdx, 'reps', e.target.value)}
-                                            placeholder={
-                                                config.volType === 'TIME' ? "45s" :
-                                                    config.volType === 'KCAL' ? "200" :
-                                                        (config.volType === 'METROS' || config.volType === 'KM') ? "500" : "10"
-                                            }
-                                            className="bg-slate-50 border border-slate-200 rounded-lg py-1.5 text-center text-xs font-bold text-slate-700 outline-none focus:border-blue-400 min-w-0 w-full"
-                                        />
-                                        <input
-                                            type="text"
-                                            value={set.rir || ''}
-                                            onChange={(e) => handleUpdateSet(sIdx, 'rir', e.target.value)}
-                                            placeholder={
-                                                config.intType === 'PESO' ? "20kg" :
-                                                    config.intType === '%' ? "75%" :
-                                                        config.intType === 'WATTS' ? "250W" :
-                                                            config.intType === 'BPM' ? "150" :
-                                                                config.intType === 'RITMO' ? "5:00" : "2"
-                                            }
-                                            className="bg-slate-50 border border-slate-200 rounded-lg py-1.5 text-center text-xs font-bold text-slate-700 outline-none focus:border-blue-400 min-w-0 w-full"
-                                        />
-                                        <input
-                                            type="number"
-                                            value={set.rest || ''}
-                                            onChange={(e) => handleUpdateSet(sIdx, 'rest', e.target.value)}
-                                            placeholder="60"
-                                            className="bg-slate-50 border border-slate-200 rounded-lg py-1.5 text-center text-xs font-bold text-slate-700 outline-none focus:border-blue-400 min-w-0 w-full"
-                                        />
-                                        <div className="flex items-center gap-0.5 shrink-0 justify-center">
-                                            <button onClick={() => handleDuplicateSet(sIdx)} className="p-1 text-slate-300 hover:text-blue-500 hover:bg-blue-50 rounded">
-                                                <Copy size={13} />
-                                            </button>
-                                            <button onClick={() => handleRemoveSet(sIdx)} className="p-1 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded">
-                                                <X size={13} />
-                                            </button>
-                                        </div>
-                                    </div>
-                                ))}
+                                <button
+                                    onClick={handleAddSet}
+                                    className="w-full mt-3 py-2 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 text-xs font-bold hover:border-emerald-300 hover:text-emerald-500 transition-colors"
+                                >
+                                    + Añadir Serie
+                                </button>
                             </div>
-
-                            {/* Rest Logic Info */}
-                            <div className="mt-3 p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-start gap-2">
-                                <Info size={14} className="text-slate-400 mt-0.5 shrink-0" />
-                                {isGrouped ? (
-                                    <p className="text-[10px] text-blue-600 font-bold leading-tight">
-                                        Este ejercicio es parte de una Súper Serie/Circuito. El descanso configurado aquí actúa como el "Descanso de Ronda".
-                                    </p>
-                                ) : (
-                                    <p className="text-[10px] text-slate-500 italic leading-tight">
-                                        Tiempo de descanso después de completar la serie.
-                                    </p>
-                                )}
-                            </div>
-
-                            <button
-                                onClick={handleAddSet}
-                                className="w-full mt-3 py-2 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 text-xs font-bold hover:border-emerald-300 hover:text-emerald-500 transition-colors"
-                            >
-                                + Añadir Serie
-                            </button>
-                        </div>
+                        )}
 
                         {/* Notes */}
                         <div>

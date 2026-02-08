@@ -736,17 +736,19 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                                                     className="w-full text-4xl font-black text-slate-900 bg-transparent border-b-2 border-slate-50 focus:border-slate-900 outline-none py-2 transition-colors"
                                                 />
                                             </div>
-                                            {customMetrics.map((metric) => (
-                                                <div key={metric} className="space-y-1">
-                                                    <label className="block text-[10px] font-black text-slate-300 uppercase pl-1">{metric}</label>
-                                                    <input
-                                                        type="number"
-                                                        value={customValues[metric] || ''}
-                                                        onChange={e => handleCustomMetricChange(metric, e.target.value)}
-                                                        className="w-full text-4xl font-black text-slate-900 bg-transparent border-b-2 border-slate-50 focus:border-slate-900 outline-none py-2 transition-colors"
-                                                    />
-                                                </div>
-                                            ))}
+                                            {customMetrics
+                                                .filter(m => !['waist', 'hip', 'cintura', 'cadera'].includes(m.toLowerCase()))
+                                                .map((metric) => (
+                                                    <div key={metric} className="space-y-1">
+                                                        <label className="block text-[10px] font-black text-slate-300 uppercase pl-1">{metric}</label>
+                                                        <input
+                                                            type="number"
+                                                            value={customValues[metric] || ''}
+                                                            onChange={e => handleCustomMetricChange(metric, e.target.value)}
+                                                            className="w-full text-4xl font-black text-slate-900 bg-transparent border-b-2 border-slate-50 focus:border-slate-900 outline-none py-2 transition-colors"
+                                                        />
+                                                    </div>
+                                                ))}
                                         </div>
                                     </div>
                                 )}

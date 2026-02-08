@@ -7,7 +7,7 @@ import WarmupBlock from './components/WarmupBlock';
 import SummaryBlock from './components/SummaryBlock';
 import { uploadToImgBB } from '../services/imageService';
 import { useAuth } from '../../../context/AuthContext';
-import { ChevronLeft, ChevronUp, ChevronDown, Play, AlertCircle, CheckCircle, Clock, Plus, TrendingUp, TrendingDown, Minus, Info, Dumbbell, Zap, X, Activity, MessageSquare, Flame, Footprints, Trash2, Repeat, Layers, Camera, Check, Pause, AlertTriangle, ArrowRight, Save, Target, Hash } from 'lucide-react';
+import { ChevronLeft, ChevronUp, ChevronDown, Play, AlertCircle, CheckCircle, Clock, Plus, TrendingUp, TrendingDown, Minus, Info, Dumbbell, Zap, X, Activity, MessageSquare, Flame, Footprints, Trash2, Repeat, Layers, Camera, Check, Pause, AlertTriangle, ArrowRight, ArrowLeft, Save, Target, Hash, History } from 'lucide-react';
 import { useSessionData } from './hooks/useSessionData.js';
 import { useSessionTimer } from '../hooks/useSessionTimer';
 import { useKeepAwake } from '../../../hooks/useKeepAwake';
@@ -122,14 +122,21 @@ const SessionRunner = () => {
                     } else {
                         const newTargeting = [...(newModule.targeting || [])];
                         if (newTargeting.length === 0) newTargeting.push({});
-                        newTargeting[0] = { ...newTargeting[0], timeCap: volVal * 60, type: 'time' };
+                        // volVal is in minutes from admin override
+                        newTargeting[0] = {
+                            ...newTargeting[0],
+                            timeCap: volVal * 60,
+                            volume: volVal,
+                            metric: 'min', // Explicitly set to min to distinguish from seconds (seg)
+                            type: 'time'
+                        };
                         newModule.targeting = newTargeting;
                         newModule.protocol = 'T';
                     }
                 } else {
                     const newTargeting = [...(newModule.targeting || [])];
                     if (newTargeting.length === 0) newTargeting.push({});
-                    const metricMap = { 'KM': 'km', 'METROS': 'm', 'KCAL': 'kcal', 'REPS': 'reps' };
+                    const metricMap = { 'KM': 'km', 'METROS': 'm', 'KCAL': 'kcal', 'REPS': 'reps', 'TIME': 'min' };
                     newTargeting[0] = {
                         ...newTargeting[0],
                         volume: volVal,
@@ -139,16 +146,24 @@ const SessionRunner = () => {
                 }
             } else if (effectiveOverride.duration) {
                 // Legacy duration
+                const durationVal = parseInt(effectiveOverride.duration);
                 if (newModule.protocol === 'E') {
-                    newModule.emomParams = { ...(newModule.emomParams || {}), durationMinutes: parseInt(effectiveOverride.duration) };
+                    newModule.emomParams = { ...(newModule.emomParams || {}), durationMinutes: durationVal };
                 } else {
                     const newTargeting = [...(newModule.targeting || [])];
                     if (newTargeting.length === 0) newTargeting.push({});
-                    newTargeting[0] = { ...newTargeting[0], timeCap: parseInt(effectiveOverride.duration) * 60, type: 'time' };
+                    newTargeting[0] = {
+                        ...newTargeting[0],
+                        timeCap: durationVal * 60,
+                        volume: durationVal,
+                        metric: 'min',
+                        type: 'time'
+                    };
                     newModule.targeting = newTargeting;
                     if (newModule.protocol !== 'E') newModule.protocol = 'T';
                 }
             } else if (effectiveOverride.distance) {
+
                 // Legacy distance
                 const newTargeting = [...(newModule.targeting || [])];
                 if (newTargeting.length === 0) newTargeting.push({});
@@ -312,7 +327,23 @@ const SessionRunner = () => {
             }
 
             // 3. Mark session as completed in user's schedule (Crucial)
-            const durationMin = Math.round(globalTime / 60);
+            // For cardio: use duration from results. For regular: use globalTime.
+            let durationMin = Math.round(globalTime / 60);
+
+            // Check if we have cardio-specific duration in results
+            // Results may come as { 1: { durationMinutes, ... } } for cardio sessions
+            const firstResult = results?.[1] || Object.values(results || {})[0];
+
+            if (firstResult?.durationMinutes) {
+                durationMin = parseInt(firstResult.durationMinutes);
+            } else if (firstResult?.duration) {
+                durationMin = parseInt(firstResult.duration);
+            } else if (firstResult?.elapsedSeconds && firstResult.elapsedSeconds > 30) {
+                durationMin = Math.ceil(firstResult.elapsedSeconds / 60);
+            } else if (metrics?.durationMinutes) {
+                durationMin = parseInt(metrics.durationMinutes);
+            }
+
             const rpe = feedback.rpe;
 
             let summary = `${durationMin || '?'} min`;
@@ -1313,25 +1344,34 @@ const BlockFeedbackModal = ({ onConfirm, onBack, initialExNotes = {}, blockType,
 const CardioTaskView = ({ session, modules, overrides, onFinish, onBack }) => {
     // Prescribed values from overrides
     const [pDuration] = useState(() => {
-        if (overrides?.volUnit === 'TIME') return parseInt(overrides.volVal);
+        if (overrides?.sets?.length > 0) {
+            return overrides.sets.reduce((acc, s) => {
+                if (s.volUnit === 'TIME' || !s.volUnit) return acc + (parseInt(s.volVal) || 0);
+                return acc;
+            }, 0);
+        }
+        if (overrides?.volUnit === 'TIME' || !overrides?.volUnit) return parseInt(overrides?.volVal) || 0;
         return parseInt(overrides?.duration) || 10;
     });
     const [pDistance] = useState(() => {
+        if (overrides?.sets?.length > 0) {
+            return overrides.sets.reduce((acc, s) => {
+                if (s.volUnit !== 'TIME' && s.volUnit) return acc + (parseFloat(s.volVal) || 0);
+                return acc;
+            }, 0);
+        }
         if (overrides?.volVal && overrides?.volUnit !== 'TIME') return overrides.volVal;
         return overrides?.distance || '';
     });
 
     // Extract Target Intensity (Pace, HR, etc.)
-    const { targetPace, targetHR, targetRPE } = useMemo(() => {
-        const config = overrides?.config;
-        const firstSet = config?.sets?.[0];
-        const intType = config?.intType || firstSet?.intType;
-        const val = firstSet?.rir; // In GlobalCreator, 'rir' holds the intensity value
-
+    const { targetPace, targetHR, targetRPE, hrRange } = useMemo(() => {
+        const firstSet = overrides?.sets?.[0] || overrides || {};
         return {
-            targetPace: intType === 'RITMO' ? val : null,
-            targetHR: intType === 'BPM' ? val : null,
-            targetRPE: intType === 'RPE' ? val : null
+            targetPace: firstSet.intUnit === 'RITMO' ? firstSet.intVal : null,
+            targetHR: firstSet.intUnit === 'BPM' ? firstSet.intVal : null,
+            targetRPE: firstSet.intUnit === 'RPE' ? firstSet.intVal : null,
+            hrRange: firstSet.hrMin || firstSet.hrMax ? { min: firstSet.hrMin, max: firstSet.hrMax } : null
         };
     }, [overrides]);
 
@@ -1401,8 +1441,19 @@ const CardioTaskView = ({ session, modules, overrides, onFinish, onBack }) => {
     const handleConfirm = async () => {
         setSaving(true);
         try {
+            // Priority: Manual Edit > Timer (if > 30s) > Prescribed
+            let finalDuration = duration;
+            if (!duration || isNaN(duration) || duration === 0) {
+                if (elapsedSeconds > 30) {
+                    finalDuration = Math.ceil(elapsedSeconds / 60);
+                } else {
+                    finalDuration = pDuration;
+                }
+            }
+
             await onFinish({
-                duration: duration ? parseInt(duration) : null,
+                duration: finalDuration ? parseInt(finalDuration) : null,
+                durationMinutes: finalDuration ? parseInt(finalDuration) : null,
                 elapsedSeconds,
                 distance: distance ? parseFloat(distance) : null,
                 pace,
@@ -1457,259 +1508,286 @@ const CardioTaskView = ({ session, modules, overrides, onFinish, onBack }) => {
             </header>
 
             {/* 2. Main Scrollable Content */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-8 pb-32">
+            <div className="flex-1 overflow-y-auto pb-32">
 
-                {/* HERO STAT (Editable Actual) */}
-                <div className="flex flex-col items-center justify-center py-6">
-                    <div className="relative group">
-                        <input
-                            type="number"
-                            value={showDistAsHero ? distance : duration}
-                            onChange={(e) => showDistAsHero ? setDistance(e.target.value) : setDuration(e.target.value)}
-                            className="bg-transparent text-center text-7xl font-black text-white outline-none w-full max-w-[300px] placeholder:text-slate-800"
-                            placeholder="0"
-                        />
-                        <span className="absolute -bottom-4 left-1/2 -translate-x-1/2 text-xs font-black text-slate-500 uppercase tracking-[0.2em] pointer-events-none">
-                            {showDistAsHero ? 'KILÓMETROS' : 'MINUTOS'}
-                        </span>
+                {/* 2. HERO DASHBOARD - Your Progress Area */}
+                <div className="bg-gradient-to-b from-slate-900 to-slate-950 px-6 pt-10 pb-10 border-b border-white/5 relative overflow-hidden">
+                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-32 bg-orange-500/5 blur-[80px] rounded-full" />
 
-                        {/* Sync Timer Button (Only for Time Hero) */}
-                        {!showDistAsHero && elapsedSeconds > 60 && !isRunning && (
-                            <button onClick={syncTimer} className="absolute -right-12 top-1/2 -translate-y-1/2 p-2 bg-emerald-500/20 text-emerald-400 rounded-full hover:bg-emerald-500/40 transition-colors" title="Usar tiempo del cronómetro">
-                                <Clock size={16} />
-                            </button>
-                        )}
-                    </div>
+                    <div className="relative z-10 flex flex-col items-center">
+                        {/* Status Badge */}
+                        <div className="mb-6 flex items-center gap-2 bg-slate-900 border border-white/5 px-4 py-1.5 rounded-full">
+                            <Activity size={12} className="text-orange-500" />
+                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Tu Progreso</span>
+                        </div>
 
-                    {/* Secondary Hero (The one not focused) */}
-                    <div className="mt-8 flex gap-8">
-                        {!showDistAsHero ? (
+                        <div className="w-full max-w-sm">
                             <div className="flex flex-col items-center">
-                                <span className="text-2xl font-black text-slate-400">
-                                    {distance || '--'} <span className="text-sm">km</span>
-                                </span>
-                                <span className="text-[9px] text-slate-600 font-bold uppercase tracking-widest">Distancia</span>
-                            </div>
-                        ) : (
-                            <div className="flex flex-col items-center relative">
-                                <span className="text-2xl font-black text-slate-400">
-                                    {duration || '--'} <span className="text-sm">min</span>
-                                </span>
-                                <span className="text-[9px] text-slate-600 font-bold uppercase tracking-widest">Tiempo</span>
-                                {elapsedSeconds > 60 && !isRunning && (
-                                    <button onClick={syncTimer} className="absolute -right-6 top-0 text-emerald-500 hover:scale-110 transition-transform">
-                                        <Clock size={12} />
-                                    </button>
-                                )}
-                            </div>
-                        )}
-                        <div className="flex flex-col items-center">
-                            <span className="text-2xl font-black text-slate-400">
-                                {pace || '--'}
-                            </span>
-                            <span className="text-[9px] text-slate-600 font-bold uppercase tracking-widest">Ritmo /km</span>
-                            {targetPace && <span className="text-[9px] text-emerald-500 font-bold">Meta: {targetPace}</span>}
-                        </div>
-                    </div>
-                </div>
-
-                {/* Additional Metrics Grid */}
-                <div className="grid grid-cols-2 gap-4">
-                    {/* Distance Input (If not hero) */}
-                    {!showDistAsHero && (
-                        <div className="bg-slate-900/50 rounded-2xl p-4 border border-white/5 space-y-1">
-                            <div className="flex items-center gap-2 text-slate-500 mb-1">
-                                <Footprints size={14} />
-                                <span className="text-[10px] font-black uppercase tracking-widest">Distancia (km)</span>
-                            </div>
-                            <input
-                                type="number"
-                                value={distance}
-                                onChange={e => setDistance(e.target.value)}
-                                className="w-full bg-transparent text-2xl font-black text-white outline-none placeholder:text-slate-700"
-                                placeholder="0.00"
-                            />
-                        </div>
-                    )}
-
-                    {/* Duration Input (If not hero) */}
-                    {showDistAsHero && (
-                        <div className="bg-slate-900/50 rounded-2xl p-4 border border-white/5 space-y-1">
-                            <div className="flex items-center gap-2 text-slate-500 mb-1">
-                                <Clock size={14} />
-                                <span className="text-[10px] font-black uppercase tracking-widest">Tiempo (min)</span>
-                            </div>
-                            <input
-                                type="number"
-                                value={duration}
-                                onChange={e => setDuration(e.target.value)}
-                                className="w-full bg-transparent text-2xl font-black text-white outline-none placeholder:text-slate-700"
-                                placeholder="0"
-                            />
-                        </div>
-                    )}
-
-                    {/* Heart Rate Inputs */}
-                    <div className="bg-slate-900/50 rounded-2xl p-4 border border-white/5 space-y-1">
-                        <div className="flex items-center gap-2 text-red-500 mb-1">
-                            <Activity size={14} />
-                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 text-center">FC Media</span>
-                        </div>
-                        <input
-                            type="number"
-                            value={heartRateAvg}
-                            onChange={e => setHeartRateAvg(e.target.value)}
-                            className="w-full bg-transparent text-2xl font-black text-white outline-none placeholder:text-slate-700"
-                            placeholder={targetHR ? `Meta: ${targetHR}` : "-- bpm"}
-                        />
-                    </div>
-
-                    <div className="bg-slate-900/50 rounded-2xl p-4 border border-white/5 space-y-1 relative group">
-                        <div className="flex items-center gap-2 text-purple-500 mb-1">
-                            <Zap size={14} />
-                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">FC Máxima</span>
-                        </div>
-                        <input
-                            type="number"
-                            value={heartRateMax}
-                            onChange={e => setHeartRateMax(e.target.value)}
-                            className="w-full bg-transparent text-2xl font-black text-white outline-none placeholder:text-slate-700"
-                            placeholder="-- bpm"
-                        />
-                    </div>
-                </div>
-
-                {/* RPE Selector - Auto-filled if target exists */}
-                <div className="bg-slate-900/50 rounded-3xl p-6 border border-white/5">
-                    <RPESelector
-                        value={rpe}
-                        onChange={setRpe}
-                        label="Esfuerzo Percibido"
-                        isLight={false}
-                    />
-                    {targetRPE && <p className="text-center text-[10px] text-slate-500 mt-2">Objetivo: RPE {targetRPE}</p>}
-                </div>
-
-                {/* Prescribed Exercises Section */}
-                <div className="space-y-3">
-                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest pl-2">Prescripción de la Sesión</span>
-                    <div className="space-y-2">
-                        {modules.map((mod, mIdx) => (
-                            <div key={mIdx} className="bg-slate-900/40 rounded-2xl p-4 border border-white/5 space-y-3">
-                                <div className="flex items-center justify-between">
-                                    <h3 className="text-xs font-black text-slate-300 uppercase tracking-wider">{mod.name}</h3>
-                                    <span className="px-2 py-0.5 rounded-full bg-slate-800 text-[8px] font-black text-slate-500 uppercase tracking-tighter border border-white/5">
-                                        {mod.protocol}
+                                {/* Actual vs Goal Comparison */}
+                                <div className="flex items-baseline justify-center gap-4 mb-2">
+                                    <input
+                                        type="number"
+                                        value={showDistAsHero ? distance : duration}
+                                        onChange={(e) => showDistAsHero ? setDistance(e.target.value) : setDuration(e.target.value)}
+                                        className="bg-transparent text-center text-7xl font-black text-white outline-none w-24 placeholder:text-slate-800 tabular-nums leading-none transition-all focus:scale-110"
+                                        placeholder="0"
+                                    />
+                                    <span className="text-4xl font-black text-slate-700">/</span>
+                                    <span className="text-5xl font-black text-orange-500/80 tabular-nums">
+                                        {showDistAsHero ? (pDistance || "0") : (pDuration || "0")}
                                     </span>
                                 </div>
-                                <div className="space-y-2">
-                                    {(mod.exercises || []).map((ex, eIdx) => (
-                                        <div key={eIdx} className="flex items-center justify-between gap-4 py-2 border-t border-white/5 first:border-0 first:pt-0">
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-8 h-8 rounded-lg bg-slate-800/80 flex items-center justify-center border border-white/5">
-                                                    <Dumbbell size={14} className="text-slate-500" />
-                                                </div>
-                                                <div>
-                                                    <p className="text-sm font-bold text-slate-200">{ex.nameEs || ex.name || ex.name_es}</p>
-                                                    {ex.notes && <p className="text-[10px] text-slate-500 italic leading-tight mt-0.5">{ex.notes}</p>}
-                                                </div>
-                                            </div>
-                                            <div className="text-right">
-                                                <div className="flex flex-col items-end">
-                                                    <span className="text-[10px] font-black text-emerald-500 uppercase tracking-tight">
-                                                        {ex.config?.sets?.length || 1} {ex.config?.sets?.length === 1 ? 'Serie' : 'Series'}
-                                                    </span>
-                                                    {ex.config?.sets?.[0]?.volume && (
-                                                        <span className="text-[9px] font-bold text-slate-600">
-                                                            Objetivo: {ex.config.sets[0].volume} {ex.config.sets[0].volType}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))}
+
+                                <div className="flex items-center gap-3">
+                                    <span className="text-[11px] font-black text-slate-500 uppercase tracking-[0.3em] pl-[0.3em]">
+                                        {showDistAsHero ? 'KILÓMETROS' : 'MINUTOS'} ACTUALES
+                                    </span>
+                                    <button
+                                        onClick={() => showDistAsHero ? setDistance(pDistance) : setDuration(pDuration)}
+                                        className="w-6 h-6 flex items-center justify-center rounded-full bg-slate-800 text-slate-400 hover:bg-orange-500 hover:text-white transition-all shadow-lg"
+                                        title="Igualar a la meta"
+                                    >
+                                        <History size={12} />
+                                    </button>
+                                </div>
+
+                                {/* Modern Progress Bar */}
+                                <div className="mt-8 w-full h-1.5 bg-slate-800 rounded-full overflow-hidden border border-white/5">
+                                    <motion.div
+                                        className="h-full bg-gradient-to-r from-orange-600 to-orange-400"
+                                        initial={{ width: 0 }}
+                                        animate={{ width: `${Math.min(((showDistAsHero ? parseFloat(distance) || 0 : parseInt(duration) || 0) / (showDistAsHero ? parseFloat(pDistance) || 1 : parseInt(pDuration) || 1)) * 100, 100)}%` }}
+                                        transition={{ duration: 1, ease: "easeOut" }}
+                                    />
                                 </div>
                             </div>
-                        ))}
-                    </div>
-                </div>
 
-                {/* Evidence & Notes */}
-                <div className="space-y-4">
-                    <div className="flex justify-between items-center">
-                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest pl-2">Evidencia y Notas</span>
-                    </div>
-
-                    <div className="flex gap-4">
-                        {/* Evidence Button */}
-                        <div className="relative">
-                            <input
-                                type="file"
-                                accept="image/*"
-                                onChange={handleImageUpload}
-                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
-                                disabled={isUploading}
-                            />
-                            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${evidenceUrl ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}>
-                                {isUploading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> :
-                                    evidenceUrl ? <Check size={24} strokeWidth={3} /> : <Camera size={24} />}
-                            </div>
-                            {evidenceUrl && (
-                                <div className="absolute -top-2 -right-2 w-5 h-5 bg-emerald-500 border-2 border-slate-950 rounded-full flex items-center justify-center z-10 pointer-events-none">
-                                    <Check size={10} strokeWidth={4} className="text-white" />
+                            {/* Sync Action */}
+                            {!showDistAsHero && elapsedSeconds > 60 && !isRunning && (
+                                <div className="mt-4 flex justify-center">
+                                    <button
+                                        onClick={syncTimer}
+                                        className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-all group"
+                                    >
+                                        <Clock size={14} className="group-hover:rotate-12 transition-transform" />
+                                        <span className="text-[10px] font-black uppercase tracking-wider">Usar tiempo del crono</span>
+                                    </button>
                                 </div>
                             )}
                         </div>
 
-                        {/* Notes Input */}
-                        <div className="flex-1 bg-slate-900/50 rounded-2xl border border-white/5 mx-2">
-                            <textarea
-                                value={notes}
-                                onChange={e => setNotes(e.target.value)}
-                                placeholder="Notas de la sesión..."
-                                className="w-full h-full bg-transparent p-4 text-sm font-medium text-slate-300 placeholder:text-slate-700 outline-none resize-none rounded-2xl"
-                            />
+                        {/* High-Impact Primary Stats Row - SIMPLIFIED */}
+                        <div className="mt-8 w-full max-w-sm">
+                            {/* Show secondary metric only if different from hero */}
+                            {showDistAsHero ? (
+                                <div className="bg-slate-900/60 rounded-3xl p-4 border border-white/5 flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <Clock size={16} className="text-emerald-500" />
+                                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-wide">Duración</span>
+                                    </div>
+                                    <input
+                                        type="number"
+                                        value={duration}
+                                        onChange={(e) => setDuration(e.target.value)}
+                                        className="bg-transparent text-2xl font-black text-white outline-none w-16 text-right placeholder:text-slate-800 tabular-nums"
+                                        placeholder="0"
+                                    />
+                                    <span className="text-sm font-bold text-slate-500">min</span>
+                                </div>
+                            ) : (
+                                <div className="bg-slate-900/60 rounded-3xl p-4 border border-white/5 flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <Footprints size={16} className="text-emerald-500" />
+                                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-wide">Distancia</span>
+                                    </div>
+                                    <input
+                                        type="number"
+                                        value={distance}
+                                        onChange={(e) => setDistance(e.target.value)}
+                                        className="bg-transparent text-2xl font-black text-white outline-none w-16 text-right placeholder:text-slate-800 tabular-nums"
+                                        placeholder="0"
+                                        step="0.1"
+                                    />
+                                    <span className="text-sm font-bold text-slate-500">km</span>
+                                </div>
+                            )}
                         </div>
                     </div>
+
+                    {/* PRESCRIPCIÓN DETALLADA - Moved to top for visibility */}
+                    {overrides?.sets?.length > 0 && (
+                        <div className="px-6 py-4 space-y-3 bg-slate-900/20 border-b border-white/5">
+                            <div className="flex items-center gap-2">
+                                <Target size={14} className="text-orange-500" />
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Objetivos de la Sesión</span>
+                            </div>
+
+                            <div className="space-y-3">
+                                {overrides.sets.map((set, idx) => {
+                                    const zoneColors = {
+                                        '1': 'border-blue-500/30 bg-blue-500/5',
+                                        '2': 'border-emerald-500/30 bg-emerald-500/5',
+                                        '3': 'border-yellow-500/30 bg-yellow-500/5',
+                                        '4': 'border-orange-500/30 bg-orange-500/5',
+                                        '5': 'border-red-500/30 bg-red-500/5',
+                                    };
+                                    const zColor = zoneColors[set.zone] || 'border-white/10 bg-slate-800/30';
+
+                                    return (
+                                        <div key={idx} className={`rounded-2xl border p-4 ${zColor}`}>
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-7 h-7 rounded-full bg-slate-950/50 flex items-center justify-center text-xs font-black border border-white/10">
+                                                        {idx + 1}
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-lg font-black text-white">{set.volVal} <span className="text-sm opacity-60">{set.volUnit === 'TIME' ? 'min' : set.volUnit}</span></span>
+                                                        {set.zone && (
+                                                            <div className="flex items-center gap-1 mt-0.5">
+                                                                <Flame size={10} className="text-orange-400" />
+                                                                <span className="text-[9px] font-bold text-orange-400 uppercase">Zona {set.zone}</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex items-center gap-3">
+                                                    {(set.hrMin || set.hrMax) && (
+                                                        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-500/10 border border-red-500/20">
+                                                            <Activity size={12} className="text-red-400" />
+                                                            <span className="text-sm font-black text-red-400">{set.hrMin || '--'}-{set.hrMax || '--'}</span>
+                                                            <span className="text-[8px] text-red-400/60">bpm</span>
+                                                        </div>
+                                                    )}
+                                                    {set.intVal && (
+                                                        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                                                            <Zap size={12} className="text-emerald-400" />
+                                                            <span className="text-sm font-black text-emerald-400">@ {set.intVal}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            {set.recovery && (
+                                                <div className="mt-2 flex items-center gap-1 text-[10px] text-slate-500">
+                                                    <Clock size={10} />
+                                                    <span>Descanso: {set.recovery} min</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Exercise Visualization */}
+                    {modules.length > 0 && modules[0]?.exercises?.length > 0 && (
+                        <div className="px-6 py-4 bg-slate-900/30 border-b border-white/5">
+                            <div className="flex items-center gap-4">
+                                <div className="w-20 h-20 rounded-2xl bg-slate-800 flex items-center justify-center border border-white/10 overflow-hidden shadow-lg">
+                                    <ExerciseMedia exercise={modules[0].exercises[0]} thumbnailMode={true} />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <h3 className="text-base font-black text-slate-200 truncate">
+                                        {modules[0].exercises[0].nameEs || modules[0].exercises[0].name || modules[0].exercises[0].name_es || 'Ejercicio Cardio'}
+                                    </h3>
+                                    {modules[0].exercises[0].notes && (
+                                        <p className="text-[10px] text-slate-500 italic truncate mt-1">{modules[0].exercises[0].notes}</p>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
+                <div className="p-6 space-y-6">
+                    {/* RPE Selector */}
+                    <div className="bg-slate-900/40 rounded-[2rem] p-6 border border-white/5">
+                        <RPESelector
+                            value={rpe}
+                            onChange={setRpe}
+                            label="¿Cómo te sentiste?"
+                            isLight={false}
+                        />
+                    </div>
+
+                    {/* Evidence & Notes */}
+                    <div className="space-y-4">
+                        <div className="flex justify-between items-center">
+                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest pl-2">Evidencia y Notas</span>
+                        </div>
+
+                        <div className="flex gap-4">
+                            {/* Evidence Button */}
+                            <div className="relative">
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={handleImageUpload}
+                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
+                                    disabled={isUploading}
+                                />
+                                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${evidenceUrl ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                                    {isUploading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> :
+                                        evidenceUrl ? <Check size={24} strokeWidth={3} /> : <Camera size={24} />}
+                                </div>
+                                {evidenceUrl && (
+                                    <div className="absolute -top-2 -right-2 w-5 h-5 bg-emerald-500 border-2 border-slate-950 rounded-full flex items-center justify-center z-10 pointer-events-none">
+                                        <Check size={10} strokeWidth={4} className="text-white" />
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Notes Input */}
+                            <div className="flex-1 bg-slate-900/50 rounded-2xl border border-white/5 mx-2">
+                                <textarea
+                                    value={notes}
+                                    onChange={e => setNotes(e.target.value)}
+                                    placeholder="Notas de la sesión..."
+                                    className="w-full h-full bg-transparent p-4 text-sm font-medium text-slate-300 placeholder:text-slate-700 outline-none resize-none rounded-2xl"
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+                {/* 3. Footer Actions */}
+                <footer className="p-6 pb-8 bg-slate-950/80 backdrop-blur-xl border-t border-white/5 relative z-50">
+                    <div className="flex items-center gap-4">
+                        <button
+                            onClick={() => setIsRunning(!isRunning)}
+                            className={`w-16 h-16 rounded-full flex items-center justify-center shadow-lg transition-all active:scale-95 ${isRunning ? 'bg-orange-500 text-white shadow-orange-500/30' : 'bg-emerald-500 text-white shadow-emerald-500/30'}`}
+                        >
+                            {isRunning ? <Pause size={28} fill="currentColor" /> : <Play size={28} fill="currentColor" className="ml-1" />}
+                        </button>
+
+                        <button
+                            onClick={handleConfirm}
+                            disabled={saving}
+                            className="flex-1 h-16 bg-white text-slate-950 rounded-[2rem] font-black text-lg tracking-tight hover:bg-slate-200 active:scale-95 transition-all flex items-center justify-center gap-2 shadow-xl shadow-white/5 disabled:opacity-50"
+                        >
+                            {saving ? (
+                                <>
+                                    <div className="w-5 h-5 border-2 border-slate-950/30 border-t-slate-950 rounded-full animate-spin"></div>
+                                    <span>Guardando...</span>
+                                </>
+                            ) : (
+                                <>
+                                    <span>TERMINAR SESIÓN</span>
+                                    <ArrowRight size={20} />
+                                </>
+                            )}
+                        </button>
+                    </div>
+                    {/* Timer Mini Display */}
+                    <div className="absolute -top-12 left-1/2 -translate-x-1/2 bg-slate-900/90 backdrop-blur px-4 py-1.5 rounded-full border border-white/10 flex items-center gap-2 shadow-lg">
+                        <Clock size={12} className={isRunning ? 'text-emerald-400 animate-pulse' : 'text-slate-500'} />
+                        <span className="font-mono font-bold text-lg text-slate-200">{formatTime(elapsedSeconds)}</span>
+                    </div>
+                </footer>
             </div>
-
-            {/* 3. Footer Actions */}
-            <footer className="p-6 pb-8 bg-slate-950/80 backdrop-blur-xl border-t border-white/5 relative z-50">
-                <div className="flex items-center gap-4">
-                    <button
-                        onClick={() => setIsRunning(!isRunning)}
-                        className={`w-16 h-16 rounded-full flex items-center justify-center shadow-lg transition-all active:scale-95 ${isRunning ? 'bg-orange-500 text-white shadow-orange-500/30' : 'bg-emerald-500 text-white shadow-emerald-500/30'}`}
-                    >
-                        {isRunning ? <Pause size={28} fill="currentColor" /> : <Play size={28} fill="currentColor" className="ml-1" />}
-                    </button>
-
-                    <button
-                        onClick={handleConfirm}
-                        disabled={saving}
-                        className="flex-1 h-16 bg-white text-slate-950 rounded-[2rem] font-black text-lg tracking-tight hover:bg-slate-200 active:scale-95 transition-all flex items-center justify-center gap-2 shadow-xl shadow-white/5 disabled:opacity-50"
-                    >
-                        {saving ? (
-                            <>
-                                <div className="w-5 h-5 border-2 border-slate-950/30 border-t-slate-950 rounded-full animate-spin"></div>
-                                <span>Guardando...</span>
-                            </>
-                        ) : (
-                            <>
-                                <span>TERMINAR SESIÓN</span>
-                                <ArrowRight size={20} />
-                            </>
-                        )}
-                    </button>
-                </div>
-                {/* Timer Mini Display */}
-                <div className="absolute -top-12 left-1/2 -translate-x-1/2 bg-slate-900/90 backdrop-blur px-4 py-1.5 rounded-full border border-white/10 flex items-center gap-2 shadow-lg">
-                    <Clock size={12} className={isRunning ? 'text-emerald-400 animate-pulse' : 'text-slate-500'} />
-                    <span className="font-mono font-bold text-lg text-slate-200">{formatTime(elapsedSeconds)}</span>
-                </div>
-            </footer>
-        </div>
+        </div >
     );
 };
 

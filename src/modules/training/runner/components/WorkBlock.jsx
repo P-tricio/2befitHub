@@ -518,10 +518,23 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
             let metricDisplay = (metric || '').toUpperCase();
             if (!metricDisplay && protocol === 'R') metricDisplay = 'REPS'; // Default for R
 
+            let finalVolume = displayVolume;
+            // Smart formatting for time-based metrics
+            if (metricDisplay === 'TIME' || metricDisplay === 'SEG' || metricDisplay === 'SEG') {
+                if (displayVolume >= 60) {
+                    finalVolume = Math.round(displayVolume / 60);
+                    metricDisplay = 'MIN';
+                } else {
+                    metricDisplay = 'SEG';
+                }
+            } else if (metricDisplay === 'MIN') {
+                metricDisplay = 'MIN';
+            }
+
             heroContent = (
                 <div className="flex flex-col items-center">
                     <span className={HERO_TEXT_SIZE + " font-black font-mono tracking-tighter text-white tabular-nums leading-none"}>
-                        {splitRepsString || displayVolume} <span className="text-[0.4em] align-top text-orange-500">{metricDisplay}</span>
+                        {splitRepsString || finalVolume} <span className="text-[0.4em] align-top text-orange-500">{metricDisplay}</span>
                     </span>
                     <span className="text-xs font-bold text-orange-500/80 uppercase tracking-widest mt-1">OBJETIVO TOTAL</span>
                 </div>
@@ -1578,7 +1591,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                                 <div className="flex justify-between items-center px-1">
                                                     <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Volumen</span>
                                                     <select
-                                                        value={energyMetrics[idx]?.volumeUnit || 'kcal'}
+                                                        value={energyMetrics[idx]?.volumeUnit || (metric === 'min' ? 'min' : metric === 'km' ? 'km' : metric === 'm' ? 'm' : 'kcal')}
                                                         onChange={(e) => setEnergyMetrics(prev => ({ ...prev, [idx]: { ...prev[idx], volumeUnit: e.target.value } }))}
                                                         className="bg-transparent text-slate-400 text-[10px] font-black uppercase outline-none"
                                                     >

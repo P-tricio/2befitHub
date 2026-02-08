@@ -305,12 +305,27 @@ const TaskResultsModal = ({ task, onClose, availableForms }) => {
                                 <div className="space-y-2">
                                     <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest px-1">Medidas</h3>
                                     <div className="grid grid-cols-2 gap-2">
-                                        {Object.entries(results.measurements).map(([name, val]) => (
-                                            <div key={name} className="p-3 bg-white rounded-xl border border-slate-100 flex flex-col">
-                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter truncate">{name}</span>
-                                                <span className="text-sm font-black text-slate-900">{val} cm</span>
-                                            </div>
-                                        ))}
+                                        {Object.entries(results.measurements)
+                                            .filter(([name], _, arr) => {
+                                                const lower = name.toLowerCase();
+                                                if (['waist', 'hip', 'cintura', 'cadera'].includes(lower)) {
+                                                    // Only keep the first one we find among synonyms to avoid duplicate rows for old data
+                                                    const synonyms = lower === 'waist' || lower === 'cintura' ? ['waist', 'cintura'] : ['hip', 'cadera'];
+                                                    const firstSynonymIndex = arr.findIndex(([k]) => synonyms.includes(k.toLowerCase()));
+                                                    const currentIndex = arr.findIndex(([k]) => k === name);
+                                                    return currentIndex === firstSynonymIndex;
+                                                }
+                                                return true;
+                                            })
+                                            .map(([name, val]) => (
+                                                <div key={name} className="p-3 bg-white rounded-xl border border-slate-100 flex flex-col">
+                                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter truncate">
+                                                        {name.toLowerCase() === 'waist' || name.toLowerCase() === 'cintura' ? 'Cintura' :
+                                                            name.toLowerCase() === 'hip' || name.toLowerCase() === 'cadera' ? 'Cadera' : name}
+                                                    </span>
+                                                    <span className="text-sm font-black text-slate-900">{val} cm</span>
+                                                </div>
+                                            ))}
                                     </div>
                                 </div>
                             )}

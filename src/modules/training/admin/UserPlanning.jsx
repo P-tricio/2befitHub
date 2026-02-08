@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, ChevronLeft, ChevronRight, ChevronDown, Plus, X, Search, Check, Dumbbell, Footprints, ClipboardList, Utensils, Layers, MoreVertical, Trash2, Copy, Edit2, ArrowRight, Copy as DuplicateIcon, Scale, Ruler, Camera, Settings2, FileText, Zap, CheckSquare, Package, ListFilter, Clock, MessageCircle, History } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight, ChevronDown, Plus, X, Search, Check, Dumbbell, Footprints, ClipboardList, Utensils, Layers, MoreVertical, Trash2, Copy, Edit2, ArrowRight, Copy as DuplicateIcon, Scale, Ruler, Camera, Settings2, FileText, Zap, CheckSquare, Package, ListFilter, Clock, MessageCircle, History, Activity } from 'lucide-react';
 import { TaskPicker } from '../components/TaskPicker';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TrainingDB } from '../services/db';
@@ -46,6 +46,7 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
     const [isFormCreatorOpen, setIsFormCreatorOpen] = useState(false);
     const [availableForms, setAvailableForms] = useState([]);
     const [dayEditorOpen, setDayEditorOpen] = useState(false);
+    const [activeDayId, setActiveDayId] = useState(null);
 
     useEffect(() => {
         loadData();
@@ -96,22 +97,68 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
 
     const getSessionName = (id) => sessions.find(s => s.id === id)?.name || 'Sesión';
 
-    const getSessionDetails = (id) => {
+    const getSessionDetails = (id, taskOverrides = null) => {
         const session = sessions.find(s => s.id === id);
         if (!session) return { blocks: 0, duration: 60 };
 
+        const isCardio = session.isCardio || session.type === 'CARDIO';
         const blocks = session.blocks || [];
-        let totalSeconds = 0;
-        blocks.forEach(b => {
-            totalSeconds += b.targeting?.[0]?.timeCap || 240;
-        });
 
-        const baseDuration = Math.ceil(totalSeconds / 60);
-        const transitionTime = blocks.length > 1 ? (blocks.length - 1) * 3 : 0;
+        let duration = 0;
+
+        // 1. Priority: Task Overrides (from UserPlanning UI)
+        if (taskOverrides) {
+            if ((taskOverrides.volUnit === 'TIME' || !taskOverrides.volUnit) && taskOverrides.volVal) {
+                duration = parseInt(taskOverrides.volVal);
+            } else if (taskOverrides.sets?.length > 0) {
+                const totalMin = taskOverrides.sets.reduce((acc, set) => {
+                    const setTime = (set.volUnit === 'TIME' || !set.volUnit) ? (parseInt(set.volVal || set.reps || set.duration) || 0) : 0;
+                    const recTime = parseInt(set.recovery) || 0;
+                    return acc + setTime + recTime;
+                }, 0);
+                if (totalMin > 0) duration = totalMin;
+            } else if (taskOverrides.duration) {
+                duration = parseInt(taskOverrides.duration);
+            }
+        }
+
+        // 2. Fallback: Structural Calculation
+        if (!duration) {
+            let totalSeconds = 0;
+            blocks.forEach(b => {
+                // Priority: EMOM Params
+                if (b.params?.emomMinutes) {
+                    totalSeconds += (parseInt(b.params.emomMinutes) * 60);
+                }
+                // Priority: Time Cap
+                else if (b.params?.timeCap || b.targeting?.[0]?.timeCap) {
+                    totalSeconds += (parseInt(b.params?.timeCap || b.targeting?.[0]?.timeCap));
+                }
+                // General Fallback: Sum time-based exercises or default to 5 min
+                else {
+                    let blockTimeSum = 0;
+                    b.exercises?.forEach(ex => {
+                        if (ex.config?.volType === 'TIME' && ex.config.sets) {
+                            ex.config.sets.forEach(s => blockTimeSum += (parseInt(s.reps) || 0));
+                        }
+                    });
+
+                    if (blockTimeSum > 0) {
+                        totalSeconds += isCardio ? blockTimeSum : Math.max(blockTimeSum, 300);
+                    } else {
+                        totalSeconds += 300;
+                    }
+                }
+            });
+
+            const baseDuration = Math.ceil(totalSeconds / 60);
+            const transitionTime = (!isCardio && blocks.length > 1) ? (blocks.length - 1) * 3 : 0;
+            duration = baseDuration + transitionTime || 10;
+        }
 
         return {
             blocks: blocks.length,
-            duration: baseDuration + transitionTime
+            duration
         };
     };
 
@@ -146,6 +193,21 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
             default: return 'Tarea';
         }
     };
+    const handleDayEditorSave = async (dayData) => {
+        try {
+            if (activeDayId) {
+                await NutritionDB.days.update(activeDayId, dayData);
+            } else {
+                await NutritionDB.days.create(dayData);
+            }
+            setDayEditorOpen(false);
+            setActiveDayId(null);
+            loadData();
+        } catch (error) {
+            console.error('Error saving nutrition day from UserPlanning:', error);
+            alert('Error al guardar día de nutrición');
+        }
+    };
 
 
 
@@ -174,6 +236,10 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
                 admin_assigned: true
             });
         } else if (type === 'create_nutrition_day') {
+            setActiveDayId(null);
+            setDayEditorOpen(true);
+        } else if (type === 'edit_nutrition_day') {
+            setActiveDayId(payload.dayId);
             setDayEditorOpen(true);
         } else if (type === 'free_training') {
             appendTask(selectedDate, {
@@ -805,7 +871,7 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
                                                                         <span className="text-emerald-600 font-bold">{task.summary || 'SESIÓN COMPLETADA'}</span>
                                                                     ) : (
                                                                         task.type === 'session' && (() => {
-                                                                            const details = getSessionDetails(task.sessionId);
+                                                                            const details = getSessionDetails(task.sessionId, task.config?.overrides);
                                                                             return `${details.blocks} bloques • ~${details.duration} min`;
                                                                         })()
                                                                     )}
@@ -1110,8 +1176,12 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
                 {dayEditorOpen && (
                     <div className="fixed inset-0 z-[500] bg-white overflow-hidden">
                         <DayEditor
+                            isOpen={dayEditorOpen}
+                            initialDayId={activeDayId}
+                            onSave={handleDayEditorSave}
                             onClose={() => {
                                 setDayEditorOpen(false);
+                                setActiveDayId(null);
                                 loadData(); // Reload nutrition days
                             }}
                         />
@@ -1269,7 +1339,6 @@ const AddTaskModal = ({ user, date, sessions, groups, programs, nutritionDays = 
             const overridesData = { notes: selectedSessionForConfig.description || '' };
 
             // Analyze checks for multi-set/multi-block structure
-            // We look for all cardio blocks in the session
             const cardioBlocks = (selectedSessionForConfig.blocks || []).filter(b => {
                 const ex = b.exercises?.[0];
                 if (!ex) return false;
@@ -1277,11 +1346,12 @@ const AddTaskModal = ({ user, date, sessions, groups, programs, nutritionDays = 
                 const cardioKeywords = ['ciclismo', 'carrera', 'running', 'bike', 'elíptica', 'remo', 'row', 'natación', 'swim', 'cardio', 'walking'];
                 const isKeywordMatch = cardioKeywords.some(kw => name.includes(kw));
                 const isEnergy = (ex.quality || '').toUpperCase() === 'E' || (ex.qualities || []).some(q => q.toUpperCase() === 'E');
-                return isKeywordMatch || isEnergy || ex.config?.forceCardio;
+                const isForced = ex.config?.forceCardio || ex.config?.type === 'cardio' || selectedSessionForConfig.isCardio || selectedSessionForConfig.type === 'CARDIO';
+                return isKeywordMatch || isEnergy || isForced;
             });
 
             if (cardioBlocks.length > 1) {
-                // Multi-set session (e.g. 4x1000m defined as 4 blocks)
+                // Multi-set session
                 overridesData.sets = cardioBlocks.map(block => {
                     const ex = block.exercises[0];
                     const set = ex.config?.sets?.[0] || {};
@@ -1292,20 +1362,39 @@ const AddTaskModal = ({ user, date, sessions, groups, programs, nutritionDays = 
                         volVal: vVal || (block.params?.rounds || block.params?.timeCap / 60 || ''),
                         volUnit: set.volType || 'TIME',
                         intVal: set.intensity || '',
-                        intUnit: set.intType || 'RPE'
+                        intUnit: set.intType || 'RPE',
+                        recovery: block.params?.rest || '',
+                        hrMin: set.hrMin || '',
+                        hrMax: set.hrMax || '',
+                        zone: set.zone || ''
                     };
                 });
-            } else if (cardioBlocks.length === 1) {
-                // Single block
-                const ex = cardioBlocks[0].exercises[0];
+            } else if (cardioBlocks.length === 1 || selectedSessionForConfig.isCardio || selectedSessionForConfig.type === 'CARDIO') {
+                // Single block or generic cardio
+                const block = cardioBlocks[0] || {};
+                const ex = block.exercises?.[0] || {};
                 const set = ex.config?.sets?.[0] || {};
                 let vVal = set.volume;
                 if (set.volType === 'TIME') vVal = Math.round(vVal / 60);
 
-                overridesData.volVal = vVal || (selectedSessionForConfig.duration || '');
-                overridesData.volUnit = set.volType || 'TIME';
-                overridesData.intVal = set.intensity || '';
-                overridesData.intUnit = set.intType || 'RPE';
+                if (selectedSessionForConfig.isCardio || selectedSessionForConfig.type === 'CARDIO') {
+                    // Force a set array for enriched cardio
+                    overridesData.sets = [{
+                        volVal: vVal || (selectedSessionForConfig.duration || ''),
+                        volUnit: set.volType || 'TIME',
+                        intVal: set.intensity || '',
+                        intUnit: set.intType || 'RPE',
+                        recovery: block.params?.rest || '',
+                        hrMin: set.hrMin || '',
+                        hrMax: set.hrMax || '',
+                        zone: set.zone || ''
+                    }];
+                } else {
+                    overridesData.volVal = vVal || (selectedSessionForConfig.duration || '');
+                    overridesData.volUnit = set.volType || 'TIME';
+                    overridesData.intVal = set.intensity || '';
+                    overridesData.intUnit = set.intType || 'RPE';
+                }
                 if (ex.notes) overridesData.notes = ex.notes;
             } else {
                 // Fallback
@@ -1471,77 +1560,150 @@ const AddTaskModal = ({ user, date, sessions, groups, programs, nutritionDays = 
                                         </div>
 
                                         {overrides.sets ? (
-                                            // MULTI-SET LIST VIEW
-                                            <div className="space-y-3">
+                                            // MULTI-SET LIST VIEW (Enriched Cardio)
+                                            <div className="space-y-4">
                                                 {overrides.sets.map((set, idx) => (
-                                                    <div key={idx} className="flex gap-2 items-center bg-white p-2 rounded-xl border border-orange-100/50">
-                                                        <span className="text-[10px] font-black text-slate-300 w-4 text-center">{idx + 1}</span>
-
-                                                        {/* Volume */}
-                                                        <div className="flex-1 flex gap-1">
-                                                            <input
-                                                                type="number"
-                                                                className="w-full bg-slate-50 rounded-lg px-2 py-1 text-sm font-black text-slate-700 outline-none focus:bg-orange-50 focus:text-orange-700 transition-colors text-right"
-                                                                placeholder="Vol"
-                                                                value={set.volVal || ''}
-                                                                onChange={e => {
-                                                                    const newSets = [...overrides.sets];
-                                                                    newSets[idx].volVal = e.target.value;
+                                                    <div key={idx} className="bg-white p-3 rounded-2xl border border-orange-100/50 shadow-sm space-y-3 relative group/set">
+                                                        <div className="flex justify-between items-center">
+                                                            <span className="text-[10px] font-black text-orange-500 bg-orange-50 px-2 py-0.5 rounded-full uppercase">Serie {idx + 1}</span>
+                                                            <button
+                                                                onClick={() => {
+                                                                    const newSets = overrides.sets.filter((_, i) => i !== idx);
                                                                     setOverrides(prev => ({ ...prev, sets: newSets }));
                                                                 }}
-                                                            />
-                                                            <div className="relative w-16">
-                                                                <select
-                                                                    value={set.volUnit || 'TIME'}
-                                                                    onChange={e => {
-                                                                        const newSets = [...overrides.sets];
-                                                                        newSets[idx].volUnit = e.target.value;
-                                                                        setOverrides(prev => ({ ...prev, sets: newSets }));
-                                                                    }}
-                                                                    className="w-full h-full bg-slate-50 rounded-lg text-[9px] font-bold text-slate-500 uppercase outline-none appearance-none pl-1 pr-3"
-                                                                >
-                                                                    <option value="TIME">MIN</option>
-                                                                    <option value="KM">KM</option>
-                                                                    <option value="METROS">M</option>
-                                                                    <option value="KCAL">KCA</option>
-                                                                </select>
+                                                                className="opacity-0 group-hover/set:opacity-100 p-1 text-slate-300 hover:text-red-500 transition-all"
+                                                            >
+                                                                <Trash2 size={14} />
+                                                            </button>
+                                                        </div>
+
+                                                        <div className="grid grid-cols-2 gap-3">
+                                                            {/* Volume & Intensity */}
+                                                            <div className="space-y-2">
+                                                                <label className="block text-[8px] font-black text-slate-400 uppercase ml-1">Volumen</label>
+                                                                <div className="flex gap-1">
+                                                                    <input
+                                                                        type="number"
+                                                                        className="w-full bg-slate-50 rounded-lg px-2 py-2 text-xs font-black text-slate-700 outline-none focus:bg-orange-50 transition-colors"
+                                                                        placeholder="Vol"
+                                                                        value={set.volVal || ''}
+                                                                        onChange={e => {
+                                                                            const newSets = [...overrides.sets];
+                                                                            newSets[idx].volVal = e.target.value;
+                                                                            setOverrides(prev => ({ ...prev, sets: newSets }));
+                                                                        }}
+                                                                    />
+                                                                    <select
+                                                                        value={set.volUnit || 'TIME'}
+                                                                        onChange={e => {
+                                                                            const newSets = [...overrides.sets];
+                                                                            newSets[idx].volUnit = e.target.value;
+                                                                            setOverrides(prev => ({ ...prev, sets: newSets }));
+                                                                        }}
+                                                                        className="bg-slate-50 rounded-lg text-[9px] font-bold text-slate-500 uppercase outline-none px-1"
+                                                                    >
+                                                                        <option value="TIME">MIN</option>
+                                                                        <option value="KM">KM</option>
+                                                                        <option value="METROS">M</option>
+                                                                        <option value="KCAL">KCA</option>
+                                                                    </select>
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="space-y-2">
+                                                                <label className="block text-[8px] font-black text-slate-400 uppercase ml-1">Intensidad</label>
+                                                                <div className="flex gap-1">
+                                                                    <input
+                                                                        type="number"
+                                                                        className="w-full bg-slate-50 rounded-lg px-2 py-2 text-xs font-black text-slate-700 outline-none focus:bg-orange-50 transition-colors"
+                                                                        placeholder="Int"
+                                                                        value={set.intVal || ''}
+                                                                        onChange={e => {
+                                                                            const newSets = [...overrides.sets];
+                                                                            newSets[idx].intVal = e.target.value;
+                                                                            setOverrides(prev => ({ ...prev, sets: newSets }));
+                                                                        }}
+                                                                    />
+                                                                    <select
+                                                                        value={set.intUnit || 'RPE'}
+                                                                        onChange={e => {
+                                                                            const newSets = [...overrides.sets];
+                                                                            newSets[idx].intUnit = e.target.value;
+                                                                            setOverrides(prev => ({ ...prev, sets: newSets }));
+                                                                        }}
+                                                                        className="bg-slate-50 rounded-lg text-[9px] font-bold text-slate-500 uppercase outline-none px-1"
+                                                                    >
+                                                                        <option value="RPE">RPE</option>
+                                                                        <option value="BPM">BPM</option>
+                                                                        <option value="WATTS">W</option>
+                                                                        <option value="RITMO">PAC</option>
+                                                                    </select>
+                                                                </div>
                                                             </div>
                                                         </div>
 
-                                                        <div className="w-px h-6 bg-slate-100 mx-1"></div>
-
-                                                        {/* Intensity */}
-                                                        <div className="flex-1 flex gap-1">
-                                                            <input
-                                                                type="number"
-                                                                className="w-full bg-slate-50 rounded-lg px-2 py-1 text-sm font-black text-slate-700 outline-none focus:bg-orange-50 focus:text-orange-700 transition-colors text-right"
-                                                                placeholder="Int"
-                                                                value={set.intVal || ''}
-                                                                onChange={e => {
-                                                                    const newSets = [...overrides.sets];
-                                                                    newSets[idx].intVal = e.target.value;
-                                                                    setOverrides(prev => ({ ...prev, sets: newSets }));
-                                                                }}
-                                                            />
-                                                            <div className="relative w-16">
-                                                                <select
-                                                                    value={set.intUnit || 'RPE'}
+                                                        {/* Recovery & HR Range */}
+                                                        <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-50">
+                                                            <div className="space-y-1.5">
+                                                                <label className="flex items-center gap-1 text-[8px] font-black text-slate-400 uppercase ml-1">
+                                                                    <Clock size={10} /> Descanso (Min)
+                                                                </label>
+                                                                <input
+                                                                    type="number"
+                                                                    className="w-full bg-slate-50 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-600 outline-none"
+                                                                    placeholder="0"
+                                                                    value={set.recovery || ''}
                                                                     onChange={e => {
                                                                         const newSets = [...overrides.sets];
-                                                                        newSets[idx].intUnit = e.target.value;
+                                                                        newSets[idx].recovery = e.target.value;
                                                                         setOverrides(prev => ({ ...prev, sets: newSets }));
                                                                     }}
-                                                                    className="w-full h-full bg-slate-50 rounded-lg text-[9px] font-bold text-slate-500 uppercase outline-none appearance-none pl-1 pr-3"
-                                                                >
-                                                                    <option value="RPE">RPE</option>
-                                                                    <option value="BPM">BPM</option>
-                                                                    <option value="WATTS">W</option>
-                                                                    <option value="RITMO">PAC</option>
-                                                                </select>
+                                                                />
+                                                            </div>
+                                                            <div className="space-y-1.5">
+                                                                <label className="flex items-center gap-1 text-[8px] font-black text-slate-400 uppercase ml-1">
+                                                                    <Activity size={10} /> Rango FC (BPM)
+                                                                </label>
+                                                                <div className="flex items-center gap-1">
+                                                                    <input
+                                                                        type="number"
+                                                                        className="w-full bg-slate-50 rounded-lg px-1 py-1.5 text-[10px] font-bold text-slate-600 outline-none text-center"
+                                                                        placeholder="Min"
+                                                                        value={set.hrMin || ''}
+                                                                        onChange={e => {
+                                                                            const newSets = [...overrides.sets];
+                                                                            newSets[idx].hrMin = e.target.value;
+                                                                            setOverrides(prev => ({ ...prev, sets: newSets }));
+                                                                        }}
+                                                                    />
+                                                                    <span className="text-slate-300">-</span>
+                                                                    <input
+                                                                        type="number"
+                                                                        className="w-full bg-slate-50 rounded-lg px-1 py-1.5 text-[10px] font-bold text-slate-600 outline-none text-center"
+                                                                        placeholder="Max"
+                                                                        value={set.hrMax || ''}
+                                                                        onChange={e => {
+                                                                            const newSets = [...overrides.sets];
+                                                                            newSets[idx].hrMax = e.target.value;
+                                                                            setOverrides(prev => ({ ...prev, sets: newSets }));
+                                                                        }}
+                                                                    />
+                                                                </div>
                                                             </div>
                                                         </div>
                                                     </div>
                                                 ))}
+
+                                                <button
+                                                    onClick={() => {
+                                                        const lastSet = overrides.sets[overrides.sets.length - 1] || {};
+                                                        const newSets = [...overrides.sets, { ...lastSet }];
+                                                        setOverrides(prev => ({ ...prev, sets: newSets }));
+                                                    }}
+                                                    className="w-full py-2 border-2 border-dashed border-orange-200 rounded-xl text-[10px] font-black text-orange-400 uppercase hover:bg-orange-50 hover:border-orange-300 transition-all flex items-center justify-center gap-2"
+                                                >
+                                                    <Plus size={14} /> Agregar Serie
+                                                </button>
                                             </div>
                                         ) : (
                                             // SINGLE SET CARD VIEW (Existing)

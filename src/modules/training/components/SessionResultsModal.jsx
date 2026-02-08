@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Trophy, Clock, Zap, Star, MessageSquare, TrendingUp, TrendingDown, Minus, ChevronDown, ChevronUp, Dumbbell, CheckCircle, Activity, Camera } from 'lucide-react';
+import { X, Trophy, Clock, Zap, Star, MessageSquare, TrendingUp, TrendingDown, Minus, ChevronDown, ChevronUp, Dumbbell, CheckCircle, Activity, Camera, Footprints } from 'lucide-react';
 import { TrainingDB } from '../services/db';
 import { format } from 'date-fns';
+import ExerciseMedia from './ExerciseMedia';
 
 const SessionResultsModal = ({ task, session, onClose, userId }) => {
     const [logs, setLogs] = useState([]);
@@ -121,16 +122,56 @@ const SessionResultsModal = ({ task, session, onClose, userId }) => {
     };
 
     const calculatedResults = useMemo(() => {
-        if (loading || logs.length === 0) return task?.results || {};
+        // Use real logs if available, otherwise synthesize "virtual logs" from task.results
+        // This ensures the summary and breakdown always show data if it was saved to the task
+
+        // First, check if results are in nested format (cardio: { 1: { ...data } })
+        // and flatten them if so
+        let flattenedResults = task?.results || {};
+        const firstKey = Object.keys(flattenedResults)[0];
+        if (firstKey && !isNaN(firstKey) && flattenedResults[firstKey]?.type === 'cardio') {
+            // Cardio results are nested, flatten the first one for top-level metrics
+            flattenedResults = { ...flattenedResults, ...flattenedResults[firstKey] };
+        }
+
+        const effectiveLogs = logs.length > 0 ? logs : Object.keys(task?.results || {})
+            .filter(key => !isNaN(key) || (typeof key === 'string' && key.length > 30)) // filter metadata keys
+            .map(key => {
+                const blockResults = task.results[key];
+                // Try to find matching block in session to get metadata
+                const blockIdx = parseInt(key);
+                const blockMetadata = session.blocks?.[blockIdx - 1] || session.blocks?.find(b => b.id === key || b.stableId === key);
+                return {
+                    id: `vlog-${key}`,
+                    isVirtual: true,
+                    moduleId: blockMetadata?.id || key,
+                    blockType: blockMetadata?.type || 'WORK',
+                    protocol: blockMetadata?.protocol || (blockResults.type === 'cardio' ? 'Cardio' : 'LIBRE'),
+                    results: blockResults,
+                    exercises: blockMetadata?.exercises || blockResults.exercises || []
+                };
+            });
+
+        if (loading) return task?.results || {};
 
         let totalVolume = 0;
         let totalEfficiency = 0;
         let blocksWithEfficiency = 0;
+        let foundCardioMetrics = { distance: null, pace: null, heartRateAvg: null, durationMinutes: null };
 
-        logs.forEach(log => {
+        effectiveLogs.forEach(log => {
             if (!log.results) return;
             const blockMetadata = session.blocks?.find(b => b.id === log.moduleId || b.name === log.blockType);
             const exercises = blockMetadata?.exercises || log.exercises || [];
+
+            // Pull cardio metrics from ANY block that has them
+            if (log.results.distance) foundCardioMetrics.distance = log.results.distance;
+            if (log.results.pace) foundCardioMetrics.pace = log.results.pace;
+            if (log.results.heartRateAvg) foundCardioMetrics.heartRateAvg = log.results.heartRateAvg;
+            if (log.results.durationMinutes || log.results.duration) {
+                const mins = parseFloat(log.results.durationMinutes || log.results.duration) || 0;
+                foundCardioMetrics.durationMinutes = (foundCardioMetrics.durationMinutes || 0) + mins;
+            }
 
             exercises.forEach((ex, idx) => {
                 const reps = getInferredReps(log, idx, ex, blockMetadata);
@@ -146,14 +187,17 @@ const SessionResultsModal = ({ task, session, onClose, userId }) => {
         });
 
         const calculated = {
-            ...task?.results,
+            ...flattenedResults,
             totalVolume: Math.round(totalVolume),
             efficiency: blocksWithEfficiency > 0 ? Math.round(totalEfficiency / blocksWithEfficiency) : 100,
-            durationMinutes: task?.results?.durationMinutes || task?.results?.duration || logs.reduce((acc, l) => acc + (l.results?.durationMinutes || 0), 0) || '--'
+            durationMinutes: flattenedResults?.durationMinutes || flattenedResults?.duration || foundCardioMetrics.durationMinutes || '--',
+            distance: flattenedResults?.distance || foundCardioMetrics.distance || '--',
+            pace: flattenedResults?.pace || foundCardioMetrics.pace || '--',
+            heartRateAvg: flattenedResults?.heartRateAvg || foundCardioMetrics.heartRateAvg || '--',
+            virtualLogs: effectiveLogs.length > 0 && logs.length === 0 ? effectiveLogs : null
         };
 
-        if (task?.results?.totalVolume > 200000 && calculated.totalVolume < 100000) return calculated;
-        return (task?.results?.totalVolume > 0) ? task.results : calculated;
+        return calculated;
     }, [task?.results, logs, loading, session?.blocks]);
 
     const toggleBlock = (idx) => {
@@ -201,15 +245,37 @@ const SessionResultsModal = ({ task, session, onClose, userId }) => {
                         <div className="grid grid-cols-3 gap-3">
                             <div className="bg-slate-50 rounded-2xl p-3 border border-slate-100 text-center">
                                 <Clock size={12} className="text-emerald-500 mx-auto mb-1" />
-                                <p className="text-base font-black uppercase tracking-widest">{calculatedResults.durationMinutes || '--'} <span className="text-[8px] opacity-40">min</span></p>
+                                <p className="text-base font-black uppercase tracking-widest">{calculatedResults.durationMinutes || results.duration || results.durationMinutes || '--'} <span className="text-[8px] opacity-40">min</span></p>
                             </div>
                             <div className="bg-slate-50 rounded-2xl p-3 border border-slate-100 text-center">
-                                <Dumbbell size={12} className="text-blue-500 mx-auto mb-1" />
-                                <p className="text-base font-black uppercase tracking-widest">{calculatedResults.totalVolume !== undefined ? (calculatedResults.totalVolume >= 1000 ? `${(calculatedResults.totalVolume / 1000).toFixed(1)}k` : calculatedResults.totalVolume) : '--'} <span className="text-[8px] opacity-40">kg</span></p>
+                                {(session.isCardio || (calculatedResults.distance && calculatedResults.distance !== '--')) ? (
+                                    <>
+                                        <Footprints size={12} className="text-orange-500 mx-auto mb-1" />
+                                        <p className="text-base font-black uppercase tracking-widest">
+                                            {calculatedResults.distance || '--'} <span className="text-[8px] opacity-40">km</span>
+                                        </p>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Dumbbell size={12} className="text-blue-500 mx-auto mb-1" />
+                                        <p className="text-base font-black uppercase tracking-widest">
+                                            {calculatedResults.totalVolume !== undefined ? (calculatedResults.totalVolume >= 1000 ? `${(calculatedResults.totalVolume / 1000).toFixed(1)}k` : calculatedResults.totalVolume) : '--'} <span className="text-[8px] opacity-40">kg</span>
+                                        </p>
+                                    </>
+                                )}
                             </div>
                             <div className="bg-slate-50 rounded-2xl p-3 border border-slate-100 text-center">
-                                <Zap size={12} className="text-amber-500 mx-auto mb-1" />
-                                <p className="text-base font-black uppercase tracking-widest">{calculatedResults.efficiency || calculatedResults.metrics?.efficiency || '--'} <span className="text-[8px] opacity-40">%</span></p>
+                                {(session.isCardio || (calculatedResults.pace && calculatedResults.pace !== '--')) ? (
+                                    <>
+                                        <Zap size={12} className="text-emerald-500 mx-auto mb-1" />
+                                        <p className="text-base font-black uppercase tracking-widest">{calculatedResults.pace || '--'}<span className="text-[8px] opacity-40 ml-0.5">/km</span></p>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Zap size={12} className="text-amber-500 mx-auto mb-1" />
+                                        <p className="text-base font-black uppercase tracking-widest">{calculatedResults.efficiency || calculatedResults.metrics?.efficiency || '--'} <span className="text-[8px] opacity-40">%</span></p>
+                                    </>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -263,11 +329,11 @@ const SessionResultsModal = ({ task, session, onClose, userId }) => {
                                     <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent animate-spin rounded-full" />
                                     <p className="text-xs font-black uppercase tracking-widest">Calculando...</p>
                                 </div>
-                            ) : logs.length === 0 ? (
+                            ) : (logs.length === 0 && !calculatedResults.virtualLogs) ? (
                                 <div className="py-12 text-center text-slate-400 text-[10px] font-black uppercase tracking-widest bg-white rounded-[2rem] border-2 border-dashed border-slate-100">Sin registros detallados</div>
                             ) : (
                                 <div className="space-y-3">
-                                    {logs.map((log, lIdx) => {
+                                    {(logs.length > 0 ? logs : (calculatedResults.virtualLogs || [])).map((log, lIdx) => {
                                         const isExpanded = expandedBlocks[lIdx] !== false;
                                         const blockMetadata = session.blocks?.find(b => b.id === log.moduleId || b.name === log.blockType);
                                         const exercisesToShow = blockMetadata?.exercises || log.exercises || [];
@@ -338,9 +404,14 @@ const SessionResultsModal = ({ task, session, onClose, userId }) => {
                                                                         return (
                                                                             <div key={exIdx} className="flex flex-col gap-1.5 bg-white p-3 rounded-2xl border border-slate-100 shadow-sm">
                                                                                 <div className="flex justify-between items-start gap-2">
-                                                                                    <div className="flex items-start gap-2 min-w-0 flex-1">
-                                                                                        <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full shrink-0 mt-1.5" />
-                                                                                        <span className="text-xs font-bold text-slate-700 leading-tight">{displayName}</span>
+                                                                                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                                                                                        <div className="w-10 h-10 rounded-lg bg-slate-100 overflow-hidden shrink-0 border border-slate-200">
+                                                                                            <ExerciseMedia exercise={exercise} thumbnailMode={true} />
+                                                                                        </div>
+                                                                                        <div className="min-w-0">
+                                                                                            <span className="text-xs font-bold text-slate-700 leading-tight block truncate">{displayName}</span>
+                                                                                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter block">{unit}</span>
+                                                                                        </div>
                                                                                     </div>
                                                                                     <div className="flex items-center gap-2 shrink-0">
                                                                                         {!log.results?.seriesReps?.[exIdx] && <span className="text-xs font-black text-slate-900">{reps || 0} <span className="text-[8px] opacity-40 lowercase">{unit}</span></span>}

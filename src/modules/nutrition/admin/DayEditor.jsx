@@ -64,7 +64,7 @@ const DayEditor = ({ isOpen, onClose, initialDayId, onSave, availableDays }) => 
         }
     };
 
-    const handleSave = () => {
+    const handleSave = async () => {
         if (!name) return alert('Nombre del día obligatorio');
 
         const payload = {
@@ -76,7 +76,17 @@ const DayEditor = ({ isOpen, onClose, initialDayId, onSave, availableDays }) => 
             payload.id = initialDayId;
         }
 
-        onSave(payload);
+        if (typeof onSave === 'function') {
+            try {
+                await onSave(payload);
+            } catch (error) {
+                console.error('Error in DayEditor onSave:', error);
+                alert('Error al guardar el día');
+            }
+        } else {
+            console.error('DayEditor: onSave prop is missing');
+            alert('Error: No se ha configurado la función de guardado');
+        }
     };
 
     // --- Meal Management ---
@@ -140,13 +150,12 @@ const DayEditor = ({ isOpen, onClose, initialDayId, onSave, availableDays }) => 
             meal.items.forEach(item => {
                 if (item.type === 'food') {
                     const food = allFoods.find(f => f.id === item.refId);
-                    if (food) {
-                        const macros = calculateItemMacros(food, item.quantity, item.unit);
-                        total.calories += macros.calories;
-                        total.protein += macros.protein;
-                        total.carbs += macros.carbs;
-                        total.fats += macros.fats;
-                    }
+                    // food might be undefined if it was deleted from DB but remains in template
+                    const macros = calculateItemMacros(food, item.quantity, item.unit);
+                    total.calories += macros.calories;
+                    total.protein += macros.protein;
+                    total.carbs += macros.carbs;
+                    total.fats += macros.fats;
                 } else if (item.type === 'recipe') {
                     const recipe = allRecipes.find(r => r.id === item.refId);
                     if (recipe && recipe.totalMacros) {
@@ -342,7 +351,7 @@ const DayEditor = ({ isOpen, onClose, initialDayId, onSave, availableDays }) => 
                                                         <span className="text-[10px] font-bold text-slate-400">
                                                             {(() => {
                                                                 const m = item.type === 'recipe'
-                                                                    ? (allRecipes.find(r => r.id === item.refId)?.totalMacros || { calories: 0 })
+                                                                    ? (recipe?.totalMacros || { calories: 0 })
                                                                     : calculateItemMacros(food, item.quantity, item.unit);
                                                                 return `${Math.round(m.calories)} kcal`;
                                                             })()}
@@ -350,7 +359,7 @@ const DayEditor = ({ isOpen, onClose, initialDayId, onSave, availableDays }) => 
                                                         <div className="flex gap-2 text-[9px] font-black uppercase tracking-tighter">
                                                             {(() => {
                                                                 const m = item.type === 'recipe'
-                                                                    ? (allRecipes.find(r => r.id === item.refId)?.totalMacros || { protein: 0, carbs: 0, fats: 0 })
+                                                                    ? (recipe?.totalMacros || { protein: 0, carbs: 0, fats: 0 })
                                                                     : calculateItemMacros(food, item.quantity, item.unit);
                                                                 return (
                                                                     <>

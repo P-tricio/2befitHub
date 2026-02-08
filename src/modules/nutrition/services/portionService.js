@@ -47,6 +47,11 @@ export const portionsToGrams = (portions) => {
  * @returns {Object} { protein, carbs, fat, calories }
  */
 export const calculateItemMacros = (food, quantity, itemUnit) => {
+    // Safety check: if food is undefined or null, return zeroed macros
+    if (!food) {
+        return { protein: 0, carbs: 0, fats: 0, calories: 0 };
+    }
+
     // 1. Determine if we are calculating based on portions or raw grams.
     // If itemUnit is provided, we trust it. Otherwise we fall back to food.unit.
     const currentUnit = itemUnit || food.unit;
