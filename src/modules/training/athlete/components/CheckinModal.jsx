@@ -118,8 +118,7 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
 
                 // If nutrition/habits OR neat, fetch user minimums
                 if (task.type === 'nutrition' || task.type === 'neat') {
-                    const snap = await TrainingDB.users.getAll();
-                    const profile = snap.find(u => u.id === userId);
+                    const profile = await TrainingDB.users.getById(userId);
                     if (profile?.minimums) {
                         setUserMinimums(normalizeMinimums(profile.minimums));
                     }
