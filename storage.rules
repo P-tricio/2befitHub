@@ -1,0 +1,56 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Helper: Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper: Check if user is admin (by email)
+    function isAdmin() {
+      return isAuthenticated() && request.auth.token.email == 'pabloadrian91@gmail.com';
+    }
+    
+    // Helper: Validate image file
+    function isValidImage() {
+      return request.resource.size < 10 * 1024 * 1024 // Max 10MB
+          && request.resource.contentType.matches('image/.*');
+    }
+    
+    // ============ UPLOADS FOLDER ============
+    // General image uploads (exercises, profiles, etc.)
+    match /uploads/{fileName} {
+      // Anyone authenticated can read
+      allow read: if isAuthenticated();
+      // Anyone authenticated can upload valid images
+      allow create: if isAuthenticated() && isValidImage();
+      // Only admins can delete
+      allow delete: if isAdmin();
+    }
+    
+    // ============ USER-SPECIFIC FOLDERS ============
+    // User profile photos, tracking photos, etc.
+    match /users/{userId}/{allPaths=**} {
+      // Users can read/write their own files
+      allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      // Admins can read all
+      allow read: if isAdmin();
+    }
+    
+    // ============ EXERCISE MEDIA ============
+    match /exercises/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    // ============ SESSION EVIDENCE ============
+    match /sessions/{userId}/{sessionId}/{fileName} {
+      // Users can upload evidence for their sessions
+      allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      // Admins can read all
+      allow read: if isAdmin();
+    }
+  }
+}

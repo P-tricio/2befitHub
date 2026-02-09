@@ -1,0 +1,145 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper: Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper: Check if user is accessing their own resource
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Helper: Check if user is admin (by role OR hardcoded email)
+    function isAdmin() {
+      return isAuthenticated() && (
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+        request.auth.token.email == 'pabloadrian91@gmail.com'
+      );
+    }
+    
+    // ============ USERS ============
+    match /users/{userId} {
+      // Users can read/write their own profile
+      // Admins can read all profiles
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) || isAdmin();
+      allow delete: if isAdmin();
+      
+      // User's tracking subcollection
+      match /tracking/{date} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+      
+      // User's exercise history subcollection
+      match /exercise_history/{exerciseId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+        
+        match /logs/{logId} {
+          allow read, write: if isOwner(userId) || isAdmin();
+        }
+      }
+    }
+    
+    // ============ TRAINING CONTENT (Admin-managed) ============
+    match /exercises/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    match /training_sessions/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    match /training_modules/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    match /training_programs/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    match /training_forms/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    match /training_habit_packs/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    match /training_groups/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    // ============ TRAINING LOGS (User-generated) ============
+    match /training_logs/{docId} {
+      // Users can read/write their own logs
+      // Admins can read all logs
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid || isAdmin()
+      );
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid || isAdmin()
+      );
+    }
+    
+    // ============ CHAT SYSTEM ============
+    match /chats/{athleteId}/messages/{messageId} {
+      // Athletes can read/write their own chat
+      // Admins can read/write all chats
+      allow read, write: if isOwner(athleteId) || isAdmin();
+    }
+    
+    // ============ NOTIFICATIONS ============
+    match /notifications/{docId} {
+      // Users can read notifications addressed to them
+      // Admins can read/write all
+      allow read: if isAuthenticated() && (
+        resource.data.recipientId == request.auth.uid ||
+        resource.data.recipientId == 'admin' && isAdmin()
+      );
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
+    }
+    
+    // ============ NUTRITION CONTENT (Admin-managed) ============
+    match /nutri_ingredients/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    match /nutri_recipes/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    match /nutrition_days/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    match /nutrition_plans/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    // ============ NUTRITION LOGS (User-generated) ============
+    match /nutrition_logs/{docId} {
+      // Log IDs are formatted as userId_date
+      allow read, write: if isAuthenticated() && (
+        docId.split('_')[0] == request.auth.uid || isAdmin()
+      );
+    }
+  }
+}

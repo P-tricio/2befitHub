@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { User, Mail, Shield, LogOut, Settings, Award, ChevronRight, Edit2, ArrowRight, ShieldCheck, Camera } from 'lucide-react';
 import { uploadToImgBB } from '../../modules/training/services/imageService';
+import NotificationToggle from '../common/NotificationToggle';
 
 const Profile = () => {
     const { currentUser, logout, updateUserProfile } = useAuth();
@@ -230,6 +231,12 @@ const Profile = () => {
                         />
                     )}
                     <div className="my-2 border-t border-slate-50"></div>
+
+                    {/* Push Notifications Toggle */}
+                    <div className="p-4">
+                        <NotificationToggle userId={user.uid} />
+                    </div>
+
                     <ProfileLink
                         icon={ArrowRight}
                         label="Volver al HUB (Módulos)"
