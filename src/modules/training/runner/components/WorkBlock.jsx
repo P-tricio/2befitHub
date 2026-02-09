@@ -362,6 +362,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
 
             if (currentMin > totalDurationMin) {
                 pauseTimer();
+                setTimeLeft(0); // Set to 0 so isBlockComplete triggers and auto-expands finish button
                 if (lastSoundMinuteRef.current !== currentMin) {
                     try { playCountdownFinal?.(); } catch (e) { }
                     lastSoundMinuteRef.current = currentMin;

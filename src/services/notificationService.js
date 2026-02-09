@@ -94,6 +94,36 @@ export const getFCMToken = async (userId) => {
         try {
             registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
             console.log('Service Worker registered:', registration.scope);
+
+            // Wait for the service worker to be ready/active
+            if (registration.installing) {
+                console.log('Service Worker installing, waiting for activation...');
+                await new Promise((resolve) => {
+                    registration.installing.addEventListener('statechange', (e) => {
+                        if (e.target.state === 'activated') {
+                            console.log('Service Worker activated');
+                            resolve();
+                        }
+                    });
+                });
+            } else if (registration.waiting) {
+                console.log('Service Worker waiting, waiting for activation...');
+                await new Promise((resolve) => {
+                    registration.waiting.addEventListener('statechange', (e) => {
+                        if (e.target.state === 'activated') {
+                            console.log('Service Worker activated');
+                            resolve();
+                        }
+                    });
+                });
+            } else if (registration.active) {
+                console.log('Service Worker already active');
+            }
+
+            // Extra wait to ensure SW is fully ready
+            await navigator.serviceWorker.ready;
+            console.log('Service Worker ready');
+
         } catch (swError) {
             console.error('Service Worker registration failed:', swError);
             if (isLocalhost) {
