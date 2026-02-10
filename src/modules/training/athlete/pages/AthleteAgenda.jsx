@@ -140,10 +140,12 @@ const AthleteAgenda = () => {
         // Inject Virtual Habit Task if none exists and user has minimums
         const hasHabitTask = tasks.some(t => t.type === 'nutrition');
         const hasMinimums = userMinimums && (
-            (userMinimums.nutrition?.length > 0) ||
-            (userMinimums.movement?.length > 0) ||
-            (userMinimums.health?.length > 0) ||
-            (userMinimums.uncategorized?.length > 0)
+            Array.isArray(userMinimums)
+                ? userMinimums.length > 0
+                : (userMinimums.nutrition?.length > 0) ||
+                (userMinimums.movement?.length > 0) ||
+                (userMinimums.health?.length > 0) ||
+                (userMinimums.uncategorized?.length > 0)
         );
 
         // Check if date is in the future (strict future)
@@ -385,7 +387,6 @@ const AthleteAgenda = () => {
                                             <>
                                                 {task.type === 'session' && (sessionMeta?.isCardio ? <Footprints size={20} /> : <Dumbbell size={20} />)}
                                                 {task.type === 'neat' && <Footprints size={20} />}
-                                                {task.type === 'neat' && <Footprints size={20} />}
                                                 {task.type === 'nutrition' && <CheckSquare size={20} />}
                                                 {task.type === 'nutrition_day' && <Utensils size={20} />}
                                                 {(task.type === 'tracking' || task.type === 'checkin') && <ClipboardList size={20} />}
@@ -401,7 +402,7 @@ const AthleteAgenda = () => {
                                                     (task.type === 'nutrition_day' ? 'Día Nutrición' :
                                                         task.type === 'tracking' || task.type === 'checkin' ? 'Seguimiento' :
                                                             task.type === 'free_training' ? 'Entreno Libre' :
-                                                                task.type === 'neat' ? 'Movimiento NEAT' :
+                                                                task.type === 'neat' ? 'Movimiento' :
                                                                     task.type === 'nutrition' ? 'Hábitos' :
                                                                         'Tarea')
                                                 )}

@@ -91,10 +91,12 @@ const AthleteHome = () => {
         const todayKey = format(new Date(), 'yyyy-MM-dd');
 
         const hasMinimums = userMinimums && (
-            (userMinimums.nutrition?.length > 0) ||
-            (userMinimums.movement?.length > 0) ||
-            (userMinimums.health?.length > 0) ||
-            (userMinimums.uncategorized?.length > 0)
+            Array.isArray(userMinimums)
+                ? userMinimums.length > 0
+                : (userMinimums.nutrition?.length > 0) ||
+                (userMinimums.movement?.length > 0) ||
+                (userMinimums.health?.length > 0) ||
+                (userMinimums.uncategorized?.length > 0)
         );
 
         if (hasMinimums) {

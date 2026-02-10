@@ -572,31 +572,32 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                         {isNeat && (
                             <div className="space-y-8">
                                 <div className="flex gap-2">
-                                    {[
-                                        { id: 'steps', label: 'Pasos', icon: <Footprints size={20} /> },
-                                        { id: 'time', label: 'Tiempo (min)', icon: <Clock size={20} /> }
-                                    ].map(type => (
-                                        <button
-                                            key={type.id}
-                                            onClick={() => handleActivityTypeChange(type.id)}
-                                            className={`flex-1 flex flex-col items-center gap-2 py-5 rounded-3xl border-2 transition-all ${activityType === type.id ? 'bg-slate-900 border-slate-900 text-white shadow-xl' : 'bg-white border-slate-100 text-slate-400 hover:border-emerald-200'}`}
-                                        >
-                                            {type.icon}
-                                            <span className="text-[10px] font-black uppercase tracking-wider">{type.label}</span>
-                                        </button>
-                                    ))}
+                                    <div className="flex-1 flex flex-col items-center gap-2 py-5 rounded-3xl bg-slate-900 border-2 border-slate-900 text-white shadow-xl">
+                                        <Clock size={20} />
+                                        <span className="text-[10px] font-black uppercase tracking-wider">Tiempo (min)</span>
+                                    </div>
                                 </div>
 
                                 <div>
                                     <div className="flex justify-between items-end mb-4 px-1">
                                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Registrar</span>
-                                        <span className="text-4xl font-black text-slate-900">{duration} <span className="text-base text-slate-400 font-bold">{activityType === 'steps' ? 'pasos' : 'min'}</span></span>
+                                        <div className="flex items-baseline gap-2">
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                max="300"
+                                                value={duration}
+                                                onChange={e => setDuration(Math.max(1, parseInt(e.target.value) || 0))}
+                                                className="w-20 text-4xl font-black text-slate-900 bg-transparent text-right outline-none border-b-2 border-transparent focus:border-emerald-400"
+                                            />
+                                            <span className="text-base text-slate-400 font-bold">min</span>
+                                        </div>
                                     </div>
                                     <input
                                         type="range"
-                                        min={activityType === 'steps' ? "0" : "5"}
-                                        max={activityType === 'steps' ? "30000" : "180"}
-                                        step={activityType === 'steps' ? "500" : "5"}
+                                        min="5"
+                                        max="120"
+                                        step="1"
                                         value={duration}
                                         onChange={e => setDuration(parseInt(e.target.value))}
                                         className="w-full h-3 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-emerald-500"

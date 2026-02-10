@@ -168,7 +168,7 @@ export const TaskPicker = ({
 
             <GenericTaskSection
                 id="neat"
-                label="Movimiento / Pasos"
+                label="Movimiento"
                 icon={<Footprints size={20} className="text-emerald-600" />}
                 expanded={expanded === 'neat'}
                 toggle={() => toggle('neat')}
@@ -246,27 +246,23 @@ const GenericTaskSection = ({ id, label, icon, expanded, toggle, onAssign, avail
                     {id === 'neat' && (
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">Tipo de objetivo</label>
-                                <div className="flex gap-2">
-                                    {['steps', 'minutes'].map(t => (
-                                        <button
-                                            key={t}
-                                            onClick={() => handleConfigChange('type', t)}
-                                            className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${config.type === t ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-white text-slate-500 border-slate-100 hover:bg-slate-50'}`}
-                                        >
-                                            {t === 'steps' ? 'Pasos' : 'Minutos'}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Cantidad objetivo</label>
+                                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Minutos objetivo</label>
                                 <input
                                     type="number"
-                                    value={config.target}
+                                    value={config.target || 30}
                                     onChange={(e) => handleConfigChange('target', parseInt(e.target.value) || 0)}
                                     className="w-full p-2 bg-white border border-slate-200 rounded-lg text-sm font-bold"
-                                    placeholder={config.type === 'steps' ? "Ej: 10000" : "Ej: 30"}
+                                    placeholder="Ej: 30"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Notas (opcional)</label>
+                                <textarea
+                                    value={config.notes || ''}
+                                    onChange={(e) => handleConfigChange('notes', e.target.value)}
+                                    className="w-full p-2 bg-white border border-slate-200 rounded-lg text-sm font-medium resize-none"
+                                    placeholder="Ej: Saltar a la comba, caminar, nadar..."
+                                    rows={2}
                                 />
                             </div>
                         </div>

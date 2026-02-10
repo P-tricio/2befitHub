@@ -1860,7 +1860,7 @@ const AddTaskModal = ({ user, date, sessions, groups, programs, nutritionDays = 
                         >
                             <div className="flex items-center gap-3">
                                 <Utensils size={20} className="text-orange-500" />
-                                <span>Nutrición (Días)</span>
+                                <span>Nutrición</span>
                             </div>
                             <ChevronRight size={20} className={`transition-transform ${expanded === 'nutrition_day' ? 'rotate-90' : ''}`} />
                         </button>
@@ -1912,7 +1912,7 @@ const AddTaskModal = ({ user, date, sessions, groups, programs, nutritionDays = 
                     {/* GENERIC TYPES */}
                     <GenericTaskSection
                         id="neat"
-                        label="Movimiento / Pasos"
+                        label="Movimiento"
                         icon={<Footprints size={20} className="text-emerald-600" />}
                         expanded={expanded === 'neat'}
                         toggle={() => toggle('neat')}
@@ -1964,7 +1964,7 @@ const GenericTaskSection = ({ id, label, icon, expanded, toggle, onAssign, avail
             setConfig(initialConfig);
             return;
         }
-        if (id === 'neat') setConfig({ type: 'steps', target: 10000 });
+        if (id === 'neat') setConfig({ type: 'minutes', target: 30, notes: '' });
         if (id === 'nutrition') setConfig({ habits: [], categories: ['nutrition'] });
         if (id === 'tracking' || id === 'checkin') setConfig({ weight: true, metrics: true, photos: true, formId: null });
     }, [id, initialConfig]);
@@ -1999,27 +1999,23 @@ const GenericTaskSection = ({ id, label, icon, expanded, toggle, onAssign, avail
                     {id === 'neat' && (
                         <div className="space-y-3">
                             <div>
-                                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Objetivo principal</label>
-                                <div className="flex gap-2">
-                                    {['steps', 'minutes'].map(t => (
-                                        <button
-                                            key={t}
-                                            onClick={() => handleConfigChange('type', t)}
-                                            className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-all ${config.type === t ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200'}`}
-                                        >
-                                            {t === 'steps' ? 'Pasos' : 'Minutos'}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Cantidad objetivo</label>
+                                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Minutos objetivo</label>
                                 <input
                                     type="number"
                                     value={config.target}
                                     onChange={(e) => handleConfigChange('target', parseInt(e.target.value) || 0)}
                                     className="w-full p-2 bg-white border border-slate-200 rounded-lg text-sm font-bold"
-                                    placeholder={config.type === 'steps' ? "Ej: 10000" : "Ej: 30"}
+                                    placeholder="Ej: 30"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Notas (opcional)</label>
+                                <textarea
+                                    value={config.notes || ''}
+                                    onChange={(e) => handleConfigChange('notes', e.target.value)}
+                                    className="w-full p-2 bg-white border border-slate-200 rounded-lg text-sm font-medium resize-none"
+                                    placeholder="Ej: Saltar a la comba, caminar, nadar..."
+                                    rows={2}
                                 />
                             </div>
                         </div>
