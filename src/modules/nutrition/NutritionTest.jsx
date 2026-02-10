@@ -3,34 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { searchProductsOFF, getProductByBarcode } from '../../services/openFoodFactsService';
 import { searchLocalIngredients, searchLocalRecipes } from '../../services/nutritionDBService';
 import { Search, Loader2, Flame, Wheat, Drumstick, Droplets, Utensils, Database, Globe, Filter, X, ScanBarcode, Camera } from 'lucide-react';
-import { useZxing } from 'react-zxing';
-
-const ScannerView = ({ onScan }) => {
-    const { ref } = useZxing({
-        onDecodeResult(result) {
-            onScan(null, { text: result.getText() });
-        },
-        onError(error) {
-            // console.error(error);
-        },
-        timeBetweenDecodingAttempts: 300,
-        constraints: {
-            video: {
-                facingMode: 'environment'
-            }
-        }
-    });
-
-    return (
-        <video
-            ref={ref}
-            className="w-full h-full object-cover"
-            autoPlay
-            playsInline
-            muted
-        />
-    );
-};
+import BarcodeScannerComponent from 'react-qr-barcode-scanner';
 
 const NutritionTest = () => {
     const [query, setQuery] = useState('');
@@ -225,10 +198,16 @@ const NutritionTest = () => {
                                         <X size={24} />
                                     </button>
                                 </div>
-                                <div className="aspect-square bg-black relative flex items-center justify-center overflow-hidden">
-                                    <ScannerView onScan={handleScan} />
+                                <div className="aspect-[4/3] bg-black relative overflow-hidden">
+                                    <BarcodeScannerComponent
+                                        width="100%"
+                                        height="100%"
+                                        onUpdate={handleScan}
+                                        facingMode="environment"
+                                        stopStream={!showScanner}
+                                    />
                                     {/* Overlay guide */}
-                                    <div className="absolute inset-0 border-2 border-emerald-500/50 m-12 rounded-lg pointer-events-none flex items-center justify-center z-10">
+                                    <div className="absolute inset-0 border-2 border-emerald-500/50 m-8 rounded-lg pointer-events-none flex items-center justify-center">
                                         <div className="w-full h-0.5 bg-red-500/50"></div>
                                     </div>
                                 </div>
