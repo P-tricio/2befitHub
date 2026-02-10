@@ -38,9 +38,14 @@ const NutritionTest = () => {
 
     // Scanner State
     const [showScanner, setShowScanner] = useState(false);
+    const scanningLock = React.useRef(false); // Prevent double scans
 
-    // Effect to trigger search when scanner returns a result (optional, but good UX)
-    // We won't auto-trigger to avoid loops, but we'll populate the field.
+    // Reset lock when scanner opens
+    useEffect(() => {
+        if (showScanner) {
+            scanningLock.current = false;
+        }
+    }, [showScanner]);
 
     const handleSearch = async (e, overrideQuery = null) => {
         if (e && e.preventDefault) e.preventDefault();
@@ -89,9 +94,15 @@ const NutritionTest = () => {
                 });
 
                 // 2. OFF Search
+                // Wrap in try/catch so API failure doesn't block local results
                 const apiPromise = (async () => {
-                    const data = await searchProductsOFF(searchQuery, filters);
-                    setOffProducts(data);
+                    try {
+                        const data = await searchProductsOFF(searchQuery, filters);
+                        setOffProducts(data);
+                    } catch (apiErr) {
+                        console.warn('OFF API failed, but continuing with local results', apiErr);
+                        // Optional: set a warning toast or icon, but don't clear local results
+                    }
                 })();
 
                 await Promise.all([localPromise, apiPromise]);
@@ -125,14 +136,18 @@ const NutritionTest = () => {
     };
 
     const handleScan = (err, result) => {
-        if (result) {
+        if (result && !scanningLock.current) {
+            scanningLock.current = true; // Lock immediately
             const code = result.text;
             setQuery(code);
             setShowScanner(false);
             if (navigator.vibrate) navigator.vibrate(200);
 
             // Trigger search immediately with the scanned code
-            handleSearch(null, code);
+            // Add a small delay to ensure UI updates and prevent race conditions
+            setTimeout(() => {
+                handleSearch(null, code);
+            }, 100);
         }
     };
 

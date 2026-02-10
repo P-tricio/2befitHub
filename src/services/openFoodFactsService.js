@@ -28,9 +28,9 @@ export const searchProductsOFF = async (query, filters = {}) => {
         }
 
         const response = await fetch(url.toString(), {
-            headers: {
-                'User-Agent': 'BeFitHub - Web - Version 1.0 - https://github.com/yourusername/befithub'
-            }
+            // headers: {
+            //     'User-Agent': 'BeFitHub - Web - Version 1.0 - https://github.com/yourusername/befithub'
+            // }
         });
 
         if (!response.ok) {
