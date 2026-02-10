@@ -11,12 +11,24 @@ const ScannerView = ({ onScan }) => {
             onScan(null, { text: result.getText() });
         },
         onError(error) {
-            // console.error(error); // Keep silent or handle if needed
+            // console.error(error);
+        },
+        timeBetweenDecodingAttempts: 300,
+        constraints: {
+            video: {
+                facingMode: 'environment'
+            }
         }
     });
 
     return (
-        <video ref={ref} className="w-full h-full object-cover" />
+        <video
+            ref={ref}
+            className="w-full h-full object-cover"
+            autoPlay
+            playsInline
+            muted
+        />
     );
 };
 
@@ -144,10 +156,7 @@ const NutritionTest = () => {
             if (navigator.vibrate) navigator.vibrate(200);
 
             // Trigger search immediately with the scanned code
-            // Add a small delay to ensure UI updates and prevent race conditions
-            setTimeout(() => {
-                handleSearch(null, code);
-            }, 100);
+            handleSearch(null, code);
         }
     };
 
