@@ -751,10 +751,12 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
                                                         className={`
                                                             flex items-center gap-1.5 px-2 py-1 overflow-hidden cursor-grab active:cursor-grabbing touch-none rounded-md mb-0.5 transition-all
                                                             ${task.status === 'completed' ? 'bg-emerald-500 text-white shadow-md ring-1 ring-white/20' : (
-                                                                task.type === 'session' ? 'bg-orange-500 text-white shadow-sm' :
-                                                                    task.type === 'neat' ? 'bg-emerald-500 text-white shadow-sm' :
-                                                                        task.type === 'nutrition' ? 'bg-amber-500 text-white shadow-sm' :
-                                                                            'bg-blue-500 text-white shadow-sm'
+                                                                task.type === 'session' ? 'bg-slate-900 text-white shadow-sm' :
+                                                                    task.type === 'neat' ? 'bg-purple-500 text-white shadow-sm' :
+                                                                        task.type === 'nutrition_day' ? 'bg-orange-500 text-white shadow-sm' :
+                                                                            task.type === 'nutrition' ? 'bg-amber-500 text-white shadow-sm' :
+                                                                                task.type === 'scheduled_message' ? 'bg-pink-500 text-white shadow-sm' :
+                                                                                    'bg-blue-500 text-white shadow-sm'
                                                             )}
                                                             hover:brightness-110 active:scale-[0.98]
                                                         `}
@@ -845,10 +847,12 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
                                                             <div className={`
                                                                 w-10 h-10 rounded-full flex items-center justify-center text-white shrink-0
                                                                 ${task.status === 'completed' ? 'bg-emerald-500 shadow-lg shadow-emerald-500/20' : (
-                                                                    task.type === 'session' ? 'bg-orange-500' :
-                                                                        task.type === 'neat' ? 'bg-emerald-500' :
-                                                                            task.type === 'nutrition' ? 'bg-amber-500' :
-                                                                                'bg-blue-500'
+                                                                    task.type === 'session' ? 'bg-slate-900' :
+                                                                        task.type === 'neat' ? 'bg-purple-500' :
+                                                                            task.type === 'nutrition_day' ? 'bg-orange-500' :
+                                                                                task.type === 'nutrition' ? 'bg-amber-500' :
+                                                                                    task.type === 'scheduled_message' ? 'bg-pink-500' :
+                                                                                        'bg-blue-500'
                                                                 )}
                                                             `}>
                                                                 {task.status === 'completed' ? <Check size={18} strokeWidth={4} /> : (
@@ -856,6 +860,8 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
                                                                         {task.type === 'session' && <Dumbbell size={18} />}
                                                                         {task.type === 'neat' && <Footprints size={18} />}
                                                                         {task.type === 'nutrition' && <CheckSquare size={18} />}
+                                                                        {task.type === 'nutrition_day' && <Utensils size={18} />}
+                                                                        {task.type === 'scheduled_message' && <MessageCircle size={18} />}
                                                                         {(task.type === 'tracking' || task.type === 'checkin') && <ClipboardList size={18} />}
                                                                     </>
                                                                 )}
@@ -1255,11 +1261,12 @@ const DayDetailModal = ({ date, tasks, onClose, onAddSession, onAddProgram, onAd
                                     <div className={`
                                         w-10 h-10 rounded-full flex items-center justify-center text-white shrink-0
                                         ${task.status === 'completed' ? 'bg-emerald-500 shadow-md shadow-emerald-500/10' : (
-                                            (task.type === 'nutrition' || task.type === 'nutrition_day') ? 'bg-orange-500' :
-                                                task.type === 'session' ? 'bg-slate-900' :
-                                                    task.type === 'neat' ? 'bg-emerald-500' :
-                                                        task.type === 'scheduled_message' ? 'bg-pink-500' :
-                                                            'bg-blue-500'
+                                            (task.type === 'nutrition_day') ? 'bg-orange-500' :
+                                                (task.type === 'nutrition') ? 'bg-amber-500' :
+                                                    task.type === 'session' ? 'bg-slate-900' :
+                                                        task.type === 'neat' ? 'bg-purple-500' :
+                                                            task.type === 'scheduled_message' ? 'bg-pink-500' :
+                                                                'bg-blue-500'
                                         )}
                                     `}>
                                         {task.status === 'completed' ? <Check size={18} strokeWidth={3} /> : getTaskIcon(task)}

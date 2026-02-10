@@ -308,8 +308,8 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
             libreSetsDone, // Track completed sets for LIBRE protocol
             libreSetReps, // Original keys for SummaryBlock
             libreSeriesWeights, // Original keys for SummaryBlock
-            seriesReps: libreSetReps, // Legacy compatibility
-            seriesWeights: libreSeriesWeights, // Legacy compatibility
+            seriesReps: protocol === 'LIBRE' ? libreSetReps : undefined,
+            seriesWeights: protocol === 'LIBRE' ? libreSeriesWeights : undefined,
             elapsed: (protocol === 'R' || protocol === 'T') ? elapsed : 0
         });
     };

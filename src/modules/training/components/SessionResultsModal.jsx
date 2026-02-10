@@ -15,7 +15,7 @@ const SessionResultsModal = ({ task, session, onClose, userId }) => {
     const [sessionFeedback, setSessionFeedback] = useState(null);
 
     const results = task?.results || {};
-    const dateKey = task?.scheduledDate || format(new Date(task?.completedAt || Date.now()), 'yyyy-MM-dd');
+    const dateKey = task?.scheduledDate || results?.scheduledDate || format(new Date(task?.completedAt || Date.now()), 'yyyy-MM-dd');
 
     useEffect(() => {
         const fetchLogsAndLibrary = async () => {
@@ -414,12 +414,12 @@ const SessionResultsModal = ({ task, session, onClose, userId }) => {
                                                                                         </div>
                                                                                     </div>
                                                                                     <div className="flex items-center gap-2 shrink-0">
-                                                                                        {!log.results?.seriesReps?.[exIdx] && <span className="text-xs font-black text-slate-900">{reps || 0} <span className="text-[8px] opacity-40 lowercase">{unit}</span></span>}
-                                                                                        {!log.results?.seriesWeights?.[exIdx] && parseFloat(weight) > 0 && <span className="bg-slate-900 text-white px-2 py-0.5 rounded-lg text-[9px] font-black font-mono">{weight}kg</span>}
+                                                                                        {(!log.results?.seriesReps?.[exIdx] || log.results?.seriesReps?.[exIdx]?.length === 0) && <span className="text-xs font-black text-slate-900">{reps || 0} <span className="text-[8px] opacity-40 lowercase">{unit}</span></span>}
+                                                                                        {(!log.results?.seriesWeights?.[exIdx] || log.results?.seriesWeights?.[exIdx]?.length === 0) && parseFloat(weight) > 0 && <span className="bg-slate-900 text-white px-2 py-0.5 rounded-lg text-[9px] font-black font-mono">{weight}kg</span>}
                                                                                     </div>
                                                                                 </div>
 
-                                                                                {log.results?.seriesReps?.[exIdx] && (
+                                                                                {log.results?.seriesReps?.[exIdx]?.length > 0 && (
                                                                                     <div className="mt-2 bg-slate-50/50 rounded-xl p-2 border border-slate-100/50">
                                                                                         <div className="flex flex-col divide-y divide-slate-100">
                                                                                             {log.results.seriesReps[exIdx].map((sReps, sIdx) => {

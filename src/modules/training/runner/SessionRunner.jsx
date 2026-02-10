@@ -362,13 +362,15 @@ const SessionRunner = () => {
                         completedAt: new Date().toISOString(),
                         summary: summary,
                         results: {
+                            ...results, // Spread detailed block results first
                             durationMinutes: durationMin,
                             rpe: rpe || null,
                             notes: feedback.comment || feedback.notes || null,
                             analysis: insights || [],
                             metrics: metrics || {},
                             totalVolume: metrics.totalVolume || 0,
-                            evidenceUrl: feedback.evidenceUrl || null
+                            evidenceUrl: feedback.evidenceUrl || null,
+                            scheduledDate: targetDate // Use existing targetDate variable
                         }
                     },
                     taskId
@@ -1460,6 +1462,8 @@ const CardioTaskView = ({ session, modules, overrides, onFinish, onBack }) => {
                 heartRateAvg: heartRateAvg ? parseInt(heartRateAvg) : null,
                 heartRateMax: heartRateMax ? parseInt(heartRateMax) : null,
                 rpe,
+                // seriesReps: protocol === 'LIBRE' ? libreSetReps : undefined, // Only for LIBRE
+                // seriesWeights: protocol === 'LIBRE' ? libreSeriesWeights : undefined, // Only for LIBRE
                 notes: notes.trim(),
                 comment: notes.trim(), // For backward compatibility
                 type: 'cardio',

@@ -35,7 +35,7 @@ export const TaskPicker = ({
                     className={`w-full p-4 flex items-center justify-between font-bold text-slate-800 hover:bg-slate-50 ${expanded === 'session' ? 'bg-slate-50' : ''}`}
                 >
                     <div className="flex items-center gap-3">
-                        <Dumbbell size={20} className="text-indigo-600" />
+                        <Dumbbell size={20} className="text-slate-900" />
                         <span>Sesiones</span>
                     </div>
                     <ChevronRight size={20} className={`transition-transform ${expanded === 'session' ? 'rotate-90' : ''}`} />
@@ -58,7 +58,7 @@ export const TaskPicker = ({
                                 <button
                                     key={s.id}
                                     onClick={() => onAssign({ type: 'session', sessionId: s.id, id: s.id })} // Structure expected by consumers
-                                    className="w-full text-left p-3 rounded-lg hover:bg-indigo-50 hover:text-indigo-700 text-sm font-medium transition-colors"
+                                    className="w-full text-left p-3 rounded-lg hover:bg-white hover:shadow-sm hover:text-slate-900 text-sm font-medium transition-all border border-transparent hover:border-slate-100"
                                 >
                                     {s.name}
                                 </button>
@@ -169,7 +169,7 @@ export const TaskPicker = ({
             <GenericTaskSection
                 id="neat"
                 label="Movimiento"
-                icon={<Footprints size={20} className="text-emerald-600" />}
+                icon={<Footprints size={20} className="text-purple-600" />}
                 expanded={expanded === 'neat'}
                 toggle={() => toggle('neat')}
                 onAssign={(config) => handleAssignGeneric('neat', config)}
@@ -178,7 +178,7 @@ export const TaskPicker = ({
             <GenericTaskSection
                 id="nutrition"
                 label="Hábitos / Mínimos"
-                icon={<CheckSquare size={20} className="text-orange-600" />}
+                icon={<CheckSquare size={20} className="text-amber-500" />}
                 expanded={expanded === 'nutrition'}
                 toggle={() => toggle('nutrition')}
                 onAssign={(config) => handleAssignGeneric('nutrition', config)}
