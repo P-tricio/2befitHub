@@ -144,7 +144,7 @@ const DayEditor = ({ isOpen, onClose, initialDayId, onSave, availableDays }) => 
 
     // --- Computation ---
     const calculateStats = () => {
-        let total = { calories: 0, protein: 0, carbs: 0, fats: 0 };
+        let total = { calories: 0, protein: 0, carbs: 0, fats: 0, fiber: 0 };
 
         meals.forEach(meal => {
             meal.items.forEach(item => {
@@ -156,6 +156,7 @@ const DayEditor = ({ isOpen, onClose, initialDayId, onSave, availableDays }) => 
                     total.protein += macros.protein;
                     total.carbs += macros.carbs;
                     total.fats += macros.fats;
+                    total.fiber += macros.fiber;
                 } else if (item.type === 'recipe') {
                     const recipe = allRecipes.find(r => r.id === item.refId);
                     if (recipe && recipe.totalMacros) {
@@ -166,6 +167,7 @@ const DayEditor = ({ isOpen, onClose, initialDayId, onSave, availableDays }) => 
                         total.protein += (recipe.totalMacros.protein || 0) * ratio;
                         total.carbs += (recipe.totalMacros.carbs || 0) * ratio;
                         total.fats += (recipe.totalMacros.fats || 0) * ratio;
+                        total.fiber += (recipe.totalMacros.fiber || 0) * ratio;
                     }
                 }
             });
@@ -297,6 +299,10 @@ const DayEditor = ({ isOpen, onClose, initialDayId, onSave, availableDays }) => 
                         <div>
                             <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Grasa</div>
                             <div className="text-base sm:text-lg font-bold text-yellow-400 whitespace-nowrap">{formatMacroDisplay(stats.fats, 'FAT', macroMode)}</div>
+                        </div>
+                        <div>
+                            <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Fibra</div>
+                            <div className="text-base sm:text-lg font-bold text-green-400 whitespace-nowrap">{Math.round(stats.fiber)}g</div>
                         </div>
                     </div>
                 </div>

@@ -261,7 +261,7 @@ const GenericTaskSection = ({ id, label, icon, expanded, toggle, onAssign, avail
                                     value={config.notes || ''}
                                     onChange={(e) => handleConfigChange('notes', e.target.value)}
                                     className="w-full p-2 bg-white border border-slate-200 rounded-lg text-sm font-medium resize-none"
-                                    placeholder="Ej: Saltar a la comba, caminar, nadar..."
+                                    placeholder="Ej: Saltar a la comba, caminar, stepper..."
                                     rows={2}
                                 />
                             </div>

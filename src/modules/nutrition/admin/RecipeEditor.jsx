@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Search, Edit2, Trash2, Save, X, ChefHat, Utensils, ArrowRight, Copy, UploadCloud } from 'lucide-react';
 import { NutritionDB } from '../services/nutritionDB';
-import { calculateItemMacros } from '../services/portionService';
+import { calculateItemMacros, calcCalories } from '../services/portionService';
 import ActionMenu from '../../../components/admin/ActionMenu';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ImageUploadInput } from '../../training/admin/components';
@@ -94,9 +94,10 @@ const RecipeEditor = () => {
                 calories: acc.calories + m.calories,
                 protein: acc.protein + m.protein,
                 carbs: acc.carbs + m.carbs,
-                fats: acc.fats + m.fats
+                fats: acc.fats + m.fats,
+                fiber: acc.fiber + m.fiber
             };
-        }, { calories: 0, protein: 0, carbs: 0, fats: 0 });
+        }, { calories: 0, protein: 0, carbs: 0, fats: 0, fiber: 0 });
 
         const recipeData = {
             name,
@@ -133,6 +134,7 @@ const RecipeEditor = () => {
             protein: food.protein || 0,
             carbs: food.carbs || 0,
             fats: food.fats || 0,
+            fiber: food.fiber || 0,
             calories: food.calories || 0
         }]);
         setActiveFoodSearch(false);

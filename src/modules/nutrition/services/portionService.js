@@ -15,6 +15,13 @@ export const PORTION_CONSTANTS = {
 };
 
 /**
+ * Calculate calories from macros using the Atwater system
+ * Protein: 4 kcal/g, Carbs: 4 kcal/g, Fat: 9 kcal/g
+ */
+export const calcCalories = (protein, carbs, fats) =>
+    Math.round((protein * 4) + (carbs * 4) + (fats * 9));
+
+/**
  * Convert raw gram macros to portions
  * @param {Object} macros - { protein: number, carbs: number, fat: number }
  * @returns {Object} - { protein: number, carbs: number, fat: number } (rounded to 1 decimal)
@@ -72,11 +79,17 @@ export const calculateItemMacros = (food, quantity, itemUnit) => {
     const isWeightRatio = !isPortionBased || (isPortionBased && food.portionWeight);
     const ratio = isWeightRatio ? (grams / 100) : quantity;
 
+    const protein = Math.round((food.protein || food.macros?.protein || 0) * ratio);
+    const carbs = Math.round((food.carbs || food.macros?.carbs || 0) * ratio);
+    const fats = Math.round((food.fats || food.macros?.fat || 0) * ratio);
+    const fiber = Math.round((food.fiber || 0) * ratio);
+
     return {
-        protein: Math.round((food.protein || food.macros?.protein || 0) * ratio),
-        carbs: Math.round((food.carbs || food.macros?.carbs || 0) * ratio),
-        fats: Math.round((food.fats || food.macros?.fat || 0) * ratio),
-        calories: Math.round((food.calories || food.macros?.kcal || 0) * ratio)
+        protein,
+        carbs,
+        fats,
+        fiber,
+        calories: calcCalories(protein, carbs, fats)
     };
 };
 

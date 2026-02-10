@@ -281,8 +281,8 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
     }, []);
 
     const getStats = () => {
-        let t = { calories: 0, protein: 0, carbs: 0, fats: 0 }; // Target
-        let c = { calories: 0, protein: 0, carbs: 0, fats: 0 }; // Current (Consumed)
+        let t = { calories: 0, protein: 0, carbs: 0, fats: 0, fiber: 0 }; // Target
+        let c = { calories: 0, protein: 0, carbs: 0, fats: 0, fiber: 0 }; // Current (Consumed)
 
         if (!day || !resources.foods.length) return { t, c };
 
@@ -291,7 +291,7 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                 const key = `${mIdx}-${iIdx}`;
                 const isConsumed = !!log?.completedItems?.[key];
 
-                let m = { calories: 0, protein: 0, carbs: 0, fat: 0 };
+                let m = { calories: 0, protein: 0, carbs: 0, fats: 0, fiber: 0 };
 
                 if (item.type === 'food') {
                     const food = resources.foods.find(f => f.id === item.refId);
@@ -304,7 +304,8 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                             calories: (recipe.totalMacros.calories || 0) * ratio,
                             protein: (recipe.totalMacros.protein || 0) * ratio,
                             carbs: (recipe.totalMacros.carbs || 0) * ratio,
-                            fats: (recipe.totalMacros.fats || 0) * ratio
+                            fats: (recipe.totalMacros.fats || 0) * ratio,
+                            fiber: (recipe.totalMacros.fiber || 0) * ratio
                         };
                     }
                 }
@@ -314,6 +315,7 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                 t.protein += m.protein;
                 t.carbs += m.carbs;
                 t.fats += m.fats;
+                t.fiber += m.fiber;
 
                 // Add to Current if consumed
                 if (isConsumed) {
@@ -321,6 +323,7 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                     c.protein += m.protein;
                     c.carbs += m.carbs;
                     c.fats += m.fats;
+                    c.fiber += m.fiber;
                 }
             });
         });
@@ -443,6 +446,7 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                             <Ring current={c.protein} total={t.protein} color="text-red-500" label="PROTEIN" />
                             <Ring current={c.carbs} total={t.carbs} color="text-amber-500" label="CARBS" />
                             <Ring current={c.fats} total={t.fats} color="text-yellow-300" label="GRASA" />
+                            <Ring current={c.fiber} total={t.fiber} color="text-green-500" label="FIBRA" />
                         </div>
 
                         {/* Calories Linear Progress */}

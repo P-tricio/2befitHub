@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Edit2, Trash2, Save, X, Apple, Check, Copy, UploadCloud } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Save, X, Apple, Check, Copy, UploadCloud, Database } from 'lucide-react';
 import { NutritionDB } from '../services/nutritionDB';
+import { calcCalories } from '../services/portionService';
 import ActionMenu from '../../../components/admin/ActionMenu';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ImageUploadInput } from '../../training/admin/components';
+import { useNavigate } from 'react-router-dom';
 
 const FoodLibrary = () => {
+    const navigate = useNavigate();
     const [foods, setFoods] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [isEditing, setIsEditing] = useState(false);
@@ -29,6 +32,7 @@ const FoodLibrary = () => {
     const [protein, setProtein] = useState('');
     const [carbs, setCarbs] = useState('');
     const [fats, setFats] = useState('');
+    const [fiber, setFiber] = useState('');
     const [category, setCategory] = useState('protein');
     const [unit, setUnit] = useState('g'); // g, ml, unit
     const [image, setImage] = useState('');
@@ -46,6 +50,7 @@ const FoodLibrary = () => {
             setProtein(currentFood.protein);
             setCarbs(currentFood.carbs);
             setFats(currentFood.fats);
+            setFiber(currentFood.fiber || '');
             setCategory(currentFood.category || 'other');
             setUnit(currentFood.unit || 'g');
             setImage(currentFood.image || '');
@@ -67,6 +72,7 @@ const FoodLibrary = () => {
         setProtein('');
         setCarbs('');
         setFats('');
+        setFiber('');
         setCategory('protein');
         setUnit('g');
         setImage('');
@@ -104,10 +110,11 @@ const FoodLibrary = () => {
 
         const foodData = {
             name,
-            calories: Number(calories),
+            calories: calcCalories(Number(protein), Number(carbs), Number(fats)),
             protein: Number(protein),
             carbs: Number(carbs),
             fats: Number(fats),
+            fiber: Number(fiber) || 0,
             category,
             unit,
             image,
@@ -176,7 +183,16 @@ const FoodLibrary = () => {
                 <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
                     <div>
                         <h1 className="text-4xl font-black text-slate-900 tracking-tight">Biblioteca de Alimentos</h1>
-                        <p className="text-slate-500 text-sm font-medium mt-1">Base de datos de ingredientes y macros (por 100g).</p>
+                        <div className="flex items-center gap-2">
+                            <p className="text-slate-500 text-sm font-medium mt-1">Base de datos de ingredientes y macros (por 100g).</p>
+                            <button
+                                onClick={() => navigate('/nutrition-test')}
+                                className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded ml-2 opacity-50 hover:opacity-100 transition-opacity"
+                                title="Ir a Test de Nutrición (FatSecret)"
+                            >
+                                <Database size={12} />
+                            </button>
+                        </div>
                     </div>
 
                     <div className="flex gap-4 w-full md:w-auto">
@@ -239,12 +255,13 @@ const FoodLibrary = () => {
                                 </div>
                                 <div className="text-right">
                                     <div className="text-2xl font-black text-slate-900 tracking-tighter">
-                                        {Math.max(0, food.calories)} <span className="text-[10px] text-slate-400 font-bold uppercase">kcal</span>
+                                        {Math.round(Math.max(0, food.calories))} <span className="text-[10px] text-slate-400 font-bold uppercase">kcal</span>
                                     </div>
-                                    <div className="flex gap-2 text-[10px] font-black mt-0.5 justify-end">
+                                    <div className="flex gap-2 text-[10px] font-black mt-0.5 justify-end flex-wrap">
                                         <div className="bg-red-50 text-red-600 px-1.5 py-0.5 rounded">P: {Math.max(0, food.protein || 0)}</div>
                                         <div className="bg-orange-50 text-orange-600 px-1.5 py-0.5 rounded">C: {Math.max(0, food.carbs || 0)}</div>
                                         <div className="bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded">G: {Math.max(0, food.fats || 0)}</div>
+                                        {food.fiber > 0 && <div className="bg-green-50 text-green-600 px-1.5 py-0.5 rounded">F: {food.fiber}</div>}
                                     </div>
                                 </div>
                             </div>
@@ -331,8 +348,10 @@ const FoodLibrary = () => {
 
                                         <div className="grid grid-cols-2 gap-4">
                                             <div>
-                                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Calorías (kcal)</label>
-                                                <input type="number" step="0.1" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 font-black text-slate-900" value={calories} onChange={e => setCalories(e.target.value)} />
+                                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Calorías (auto)</label>
+                                                <div className="w-full bg-slate-100 border border-slate-200 rounded-xl px-4 py-2.5 font-black text-slate-500 text-sm">
+                                                    {calcCalories(Number(protein) || 0, Number(carbs) || 0, Number(fats) || 0)} kcal
+                                                </div>
                                             </div>
                                             <div>
                                                 <label className="block text-[10px] font-black text-red-400 uppercase tracking-widest mb-1">Proteína (g)</label>
@@ -345,6 +364,10 @@ const FoodLibrary = () => {
                                             <div>
                                                 <label className="block text-[10px] font-black text-yellow-400 uppercase tracking-widest mb-1">Grasas (g)</label>
                                                 <input type="number" step="0.1" className="w-full bg-yellow-50 border border-yellow-100 rounded-xl px-4 py-2.5 font-black text-yellow-900" value={fats} onChange={e => setFats(e.target.value)} />
+                                            </div>
+                                            <div>
+                                                <label className="block text-[10px] font-black text-green-400 uppercase tracking-widest mb-1">Fibra (g)</label>
+                                                <input type="number" step="0.1" className="w-full bg-green-50 border border-green-100 rounded-xl px-4 py-2.5 font-black text-green-900" value={fiber} onChange={e => setFiber(e.target.value)} />
                                             </div>
                                         </div>
                                     </div>

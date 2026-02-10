@@ -21,10 +21,11 @@ export const seedNutritionDB = async () => {
             await setDoc(doc(ingCol, ing.id), {
                 ...rest,
                 unit: normalizedUnit,
-                calories: macros?.kcal || 0,
+                calories: Math.round((macros?.protein || 0) * 4 + (macros?.carbs || 0) * 4 + (macros?.fat || 0) * 9),
                 protein: macros?.protein || 0,
                 carbs: macros?.carbs || 0,
                 fats: macros?.fat || 0,
+                fiber: ing.micros?.fiber || 0,
                 updatedAt: new Date().toISOString(),
                 source: 'BEDCA/Curated'
             });
@@ -48,10 +49,11 @@ export const seedNutritionDB = async () => {
                 description: rec.description || 'Receta saludable diseñada para optimizar tu rendimiento y nutrición.',
                 instructions: rec.instructions || 'Sigue los pasos habituales de preparación para combinar estos ingredientes de forma saludable.',
                 totalMacros: {
-                    calories: totalMacros?.kcal || 0,
+                    calories: Math.round((totalMacros?.protein || 0) * 4 + (totalMacros?.carbs || 0) * 4 + (totalMacros?.fat || 0) * 9),
                     protein: totalMacros?.protein || 0,
                     carbs: totalMacros?.carbs || 0,
-                    fats: totalMacros?.fat || 0
+                    fats: totalMacros?.fat || 0,
+                    fiber: totalMacros?.fiber || 0
                 },
                 updatedAt: new Date().toISOString(),
                 source: 'Curated'
