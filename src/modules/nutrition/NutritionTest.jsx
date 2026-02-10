@@ -42,9 +42,12 @@ const NutritionTest = () => {
     // Effect to trigger search when scanner returns a result (optional, but good UX)
     // We won't auto-trigger to avoid loops, but we'll populate the field.
 
-    const handleSearch = async (e) => {
-        if (e) e.preventDefault();
-        if (!query.trim()) return;
+    const handleSearch = async (e, overrideQuery = null) => {
+        if (e && e.preventDefault) e.preventDefault();
+
+        const searchQuery = overrideQuery || query;
+
+        if (!searchQuery || !searchQuery.trim()) return;
 
         setLoading(true);
         setError(null);
@@ -54,12 +57,12 @@ const NutritionTest = () => {
         try {
             // DETECT BARCODE: If query is numeric and long enough (EAN-8/13)
             // Some barcodes are 8, 12, 13 digits.
-            const isBarcode = /^\d{8,14}$/.test(query.trim());
+            const isBarcode = /^\d{8,14}$/.test(searchQuery.trim());
 
             if (isBarcode) {
                 // Barcode Search Only
                 try {
-                    const barcodeData = await getProductByBarcode(query.trim());
+                    const barcodeData = await getProductByBarcode(searchQuery.trim());
                     setOffProducts(barcodeData);
                     if (barcodeData.length === 0) {
                         setError('Producto no encontrado por código de barras.');
@@ -72,8 +75,8 @@ const NutritionTest = () => {
 
                 // 1. Local Search
                 const localPromise = Promise.all([
-                    searchLocalIngredients(query),
-                    searchLocalRecipes(query)
+                    searchLocalIngredients(searchQuery),
+                    searchLocalRecipes(searchQuery)
                 ]).then(([ings, recs]) => {
                     if (filters.category) {
                         const catLower = filters.category.toLowerCase();
@@ -87,7 +90,7 @@ const NutritionTest = () => {
 
                 // 2. OFF Search
                 const apiPromise = (async () => {
-                    const data = await searchProductsOFF(query, filters);
+                    const data = await searchProductsOFF(searchQuery, filters);
                     setOffProducts(data);
                 })();
 
@@ -123,13 +126,13 @@ const NutritionTest = () => {
 
     const handleScan = (err, result) => {
         if (result) {
-            setQuery(result.text);
+            const code = result.text;
+            setQuery(code);
             setShowScanner(false);
-            // We can't immediately trigger search here reliably due to state updates, 
-            // but setting the query is enough for the user to press search.
-            // Or we could use a mechanism to auto-submit.
-            // For now, let's just set the query and play a sound or vibrate if possible.
             if (navigator.vibrate) navigator.vibrate(200);
+
+            // Trigger search immediately with the scanned code
+            handleSearch(null, code);
         }
     };
 
