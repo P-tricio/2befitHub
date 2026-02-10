@@ -7,6 +7,8 @@ import { calculateItemMacros, formatMacroDisplay, gramsToPortions, PORTION_CONST
 import { GENERIC_INGREDIENT_IDS } from '../services/shoppingListService';
 import { TrainingDB } from '../../training/services/db';
 import ShoppingListView from './ShoppingListView';
+import FoodSearch from '../components/FoodSearch';
+import { Plus } from 'lucide-react'; // Add Plus icon for Add button
 
 const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayId is the assigned plan day
     const [day, setDay] = useState(null);
@@ -20,6 +22,12 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
 
     // Expanded meals state
     const [expandedMeals, setExpandedMeals] = useState({});
+
+    // User Extra Items (Manually added)
+    // Structure: { mealIndex: number, item: Object }
+    const [extraItems, setExtraItems] = useState([]);
+    // State for Search
+    const [activeMealIndex, setActiveMealIndex] = useState(null); // For adding items
 
     useEffect(() => {
         loadData();
@@ -50,6 +58,13 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                 setLog({ userId, date, dayId, completedItems: {} });
             } else {
                 setLog({ ...logData, dayId }); // Ensure current dayId is associated
+            }
+
+            // Load Extra Items if any
+            if (logData && logData.extraItems) {
+                setExtraItems(logData.extraItems);
+            } else {
+                setExtraItems([]);
             }
 
             // Check if it's a generic plan (only generic ingredients)
@@ -87,8 +102,8 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
         }
     };
 
-    const toggleItem = async (mealIdx, itemIdx) => {
-        const key = `${mealIdx}-${itemIdx}`;
+    const toggleItem = async (mealIdx, itemIdx, overrideKey = null) => {
+        const key = overrideKey || `${mealIdx}-${itemIdx}`;
         const isCompleted = !!log.completedItems?.[key];
         const newStatus = !isCompleted;
 
@@ -134,7 +149,7 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
 
         const newLog = { ...log, completedItems: newCompletedItems };
         setLog(newLog);
-        await NutritionDB.logs.saveDailyLog(userId, date, newLog.completedItems, dayId);
+        await NutritionDB.logs.saveDailyLog(userId, date, newLog.completedItems, dayId, extraItems);
     };
 
     const toggleCompleteAll = async () => {
@@ -179,7 +194,41 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
         // I will implement a saveLog method or similar if needed, but for now let's assume updateLog or loop.
         // Actually, let's just save the whole completedItems map.
         // Update log with current dayId
-        await NutritionDB.logs.saveDailyLog(userId, date, newLog.completedItems, dayId);
+        await NutritionDB.logs.saveDailyLog(userId, date, newLog.completedItems, dayId, extraItems);
+    };
+
+    // --- Extra Items Management ---
+    const handleFoodSelect = async (result) => {
+        const { type, data, quantity, unit } = result;
+
+        if (activeMealIndex === null) return;
+
+        // Normalized item
+        let newItem = {
+            type: type === 'external' ? 'food' : type,
+            refId: data.id,
+            name: data.name,
+            quantity: Number(quantity) || 1,
+            unit: unit || 'g',
+            // FIX: Ensure no undefined values for Firestore
+            cachedMacros: (type === 'external' && data.macros) ? data.macros : null,
+            // Flag to identify user added
+            isUserAdded: true
+        };
+
+        const newExtraItems = [...extraItems, { mealIndex: activeMealIndex, item: newItem }];
+        setExtraItems(newExtraItems);
+        setActiveMealIndex(null);
+
+        // Save
+        await NutritionDB.logs.saveDailyLog(userId, date, log.completedItems, dayId, newExtraItems);
+    };
+
+    const handleRemoveExtraItem = async (index) => {
+        const newExtraItems = [...extraItems];
+        newExtraItems.splice(index, 1);
+        setExtraItems(newExtraItems);
+        await NutritionDB.logs.saveDailyLog(userId, date, log.completedItems, dayId, newExtraItems);
     };
 
     // Calculation
@@ -210,8 +259,23 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                 // It saves `meals`. `addItemToMeal` saves `refId`, `name`, `quantity`, `unit`.
                 // It MISSES macros. This is a flaw in my DayEditor design.
                 // I should patch DayEditor or fetch here. 
-                // For robustness, I'll fetch here. The list of foods isn't huge for MVP.
             });
+        });
+
+        // Add Extra Items to Targets (User added items increase the "Current" but usually not "Target" unless flexible dieting)
+        // Usually, simply adding items means you ate MORE than plan.
+        // So we add to "Current" if consumed (or if we treat added items as consumed? No, let's treat them like plan items)
+
+        // Wait, if user adds an item, it should likely be part of the "Plan" for today dynamically?
+        // Or just "Consumed". 
+        // If I add a cookie, my Target doesn't increase, but my Consumed does.
+        // Implementation: Iterate extraItems.
+        extraItems.forEach((entry, idx) => {
+            // We need to check if this extra item is completed?
+            // Since it's dynamic, we need a key. 
+            // Let's use `extra-${idx}` as key in completedItems
+            // But wait, key collision with plan items? Plan use `mIdx-iIdx`.
+            // We'll use `extra-${idx}`.
         });
 
         return { target, current };
@@ -232,6 +296,8 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
             const enrichedCompletedItems = {};
             if (log.completedItems && day?.meals) {
                 Object.keys(log.completedItems).forEach(key => {
+                    if (key.startsWith('extra-')) return; // Skip extra items here, handled separately
+
                     const [mIdx, iIdx] = key.split('-').map(Number);
                     const meal = day.meals[mIdx];
                     const item = meal?.items?.[iIdx];
@@ -243,7 +309,6 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                             completed: true
                         };
                     } else {
-                        // Fallback por si acaso
                         enrichedCompletedItems[key] = true;
                     }
                 });
@@ -258,7 +323,8 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                     target: t,
                     notes: stats.notes,
                     adherence: stats.adherence,
-                    completedItems: enrichedCompletedItems
+                    completedItems: enrichedCompletedItems,
+                    extraItems: extraItems
                 }
             });
             onClose();
@@ -286,6 +352,7 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
 
         if (!day || !resources.foods.length) return { t, c };
 
+        // 1. Calculate Plan Items
         day.meals?.forEach((meal, mIdx) => {
             meal.items?.forEach((item, iIdx) => {
                 const key = `${mIdx}-${iIdx}`;
@@ -299,7 +366,7 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                 } else if (item.type === 'recipe') {
                     const recipe = resources.recipes.find(r => r.id === item.refId);
                     if (recipe && recipe.totalMacros) {
-                        const ratio = item.quantity; // Assuming 1 serving
+                        const ratio = item.quantity;
                         m = {
                             calories: (recipe.totalMacros.calories || 0) * ratio,
                             protein: (recipe.totalMacros.protein || 0) * ratio,
@@ -327,6 +394,58 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                 }
             });
         });
+
+        // 2. Calculate Extra Items
+        extraItems.forEach((entry, idx) => {
+            const { item } = entry;
+            const key = `extra-${idx}`;
+            const isConsumed = !!log?.completedItems?.[key];
+
+            let m = { calories: 0, protein: 0, carbs: 0, fats: 0, fiber: 0 };
+
+            if (item.type === 'food') {
+                const food = resources.foods.find(f => f.id === item.refId);
+                if (food) {
+                    m = calculateItemMacros(food, item.quantity, item.unit);
+                } else if (item.cachedMacros) {
+                    // Use cached macros if available for external items
+                    // Ensure all macro fields are present, default to 0 if undefined
+                    const macros = {
+                        calories: item.cachedMacros.calories || 0,
+                        protein: item.cachedMacros.protein || 0,
+                        carbs: item.cachedMacros.carbs || 0,
+                        fats: item.cachedMacros.fats || 0,
+                        fiber: item.cachedMacros.fiber || 0,
+                        unit: item.unit // Pass the item's unit for calculation
+                    };
+                    m = calculateItemMacros(macros, item.quantity, item.unit);
+                }
+            } else if (item.type === 'recipe') {
+                const recipe = resources.recipes.find(r => r.id === item.refId);
+                if (recipe && recipe.totalMacros) {
+                    m = {
+                        calories: recipe.totalMacros.calories || 0,
+                        protein: recipe.totalMacros.protein || 0,
+                        carbs: recipe.totalMacros.carbs || 0,
+                        fats: recipe.totalMacros.fats || 0,
+                        fiber: recipe.totalMacros.fiber || 0
+                    };
+                }
+            }
+
+            // Added items do NOT increase Target, only Current
+            if (isConsumed) {
+                c.calories += m.calories;
+                c.protein += m.protein;
+                c.carbs += m.carbs;
+                c.fats += m.fats;
+                c.fiber += m.fiber;
+            }
+        });
+
+
+        // Standardize Fiber Target to min 40g
+        if (t.fiber < 40) t.fiber = 40;
 
         return { t, c };
     };
@@ -442,11 +561,21 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                             </button>
                         </div>
 
-                        <div className="flex justify-between items-center gap-2 px-2">
+                        <div className="flex justify-between items-center gap-2 px-2 mb-4">
                             <Ring current={c.protein} total={t.protein} color="text-red-500" label="PROTEIN" />
                             <Ring current={c.carbs} total={t.carbs} color="text-amber-500" label="CARBS" />
                             <Ring current={c.fats} total={t.fats} color="text-yellow-300" label="GRASA" />
-                            <Ring current={c.fiber} total={t.fiber} color="text-green-500" label="FIBRA" />
+                        </div>
+
+                        {/* Compact Fiber Display */}
+                        <div className="flex justify-center mb-1">
+                            <div className="bg-slate-50/80 rounded-full pl-3 pr-4 py-1.5 flex items-center gap-3 border border-slate-100">
+                                <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Fibra</span>
+                                <div className="h-1.5 w-20 bg-slate-200 rounded-full overflow-hidden">
+                                    <div className="h-full bg-green-500 rounded-full" style={{ width: `${Math.min(100, (c.fiber / t.fiber) * 100)}%` }}></div>
+                                </div>
+                                <span className="text-[10px] font-bold text-slate-600">{Math.round(c.fiber)} / {Math.round(t.fiber)}g</span>
+                            </div>
                         </div>
 
                         {/* Calories Linear Progress */}
@@ -490,6 +619,15 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                                             className="p-1 px-2 bg-slate-100 hover:bg-emerald-500 hover:text-white rounded-lg text-[8px] font-black uppercase tracking-widest transition-all text-slate-400 border border-slate-200"
                                         >
                                             Marcar Todo
+                                        </button>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setActiveMealIndex(mIdx);
+                                            }}
+                                            className="p-1 px-2 bg-indigo-50 hover:bg-indigo-500 hover:text-white rounded-lg text-indigo-400 border border-indigo-100 transition-all"
+                                        >
+                                            <Plus size={14} />
                                         </button>
                                     </div>
                                     <div className="flex items-center gap-3">
@@ -583,6 +721,53 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                                                     </div>
                                                 );
                                             })}
+
+                                            {/* Render Extra Items for this Meal */}
+                                            {extraItems.filter(e => e.mealIndex === mIdx).map((entry, idx) => {
+                                                // We need global index in extraItems to keys
+                                                const globalIdx = extraItems.indexOf(entry);
+                                                const key = `extra-${globalIdx}`;
+                                                const item = entry.item;
+                                                const isChecked = !!log?.completedItems?.[key];
+
+                                                return (
+                                                    <div key={`extra-${idx}`} className="border-b border-slate-50 last:border-0 bg-indigo-50/20">
+                                                        <div
+                                                            onClick={() => toggleItem(null, null, key)}
+                                                            className={`p-4 flex items-center gap-4 cursor-pointer transition-all
+                                                                    ${isChecked ? 'bg-slate-50/50 opacity-40' : 'hover:bg-indigo-50/40'}
+                                                                `}
+                                                        >
+                                                            <div className={`
+                                                                    w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all shrink-0
+                                                                    ${isChecked ? 'bg-indigo-600 border-indigo-600' : 'border-indigo-200 bg-white'}
+                                                                `}>
+                                                                {isChecked && <Check size={14} className="text-white" />}
+                                                            </div>
+
+                                                            <div className="flex-1">
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className={`font-bold text-sm ${isChecked ? 'text-slate-400 line-through' : 'text-slate-900'}`}>{item.name}</div>
+                                                                    <span className="text-[8px] font-black uppercase bg-indigo-100 text-indigo-500 px-1.5 py-0.5 rounded tracking-wider">Extra</span>
+                                                                </div>
+                                                                <div className="text-xs text-slate-400 font-medium">
+                                                                    {item.quantity} {item.unit}
+                                                                </div>
+                                                            </div>
+
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleRemoveExtraItem(globalIdx);
+                                                                }}
+                                                                className="text-rose-400 hover:text-rose-600 p-2"
+                                                            >
+                                                                <X size={14} />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
                                         </motion.div>
                                     )}
                                 </AnimatePresence>
@@ -662,6 +847,31 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                     />
                 )}
             </AnimatePresence>
+
+            {/* Food Search Overlay or Quantity Selector */}
+            {/* Food Search Overlay */}
+            {activeMealIndex !== null && (
+                <div className="absolute inset-0 z-[5010] bg-white flex flex-col animate-in fade-in zoom-in-95 duration-200 rounded-t-3xl overflow-hidden">
+                    <div className="flex justify-between items-center p-4 border-b border-slate-100 bg-white">
+                        <h3 className="text-lg font-black text-slate-900">
+                            Añadir a {day.meals[activeMealIndex].name}
+                        </h3>
+                        <button
+                            onClick={() => setActiveMealIndex(null)}
+                            className="p-2 bg-slate-100 rounded-full hover:bg-slate-200 text-slate-500"
+                        >
+                            <X size={20} />
+                        </button>
+                    </div>
+
+                    <div className="flex-1 overflow-hidden flex flex-col">
+                        <FoodSearch
+                            onSelect={handleFoodSelect}
+                            onClose={() => setActiveMealIndex(null)}
+                        />
+                    </div>
+                </div>
+            )}
         </div>,
         document.body
     );

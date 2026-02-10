@@ -199,7 +199,7 @@ export const NutritionDB = {
                 updatedAt: serverTimestamp()
             }, { merge: true });
         },
-        async saveDailyLog(userId, date, completedItems, dayId) {
+        async saveDailyLog(userId, date, completedItems, dayId, extraItems = []) {
             const docId = `${userId}_${date}`;
             const ref = doc(db, LOGS, docId);
 
@@ -211,6 +211,7 @@ export const NutritionDB = {
             };
 
             if (dayId) data.dayId = dayId;
+            if (extraItems) data.extraItems = extraItems;
 
             await setDoc(ref, data, { merge: true });
         }
