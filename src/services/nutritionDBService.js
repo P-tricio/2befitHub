@@ -80,7 +80,7 @@ export const searchLocalIngredients = async (searchTerm) => {
         const term = searchTerm.toLowerCase();
         snapshot.forEach(doc => {
             const data = doc.data();
-            if (data.name.toLowerCase().includes(term) || data.category.toLowerCase().includes(term)) {
+            if (data.name?.toLowerCase().includes(term) || data.category?.toLowerCase().includes(term)) {
                 results.push(data);
             }
         });
@@ -104,7 +104,7 @@ export const searchLocalRecipes = async (searchTerm) => {
         const term = searchTerm.toLowerCase();
         snapshot.forEach(doc => {
             const data = doc.data();
-            if (data.name.toLowerCase().includes(term) || data.type.toLowerCase().includes(term)) {
+            if (data.name?.toLowerCase().includes(term) || data.type?.toLowerCase().includes(term)) {
                 results.push(data);
             }
         });

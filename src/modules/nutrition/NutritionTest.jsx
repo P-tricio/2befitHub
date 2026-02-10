@@ -1,93 +1,90 @@
 
-import React, { useState } from 'react';
-import { searchRecipes } from '../../services/edamamService';
-import { searchFoodFatSecret, checkFatSecretCredentials } from '../../services/fatSecretService';
-import { searchProductsOFF } from '../../services/openFoodFactsService';
-import { searchIngredientsSpoon } from '../../services/spoonacularService';
-import { Search, Loader2, Flame, Wheat, Drumstick, Droplets, Utensils, Database, Globe, Apple } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { searchProductsOFF, getProductByBarcode } from '../../services/openFoodFactsService';
+import { searchLocalIngredients, searchLocalRecipes } from '../../services/nutritionDBService';
+import { Search, Loader2, Flame, Wheat, Drumstick, Droplets, Utensils, Database, Globe, Filter, X, ScanBarcode, Camera } from 'lucide-react';
+import BarcodeScannerComponent from 'react-qr-barcode-scanner';
 
 const NutritionTest = () => {
     const [query, setQuery] = useState('');
-    const [recipes, setRecipes] = useState([]);
-    const [fsFoods, setFsFoods] = useState([]);
     const [offProducts, setOffProducts] = useState([]);
-    const [spoonIngredients, setSpoonIngredients] = useState([]);
-    const [selectedSpoonItem, setSelectedSpoonItem] = useState(null);
-    const [spoonDetails, setSpoonDetails] = useState(null);
-    const [loadingDetails, setLoadingDetails] = useState(false);
-
     const [localResults, setLocalResults] = useState({ ingredients: [], recipes: [] });
-    const [seeding, setSeeding] = useState(false);
+
+    // Filters State
+    const [showFilters, setShowFilters] = useState(false);
+    const [filters, setFilters] = useState({
+        nutriscore: '',
+        category: ''
+    });
 
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
-    const [apiSource, setApiSource] = useState('off'); // Default to OFF for Spain
+    const [seeding, setSeeding] = useState(false);
+
+    // Scanner State
+    const [showScanner, setShowScanner] = useState(false);
+
+    // Effect to trigger search when scanner returns a result (optional, but good UX)
+    // We won't auto-trigger to avoid loops, but we'll populate the field.
 
     const handleSearch = async (e) => {
-        e.preventDefault();
+        if (e) e.preventDefault();
         if (!query.trim()) return;
 
         setLoading(true);
         setError(null);
-        setRecipes([]);
-        setFsFoods([]);
         setOffProducts([]);
-        setSpoonIngredients([]);
+        setLocalResults({ ingredients: [], recipes: [] });
 
         try {
-            if (apiSource === 'edamam') {
-                const data = await searchRecipes({ q: query });
-                setRecipes(data.hits);
-            } else if (apiSource === 'fatsecret') {
-                if (!checkFatSecretCredentials()) {
-                    throw new Error('FatSecret credentials missing in .env. Try restarting "npm run dev".');
+            // DETECT BARCODE: If query is numeric and long enough (EAN-8/13)
+            // Some barcodes are 8, 12, 13 digits.
+            const isBarcode = /^\d{8,14}$/.test(query.trim());
+
+            if (isBarcode) {
+                // Barcode Search Only
+                try {
+                    const barcodeData = await getProductByBarcode(query.trim());
+                    setOffProducts(barcodeData);
+                    if (barcodeData.length === 0) {
+                        setError('Producto no encontrado por código de barras.');
+                    }
+                } catch (err) {
+                    setError('Error buscando código de barras.');
                 }
-                const data = await searchFoodFatSecret(query);
-                const foods = Array.isArray(data) ? data : (data ? [data] : []);
-                setFsFoods(foods);
-            } else if (apiSource === 'off') {
-                const data = await searchProductsOFF(query);
-                setOffProducts(data);
-            } else if (apiSource === 'spoon') {
-                const data = await searchIngredientsSpoon(query);
-                setSpoonIngredients(data);
-            } else if (apiSource === 'local') {
-                const { searchLocalIngredients, searchLocalRecipes } = await import('../../services/nutritionDBService');
-                const [ings, recs] = await Promise.all([
+            } else {
+                // Regular Text Search (Hybrid)
+
+                // 1. Local Search
+                const localPromise = Promise.all([
                     searchLocalIngredients(query),
                     searchLocalRecipes(query)
-                ]);
-                setLocalResults({ ingredients: ings, recipes: recs });
+                ]).then(([ings, recs]) => {
+                    if (filters.category) {
+                        const catLower = filters.category.toLowerCase();
+                        ings = ings.filter(i =>
+                            (i.category?.toLowerCase() || '').includes(catLower) ||
+                            catLower === 'all'
+                        );
+                    }
+                    setLocalResults({ ingredients: ings, recipes: recs });
+                });
+
+                // 2. OFF Search
+                const apiPromise = (async () => {
+                    const data = await searchProductsOFF(query, filters);
+                    setOffProducts(data);
+                })();
+
+                await Promise.all([localPromise, apiPromise]);
             }
+
         } catch (err) {
-            let msg = err.message || 'Error connecting to API';
-            if (apiSource === 'fatsecret' && (msg.includes('Failed to fetch') || msg.includes('NetworkError'))) {
-                msg = 'CORS Error: FatSecret requires a server-side proxy. Client-side browser requests are blocked by FatSecret security policies.';
-            }
+            let msg = err.message || 'Error executing search';
             setError(msg);
             console.error(err);
         } finally {
             setLoading(false);
-        }
-    };
-
-    const handleSpoonDetails = async (item) => {
-        if (selectedSpoonItem?.id === item.id) {
-            setSelectedSpoonItem(null);
-            setSpoonDetails(null);
-            return;
-        }
-        setSelectedSpoonItem(item);
-        setLoadingDetails(true);
-        setSpoonDetails(null);
-        try {
-            const { getIngredientNutrition } = await import('../../services/spoonacularService');
-            const data = await getIngredientNutrition(item.id);
-            setSpoonDetails(data);
-        } catch (err) {
-            console.error('Error fetching details:', err);
-        } finally {
-            setLoadingDetails(false);
         }
     };
 
@@ -105,296 +102,270 @@ const NutritionTest = () => {
         }
     };
 
+    const clearFilters = () => {
+        setFilters({ nutriscore: '', category: '' });
+    };
+
+    const handleScan = (err, result) => {
+        if (result) {
+            setQuery(result.text);
+            setShowScanner(false);
+            // We can't immediately trigger search here reliably due to state updates, 
+            // but setting the query is enough for the user to press search.
+            // Or we could use a mechanism to auto-submit.
+            // For now, let's just set the query and play a sound or vibrate if possible.
+            if (navigator.vibrate) navigator.vibrate(200);
+        }
+    };
+
     return (
-        <div className="min-h-screen bg-slate-900 text-white p-6">
+        <div className="min-h-screen bg-slate-900 text-white p-4 md:p-8">
             <div className="max-w-7xl mx-auto space-y-8">
                 {/* Header */}
                 <div className="text-center space-y-2">
-                    <h1 className="text-3xl font-black bg-gradient-to-r from-emerald-400 to-cyan-500 bg-clip-text text-transparent">
-                        Nutrition API Explorer
+                    <h1 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-emerald-400 to-cyan-500 bg-clip-text text-transparent">
+                        Nutrition Explorer
                     </h1>
-                    <p className="text-slate-400">Find recipes, brands, or generic ingredients</p>
+                    <p className="text-slate-400">Buscador Unificado (Local + OpenFoodFacts + Barcode)</p>
                 </div>
 
-                {/* API Selector */}
-                <div className="flex flex-wrap justify-center gap-2 md:gap-4">
-                    <button
-                        onClick={() => setApiSource('off')}
-                        className={`px-3 md:px-5 py-3 rounded-xl font-bold flex items-center gap-2 transition-all ${apiSource === 'off'
-                            ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20 scale-105'
-                            : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-                            }`}
-                    >
-                        <Globe size={18} />
-                        <span className="hidden md:inline">OpenFoodFacts</span>
-                        <span className="md:hidden">OFF</span>
-                        <span className="text-[9px] uppercase bg-black/20 px-1.5 py-0.5 rounded ml-1">Spain</span>
-                    </button>
-                    <button
-                        onClick={() => setApiSource('spoon')}
-                        className={`px-3 md:px-5 py-3 rounded-xl font-bold flex items-center gap-2 transition-all ${apiSource === 'spoon'
-                            ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/20 scale-105'
-                            : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-                            }`}
-                    >
-                        <Apple size={18} />
-                        <span className="hidden md:inline">Spoonacular</span>
-                        <span className="md:hidden">Spoon</span>
-                        <span className="text-[9px] uppercase bg-black/20 px-1.5 py-0.5 rounded ml-1">Generic</span>
-                    </button>
-                    <button
-                        onClick={() => setApiSource('edamam')}
-                        className={`px-3 md:px-5 py-3 rounded-xl font-bold flex items-center gap-2 transition-all ${apiSource === 'edamam'
-                            ? 'bg-emerald-500 text-slate-900 shadow-lg shadow-emerald-500/20 scale-105'
-                            : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-                            }`}
-                    >
-                        <Utensils size={18} />
-                        <span className="hidden md:inline">Edamam</span>
-                        <span className="md:hidden">Eda</span>
-                        <span className="text-[9px] uppercase bg-black/20 px-1.5 py-0.5 rounded ml-1">Recipes</span>
-                    </button>
-                    <button
-                        onClick={() => setApiSource('local')}
-                        className={`px-3 md:px-5 py-3 rounded-xl font-bold flex items-center gap-2 transition-all ${apiSource === 'local'
-                            ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/20 scale-105'
-                            : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-                            }`}
-                    >
-                        <Utensils size={18} />
-                        <span className="hidden md:inline">Local DB</span>
-                        <span className="md:hidden">Local</span>
-                        <span className="text-[9px] uppercase bg-black/20 px-1.5 py-0.5 rounded ml-1">Curated</span>
-                    </button>
-                    <button
-                        onClick={() => setApiSource('fatsecret')}
-                        className={`px-3 md:px-5 py-3 rounded-xl font-bold flex items-center gap-2 transition-all ${apiSource === 'fatsecret'
-                            ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20 scale-105'
-                            : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-                            }`}
-                    >
-                        <Database size={18} />
-                        <span className="hidden md:inline">FatSecret</span>
-                        <span className="md:hidden">FS</span>
-                        <span className="text-[9px] uppercase bg-black/20 px-1.5 py-0.5 rounded ml-1">Global</span>
-                    </button>
-                </div>
+                {/* Search Bar & Filters */}
+                <div className="max-w-2xl mx-auto space-y-4">
+                    <form onSubmit={handleSearch} className="relative group">
+                        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                            <Search className="h-5 w-5 text-slate-500 group-focus-within:text-emerald-400 transition-colors" />
+                        </div>
+                        <input
+                            type="text"
+                            className="block w-full pl-11 pr-32 py-4 bg-slate-800 border-2 border-slate-700 rounded-2xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-0 transition-all shadow-xl text-lg"
+                            placeholder="Busca alimentos o escanea..."
+                            value={query}
+                            onChange={(e) => setQuery(e.target.value)}
+                        />
+                        <div className="absolute inset-y-2 right-2 flex items-center gap-2">
+                            {/* Scanner Button */}
+                            <button
+                                type="button"
+                                onClick={() => setShowScanner(true)}
+                                className="p-2 rounded-xl text-slate-400 hover:text-emerald-400 hover:bg-slate-700/50 transition-colors"
+                                title="Escanear Código de Barras"
+                            >
+                                <ScanBarcode size={24} />
+                            </button>
 
-                {/* Search Bar */}
-                <form onSubmit={handleSearch} className="max-w-md mx-auto relative group">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <Search className="h-5 w-5 text-slate-500 group-focus-within:text-white transition-colors" />
-                    </div>
-                    <input
-                        type="text"
-                        className="block w-full pl-10 pr-3 py-3 border border-slate-700 rounded-xl leading-5 bg-slate-800 text-slate-300 placeholder-slate-500 focus:outline-none focus:bg-slate-800 focus:border-white focus:ring-1 focus:ring-white sm:text-sm transition-all shadow-lg text-center md:text-left"
-                        placeholder={
-                            apiSource === 'off' ? "Busca marcas (Hacendado, Carrefour)..." :
-                                apiSource === 'spoon' ? "Search generic items in English (tomato, chicken)..." :
-                                    apiSource === 'edamam' ? "Busca recetas..." :
-                                        apiSource === 'local' ? "Busca en la Base de Datos Local (Tortilla, AOVE...)" :
-                                            "Busca genéricos o marcas mundiales..."
-                        }
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                    />
-                    <button
-                        type="submit"
-                        disabled={loading}
-                        className={`absolute inset-y-1 right-1 px-4 font-bold rounded-lg transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed ${apiSource === 'off' ? 'bg-orange-500 hover:bg-orange-600 text-white' :
-                            apiSource === 'spoon' ? 'bg-rose-500 hover:bg-rose-600 text-white' :
-                                apiSource === 'local' ? 'bg-amber-500 hover:bg-amber-600 text-white' :
-                                    apiSource === 'edamam' ? 'bg-emerald-500 hover:bg-emerald-600 text-slate-900' :
-                                        'bg-blue-500 hover:bg-blue-600 text-white'
-                            }`}
-                    >
-                        {loading ? <Loader2 className="animate-spin h-5 w-5" /> : 'Search'}
-                    </button>
-                </form>
+                            <button
+                                type="button"
+                                onClick={() => setShowFilters(!showFilters)}
+                                className={`p-2 rounded-xl transition-colors ${showFilters || filters.nutriscore || filters.category ? 'bg-emerald-500/20 text-emerald-400' : 'text-slate-500 hover:text-slate-300'}`}
+                            >
+                                <Filter size={20} />
+                            </button>
+                            <button
+                                id="search-btn"
+                                type="submit"
+                                disabled={loading}
+                                className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl transition-colors flex items-center gap-2"
+                            >
+                                {loading ? <Loader2 className="animate-spin h-5 w-5" /> : 'Buscar'}
+                            </button>
+                        </div>
+                    </form>
 
-                {apiSource === 'spoon' && (
-                    <p className="text-center text-[10px] text-rose-400 font-bold -mt-6">TIP: Spoonacular only works with English terms (e.g. "tomato" instead of "tomate")</p>
-                )}
-
-                {apiSource === 'local' && (
-                    <div className="flex flex-col items-center gap-4 -mt-4">
-                        <button
-                            onClick={handleSeed}
-                            disabled={seeding}
-                            className="bg-slate-800 hover:bg-slate-700 text-amber-500 border border-amber-500/30 px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2"
-                        >
-                            {seeding ? <Loader2 className="animate-spin h-3 w-3" /> : <Database size={14} />}
-                            {seeding ? 'Sincronizando...' : 'Actualizar Base de Datos Local (Firestore)'}
-                        </button>
-                    </div>
-                )}
-
-                {/* Error Message */}
-                {error && (
-                    <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-xl text-center max-w-2xl mx-auto">
-                        {error}
-                    </div>
-                )}
-
-                {/* Results Grid - OpenFoodFacts */}
-                {apiSource === 'off' && offProducts.length > 0 && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {offProducts.map((product, index) => (
-                            <div key={index} className="bg-slate-800 rounded-2xl overflow-hidden border border-slate-700 hover:border-orange-500/30 transition-all shadow-xl hover:shadow-2xl hover:-translate-y-1 group">
-                                <div className="relative aspect-video overflow-hidden bg-slate-900 flex items-center justify-center p-4">
-                                    {product.image ? (
-                                        <img src={product.image} alt={product.label} className="max-h-full object-contain group-hover:scale-105 transition-transform duration-500" />
-                                    ) : (
-                                        <Database size={48} className="text-slate-700" />
-                                    )}
-                                    {product.nutriscore && (
-                                        <div className="absolute top-2 right-2 px-2 py-1 bg-black/40 backdrop-blur-md rounded font-black text-xs uppercase text-orange-400 border border-orange-500/20">
-                                            Score: {product.nutriscore}
-                                        </div>
-                                    )}
+                    {/* Scanner Modal */}
+                    {showScanner && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                            <div className="bg-slate-900 rounded-2xl border border-slate-700 w-full max-w-md overflow-hidden shadow-2xl relative">
+                                <div className="p-4 flex justify-between items-center border-b border-slate-800">
+                                    <h3 className="font-bold text-white flex items-center gap-2">
+                                        <Camera size={20} className="text-emerald-400" /> Escanear Producto
+                                    </h3>
+                                    <button onClick={() => setShowScanner(false)} className="text-slate-400 hover:text-white">
+                                        <X size={24} />
+                                    </button>
                                 </div>
-                                <div className="p-4">
-                                    <h3 className="font-bold text-lg leading-tight text-white mb-1 line-clamp-1">{product.label}</h3>
-                                    <p className="text-xs font-bold text-orange-400 mb-4">{product.brand}</p>
-
-                                    <div className="grid grid-cols-4 gap-2 text-center">
-                                        <div className="flex flex-col items-center gap-1"><Flame size={14} className="text-orange-400" /><span className="text-xs font-bold text-slate-300">{Math.round(product.nutrition.energy) || '-'}</span><span className="text-[9px] text-slate-500 uppercase">Kcal</span></div>
-                                        <div className="flex flex-col items-center gap-1"><Drumstick size={14} className="text-blue-400" /><span className="text-xs font-bold text-slate-300">{Math.round(product.nutrition.protein) || '-'}g</span><span className="text-[9px] text-slate-500 uppercase">Prot</span></div>
-                                        <div className="flex flex-col items-center gap-1"><Wheat size={14} className="text-yellow-400" /><span className="text-xs font-bold text-slate-300">{Math.round(product.nutrition.carbs) || '-'}g</span><span className="text-[9px] text-slate-500 uppercase">Carb</span></div>
-                                        <div className="flex flex-col items-center gap-1"><Droplets size={14} className="text-purple-400" /><span className="text-xs font-bold text-slate-300">{Math.round(product.nutrition.fat) || '-'}g</span><span className="text-[9px] text-slate-500 uppercase">Gras</span></div>
+                                <div className="aspect-square bg-black relative">
+                                    <BarcodeScannerComponent
+                                        width="100%"
+                                        height="100%"
+                                        onUpdate={handleScan}
+                                        facingMode="environment" // Use back camera
+                                    />
+                                    {/* Overlay guide */}
+                                    <div className="absolute inset-0 border-2 border-emerald-500/50 m-12 rounded-lg pointer-events-none flex items-center justify-center">
+                                        <div className="w-full h-0.5 bg-red-500/50"></div>
                                     </div>
                                 </div>
-                                <div className="px-4 pb-4 pt-2">
-                                    <button className="block w-full py-2 bg-slate-700/50 hover:bg-orange-500 text-slate-400 hover:text-white text-xs font-bold uppercase tracking-wider rounded-lg transition-colors text-center border border-slate-600 hover:border-orange-400">
-                                        {product.quantity || 'Ficha Técnica'}
-                                    </button>
+                                <div className="p-4 text-center text-sm text-slate-400">
+                                    Apunta la cámara al código de barras del producto.
                                 </div>
                             </div>
-                        ))}
-                    </div>
-                )}
+                        </div>
+                    )}
 
-                {/* Results Grid - Spoonacular */}
-                {apiSource === 'spoon' && spoonIngredients.length > 0 && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {spoonIngredients.map((item, index) => (
-                            <div key={index} className="bg-slate-800 rounded-2xl overflow-hidden border border-slate-700 hover:border-rose-500/30 transition-all shadow-xl hover:shadow-2xl hover:-translate-y-1 group p-4">
-                                <div className="flex items-center gap-4">
-                                    <div className="w-20 h-20 bg-slate-900 rounded-xl border border-slate-700 overflow-hidden flex items-center justify-center p-2">
-                                        <img
-                                            src={`https://spoonacular.com/cdn/ingredients_100x100/${item.image}`}
-                                            alt={item.name}
-                                            className="max-h-full object-contain"
-                                        />
-                                    </div>
-                                    <div className="flex-1">
-                                        <h3 className="font-bold text-slate-100 capitalize">{item.name}</h3>
-                                        <p className="text-xs text-rose-400 font-bold uppercase mt-1">Ingrediente Genérico</p>
-                                    </div>
-                                </div>
-                                <div className="mt-4 pt-4 border-t border-slate-700/50 flex justify-between items-center text-xs text-slate-400">
-                                    <span>ID: {item.id}</span>
-                                    <button
-                                        onClick={() => handleSpoonDetails(item)}
-                                        className="px-3 py-1 bg-rose-500 hover:bg-rose-600 text-white rounded-lg font-bold transition-colors"
-                                    >
-                                        Ver Nutrición
+                    {/* Collapsible Filters */}
+                    {showFilters && (
+                        <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700 animate-in slide-in-from-top-2 duration-200">
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider">Filtros Avanzados</h3>
+                                {(filters.nutriscore || filters.category) && (
+                                    <button onClick={clearFilters} className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1">
+                                        <X size={12} /> Limpiar filtros
                                     </button>
-                                </div>
-
-                                {selectedSpoonItem?.id === item.id && (
-                                    <div className="mt-4 p-3 bg-slate-900/50 rounded-xl border border-rose-500/20 animate-in fade-in slide-in-from-top-2">
-                                        {loadingDetails ? (
-                                            <div className="flex justify-center py-4"><Loader2 className="animate-spin text-rose-500" /></div>
-                                        ) : spoonDetails ? (
-                                            <div className="space-y-3">
-                                                <div className="grid grid-cols-2 gap-2">
-                                                    <div className="bg-slate-800 p-2 rounded-lg text-center">
-                                                        <p className="text-[10px] text-slate-500 uppercase">Calorías</p>
-                                                        <p className="text-sm font-bold text-orange-400">{spoonDetails.nutrition?.nutrients?.find(n => n.name === 'Calories')?.amount || 0} kcal</p>
-                                                    </div>
-                                                    <div className="bg-slate-800 p-2 rounded-lg text-center">
-                                                        <p className="text-[10px] text-slate-500 uppercase">Proteína</p>
-                                                        <p className="text-sm font-bold text-blue-400">{spoonDetails.nutrition?.nutrients?.find(n => n.name === 'Protein')?.amount || 0}g</p>
-                                                    </div>
-                                                </div>
-                                                <div className="text-[10px] text-slate-400 italic">
-                                                    Valores por {spoonDetails.amount} {spoonDetails.unit}
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <p className="text-xs text-slate-500">No se pudieron cargar los detalles.</p>
-                                        )}
-                                    </div>
                                 )}
                             </div>
-                        ))}
-                    </div>
-                )}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {/* NutriScore */}
+                                <div className="space-y-1">
+                                    <label className="text-xs font-semibold text-slate-500 ml-1">Nutri-Score</label>
+                                    <div className="flex gap-2">
+                                        {['A', 'B', 'C', 'D', 'E'].map((score) => (
+                                            <button
+                                                key={score}
+                                                type="button"
+                                                onClick={() => setFilters(prev => ({ ...prev, nutriscore: prev.nutriscore === score.toLowerCase() ? '' : score.toLowerCase() }))}
+                                                className={`flex-1 h-10 rounded-lg font-black text-lg transition-all border-2 ${filters.nutriscore === score.toLowerCase()
+                                                    ? 'border-white scale-105 shadow-lg'
+                                                    : 'border-transparent opacity-50 hover:opacity-100 hover:scale-105'
+                                                    }`}
+                                                style={{
+                                                    backgroundColor:
+                                                        score === 'A' ? '#038141' :
+                                                            score === 'B' ? '#85BB2F' :
+                                                                score === 'C' ? '#FECB02' :
+                                                                    score === 'D' ? '#EE8100' : '#E63E11'
+                                                }}
+                                            >
+                                                {score}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
 
-                {/* Results Grid - Local DB */}
-                {apiSource === 'local' && (localResults.ingredients.length > 0 || localResults.recipes.length > 0) && (
+                                {/* Categories */}
+                                <div className="space-y-1">
+                                    <label className="text-xs font-semibold text-slate-500 ml-1">Categoría</label>
+                                    <select
+                                        value={filters.category}
+                                        onChange={(e) => setFilters(prev => ({ ...prev, category: e.target.value }))}
+                                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-300 focus:outline-none focus:border-emerald-500 transition-colors"
+                                    >
+                                        <option value="">Todas las categorías</option>
+                                        <option value="snack">Snacks / Aperitivos</option>
+                                        <option value="dairy">Lácteos / Quesos</option>
+                                        <option value="meat">Carnes / Embutidos</option>
+                                        <option value="cereal">Cereales / Panes</option>
+                                        <option value="beverage">Bebidas</option>
+                                        <option value="plant-based">Vegano / Vegetal</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Error Message */}
+                    {error && (
+                        <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-xl text-center max-w-2xl mx-auto">
+                            {error}
+                        </div>
+                    )}
+
+                    {/* No Results State */}
+                    {!loading && !error && query && localResults.ingredients.length === 0 && localResults.recipes.length === 0 && offProducts.length === 0 && (
+                        <div className="text-center py-12 text-slate-500">
+                            <Search size={48} className="mx-auto mb-4 text-slate-700" />
+                            <p>No se encontraron resultados para "{query}"</p>
+                            <button onClick={handleSeed} className="mt-4 text-emerald-500 hover:underline">¿Base de datos vacía? Intenta re-sembrar</button>
+                        </div>
+                    )}
+
+
+                    {/* RESULTS SECTION */}
                     <div className="space-y-8">
-                        {/* Ingredients Section */}
-                        {localResults.ingredients.length > 0 && (
-                            <div className="space-y-4">
-                                <h2 className="text-xl font-bold flex items-center gap-2 text-amber-400">
-                                    <Wheat size={20} /> Ingredientes Curados
-                                </h2>
+
+                        {/* 1. LOCAL RESULTS */}
+                        {(localResults.ingredients.length > 0 || localResults.recipes.length > 0) && (
+                            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                <div className="flex items-center gap-4">
+                                    <h2 className="text-xl font-black bg-gradient-to-r from-amber-200 to-yellow-500 bg-clip-text text-transparent flex items-center gap-2">
+                                        <Utensils size={24} className="text-amber-400" />
+                                        Resultados Locales (Genéricos Recomendados)
+                                    </h2>
+                                    <div className="h-px bg-slate-800 flex-1"></div>
+                                </div>
+
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                     {localResults.ingredients.map((ing, idx) => (
-                                        <div key={idx} className="bg-slate-800 p-4 rounded-xl border border-slate-700 border-l-4 border-l-amber-500">
+                                        <div key={'ing-' + idx} className="bg-slate-800/80 backdrop-blur p-4 rounded-xl border border-amber-500/30 hover:bg-slate-800 transition-all group">
                                             <div className="flex justify-between items-start mb-2">
-                                                <h3 className="font-bold text-slate-100">{ing.name}</h3>
-                                                <span className="text-[10px] bg-amber-500/10 text-amber-400 px-2 py-0.5 rounded-full">{ing.category}</span>
+                                                <h3 className="font-bold text-amber-100 group-hover:text-amber-400 transition-colors">{ing.name}</h3>
+                                                <span className="text-[10px] bg-amber-500/10 text-amber-400 px-2 py-0.5 rounded-full border border-amber-500/20">{ing.category}</span>
                                             </div>
-                                            <div className="grid grid-cols-4 gap-2 text-center mt-3 bg-slate-900/50 p-2 rounded-lg">
-                                                <div className="flex flex-col items-center gap-1"><Flame size={12} className="text-orange-400" /><span className="text-xs font-bold text-slate-300">{ing.macros.kcal}</span></div>
-                                                <div className="flex flex-col items-center gap-1"><Drumstick size={12} className="text-blue-400" /><span className="text-xs font-bold text-slate-300">{ing.macros.protein}g</span></div>
-                                                <div className="flex flex-col items-center gap-1"><Wheat size={12} className="text-yellow-400" /><span className="text-xs font-bold text-slate-300">{ing.macros.carbs}g</span></div>
-                                                <div className="flex flex-col items-center gap-1"><Droplets size={12} className="text-purple-400" /><span className="text-xs font-bold text-slate-300">{ing.macros.fat}g</span></div>
+                                            <div className="grid grid-cols-4 gap-2 text-center mt-3 bg-slate-900/50 p-2 rounded-lg border border-slate-700/50">
+                                                <div className="flex flex-col items-center gap-1"><Flame size={12} className="text-orange-400" /><span className="text-xs font-bold text-slate-300">{ing.calories}</span></div>
+                                                <div className="flex flex-col items-center gap-1"><Drumstick size={12} className="text-blue-400" /><span className="text-xs font-bold text-slate-300">{ing.protein}g</span></div>
+                                                <div className="flex flex-col items-center gap-1"><Wheat size={12} className="text-yellow-400" /><span className="text-xs font-bold text-slate-300">{ing.carbs}g</span></div>
+                                                <div className="flex flex-col items-center gap-1"><Droplets size={12} className="text-purple-400" /><span className="text-xs font-bold text-slate-300">{ing.fats}g</span></div>
                                             </div>
-                                            <p className="text-[9px] text-slate-500 mt-2 text-right">Por {ing.unit}</p>
                                         </div>
                                     ))}
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Recipes Section */}
-                        {localResults.recipes.length > 0 && (
-                            <div className="space-y-4">
-                                <h2 className="text-xl font-bold flex items-center gap-2 text-emerald-400">
-                                    <Utensils size={20} /> Recetas Maetras
-                                </h2>
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                     {localResults.recipes.map((rec, idx) => (
-                                        <div key={idx} className="bg-slate-800 rounded-2xl overflow-hidden border border-slate-700 border-t-4 border-t-emerald-500">
-                                            <div className="p-4">
-                                                <div className="flex justify-between items-start mb-3">
-                                                    <div>
-                                                        <h3 className="font-bold text-lg text-white leading-tight">{rec.name}</h3>
-                                                        <span className="text-[10px] text-emerald-400 font-black uppercase tracking-widest">{rec.type}</span>
-                                                    </div>
-                                                    <span className="bg-emerald-500/10 text-emerald-400 text-[10px] px-2 py-1 rounded-lg border border-emerald-500/20">{rec.difficulty}</span>
-                                                </div>
+                                        <div key={'rec-' + idx} className="bg-slate-800/80 backdrop-blur p-4 rounded-xl border border-emerald-500/30 hover:bg-slate-800 transition-all group">
+                                            <div className="flex justify-between items-start mb-2">
+                                                <h3 className="font-bold text-emerald-100 group-hover:text-emerald-400 transition-colors">{rec.name}</h3>
+                                                <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/20 uppercase tracking-wider">Receta</span>
+                                            </div>
+                                            <div className="grid grid-cols-4 gap-2 text-center mt-3 bg-slate-900/50 p-2 rounded-lg border border-slate-700/50">
+                                                <div className="flex flex-col items-center gap-1"><Flame size={12} className="text-orange-400" /><span className="text-xs font-bold text-slate-300">{rec.totalMacros.calories}</span></div>
+                                                <div className="flex flex-col items-center gap-1"><Drumstick size={12} className="text-blue-400" /><span className="text-xs font-bold text-slate-300">{rec.totalMacros.protein}g</span></div>
+                                                <div className="flex flex-col items-center gap-1"><Wheat size={12} className="text-yellow-400" /><span className="text-xs font-bold text-slate-300">{rec.totalMacros.carbs}g</span></div>
+                                                <div className="flex flex-col items-center gap-1"><Droplets size={12} className="text-purple-400" /><span className="text-xs font-bold text-slate-300">{rec.totalMacros.fats}g</span></div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
 
-                                                <div className="space-y-2 mb-4">
-                                                    <p className="text-[10px] text-slate-500 font-bold uppercase">Ingredientes:</p>
-                                                    <div className="flex flex-wrap gap-1">
-                                                        {rec.ingredients.map((i, k) => (
-                                                            <span key={k} className="text-[10px] bg-slate-900 text-slate-400 px-2 py-1 rounded">
-                                                                {i.name} ({i.amount}{i.unit})
-                                                            </span>
-                                                        ))}
-                                                    </div>
-                                                </div>
+                        {/* 2. OPEN FOOD FACTS RESULTS */}
+                        {offProducts.length > 0 && (
+                            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-8 duration-700 delay-100">
+                                <div className="flex items-center gap-4">
+                                    <h2 className="text-xl font-black text-slate-400 flex items-center gap-2">
+                                        <Globe size={24} />
+                                        Resultados Externos (OpenFoodFacts)
+                                    </h2>
+                                    <div className="h-px bg-slate-800 flex-1"></div>
+                                </div>
 
-                                                <div className="grid grid-cols-4 gap-2 text-center bg-slate-900 p-2 rounded-xl">
-                                                    <div className="flex flex-col items-center gap-0.5"><Flame size={14} className="text-orange-400" /><span className="text-xs font-bold text-slate-300">{rec.totalMacros.kcal}</span><span className="text-[8px] text-slate-500 uppercase">kcal</span></div>
-                                                    <div className="flex flex-col items-center gap-0.5"><Drumstick size={14} className="text-blue-400" /><span className="text-xs font-bold text-slate-300">{rec.totalMacros.protein}g</span><span className="text-[8px] text-slate-500 uppercase">prot</span></div>
-                                                    <div className="flex flex-col items-center gap-0.5"><Wheat size={14} className="text-yellow-400" /><span className="text-xs font-bold text-slate-300">{rec.totalMacros.carbs}g</span><span className="text-[8px] text-slate-500 uppercase">carb</span></div>
-                                                    <div className="flex flex-col items-center gap-0.5"><Droplets size={14} className="text-purple-400" /><span className="text-xs font-bold text-slate-300">{rec.totalMacros.fat}g</span><span className="text-[8px] text-slate-500 uppercase">gras</span></div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                    {offProducts.map((product, index) => (
+                                        <div key={index} className="bg-slate-800 rounded-xl overflow-hidden border border-slate-700 hover:border-orange-500/30 transition-all shadow-lg group">
+                                            <div className="relative aspect-video bg-slate-900 flex items-center justify-center p-2">
+                                                {product.image ? (
+                                                    <img src={product.image} alt={product.label} className="h-full object-contain group-hover:scale-105 transition-transform" />
+                                                ) : (
+                                                    <Database size={32} className="text-slate-700" />
+                                                )}
+                                                {product.nutriscore && (
+                                                    <div className={`absolute top-2 right-2 px-2 py-0.5 rounded text-[10px] font-black uppercase text-white shadow-sm
+                                                        ${product.nutriscore === 'a' ? 'bg-[#038141]' :
+                                                            product.nutriscore === 'b' ? 'bg-[#85BB2F]' :
+                                                                product.nutriscore === 'c' ? 'bg-[#FECB02] text-black' :
+                                                                    product.nutriscore === 'd' ? 'bg-[#EE8100]' : 'bg-[#E63E11]'
+                                                        }`}>
+                                                        {product.nutriscore.toUpperCase()}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="p-3">
+                                                <h3 className="font-bold text-sm text-slate-200 mb-0.5 line-clamp-1" title={product.label}>{product.label}</h3>
+                                                <p className="text-[10px] font-bold text-orange-400 mb-2 truncate">{product.brand}</p>
+
+                                                <div className="grid grid-cols-4 gap-1 text-center bg-slate-900/30 p-1.5 rounded-lg">
+                                                    <div className="flex flex-col items-center"><span className="text-[10px] font-bold text-slate-300">{Math.round(product.nutrition.energy) || '-'}</span><span className="text-[8px] text-slate-600">Kcal</span></div>
+                                                    <div className="flex flex-col items-center"><span className="text-[10px] font-bold text-slate-300">{Math.round(product.nutrition.protein) || '-'}</span><span className="text-[8px] text-slate-600">Prot</span></div>
+                                                    <div className="flex flex-col items-center"><span className="text-[10px] font-bold text-slate-300">{Math.round(product.nutrition.carbs) || '-'}</span><span className="text-[8px] text-slate-600">Carb</span></div>
+                                                    <div className="flex flex-col items-center"><span className="text-[10px] font-bold text-slate-300">{Math.round(product.nutrition.fat) || '-'}</span><span className="text-[8px] text-slate-600">Gras</span></div>
                                                 </div>
                                             </div>
                                         </div>
@@ -402,60 +373,21 @@ const NutritionTest = () => {
                                 </div>
                             </div>
                         )}
-                    </div>
-                )}
 
-                {/* Results Grid - Edamam */}
-                {apiSource === 'edamam' && recipes.length > 0 && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {recipes.map((hit, index) => {
-                            const recipe = hit.recipe;
-                            const calories = Math.round(recipe.calories / recipe.yield);
-                            const protein = Math.round(recipe.totalNutrients.PROCNT?.quantity / recipe.yield || 0);
-                            const carbs = Math.round(recipe.totalNutrients.CHOCDF?.quantity / recipe.yield || 0);
-                            const fat = Math.round(recipe.totalNutrients.FAT?.quantity / recipe.yield || 0);
+                        {/* Restore DB Button (Bottom, subtle) */}
+                        <div className="flex justify-center pt-8 border-t border-slate-800">
+                            <button
+                                onClick={handleSeed}
+                                disabled={seeding}
+                                className="text-slate-600 hover:text-amber-500 text-xs flex items-center gap-2 transition-colors"
+                            >
+                                <Database size={12} />
+                                {seeding ? 'Sincronizando...' : 'Restaurar Base de Datos Local'}
+                            </button>
+                        </div>
 
-                            return (
-                                <div key={index} className="bg-slate-800 rounded-2xl overflow-hidden border border-slate-700 hover:border-emerald-500/30 transition-all shadow-xl hover:shadow-2xl hover:-translate-y-1 group">
-                                    <div className="relative aspect-video overflow-hidden">
-                                        <img src={recipe.image} alt={recipe.label} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                                        <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-transparent to-transparent opacity-80" />
-                                        <div className="absolute bottom-3 left-3 right-3">
-                                            <h3 className="font-bold text-lg leading-tight text-white mb-1 line-clamp-2">{recipe.label}</h3>
-                                        </div>
-                                    </div>
-                                    <div className="p-4 grid grid-cols-4 gap-2 text-center divide-x divide-slate-700/50">
-                                        <div className="flex flex-col items-center gap-1"><Flame size={14} className="text-orange-400" /><span className="text-xs font-bold text-slate-300">{calories}</span></div>
-                                        <div className="flex flex-col items-center gap-1"><Drumstick size={14} className="text-blue-400" /><span className="text-xs font-bold text-slate-300">{protein}g</span></div>
-                                        <div className="flex flex-col items-center gap-1"><Wheat size={14} className="text-yellow-400" /><span className="text-xs font-bold text-slate-300">{carbs}g</span></div>
-                                        <div className="flex flex-col items-center gap-1"><Droplets size={14} className="text-purple-400" /><span className="text-xs font-bold text-slate-300">{fat}g</span></div>
-                                    </div>
-                                    <div className="px-4 pb-4 pt-2">
-                                        <a href={recipe.url} target="_blank" rel="noopener noreferrer" className="block w-full py-2 bg-slate-700/50 hover:bg-emerald-500 hover:text-slate-900 text-slate-400 text-xs font-bold uppercase tracking-wider rounded-lg transition-colors text-center border border-slate-600 hover:border-emerald-400">Ver Receta</a>
-                                    </div>
-                                </div>
-                            );
-                        })}
                     </div>
-                )}
-
-                {/* Results Grid - FatSecret */}
-                {apiSource === 'fatsecret' && fsFoods.length > 0 && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {fsFoods.map((food, index) => (
-                            <div key={index} className="bg-slate-800 rounded-2xl overflow-hidden border border-slate-700 hover:border-blue-500/30 transition-all shadow-xl hover:shadow-2xl hover:-translate-y-1 group">
-                                <div className="p-4">
-                                    <h3 className="font-bold text-lg leading-tight text-white mb-1 line-clamp-2">{food.food_name}</h3>
-                                    {food.brand_name && <span className="text-xs font-bold bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/20">{food.brand_name}</span>}
-                                    <p className="text-xs text-slate-500 mt-4 line-clamp-3">{food.food_description}</p>
-                                </div>
-                                <div className="px-4 pb-4 pt-2">
-                                    <button className="block w-full py-2 bg-slate-700/50 hover:bg-blue-500 text-slate-400 hover:text-white text-xs font-bold uppercase tracking-wider rounded-lg transition-colors text-center border border-slate-600 hover:border-blue-400">Ver Detalles</button>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
+                </div>
             </div>
         </div>
     );
