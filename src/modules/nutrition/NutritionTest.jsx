@@ -3,7 +3,22 @@ import React, { useState, useEffect } from 'react';
 import { searchProductsOFF, getProductByBarcode } from '../../services/openFoodFactsService';
 import { searchLocalIngredients, searchLocalRecipes } from '../../services/nutritionDBService';
 import { Search, Loader2, Flame, Wheat, Drumstick, Droplets, Utensils, Database, Globe, Filter, X, ScanBarcode, Camera } from 'lucide-react';
-import BarcodeScannerComponent from 'react-qr-barcode-scanner';
+import { useZxing } from 'react-zxing';
+
+const ScannerView = ({ onScan }) => {
+    const { ref } = useZxing({
+        onDecodeResult(result) {
+            onScan(null, { text: result.getText() });
+        },
+        onError(error) {
+            // console.error(error); // Keep silent or handle if needed
+        }
+    });
+
+    return (
+        <video ref={ref} className="w-full h-full object-cover" />
+    );
+};
 
 const NutritionTest = () => {
     const [query, setQuery] = useState('');
@@ -183,15 +198,10 @@ const NutritionTest = () => {
                                         <X size={24} />
                                     </button>
                                 </div>
-                                <div className="aspect-square bg-black relative">
-                                    <BarcodeScannerComponent
-                                        width="100%"
-                                        height="100%"
-                                        onUpdate={handleScan}
-                                        facingMode="environment" // Use back camera
-                                    />
+                                <div className="aspect-square bg-black relative flex items-center justify-center overflow-hidden">
+                                    <ScannerView onScan={handleScan} />
                                     {/* Overlay guide */}
-                                    <div className="absolute inset-0 border-2 border-emerald-500/50 m-12 rounded-lg pointer-events-none flex items-center justify-center">
+                                    <div className="absolute inset-0 border-2 border-emerald-500/50 m-12 rounded-lg pointer-events-none flex items-center justify-center z-10">
                                         <div className="w-full h-0.5 bg-red-500/50"></div>
                                     </div>
                                 </div>

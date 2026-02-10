@@ -19,6 +19,7 @@
     "react-dom": "^19.2.0",
     "react-qr-barcode-scanner": "^2.1.23",
     "react-router-dom": "^7.12.0",
+    "react-zxing": "^1.1.3",
     "recharts": "^3.6.0",
     "tailwind-merge": "^3.4.0"
   },
