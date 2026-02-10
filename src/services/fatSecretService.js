@@ -22,7 +22,7 @@ const getAccessToken = async () => {
         return accessToken;
     }
 
-    const tokenUrl = 'https://oauth.fatsecret.com/connect/token';
+    const tokenUrl = '/fatsecret/auth/token';
     const credentials = btoa(`${CLIENT_ID}:${CLIENT_SECRET}`);
 
     try {
@@ -59,12 +59,12 @@ const getAccessToken = async () => {
 export const searchFoodFatSecret = async (query) => {
     try {
         const token = await getAccessToken();
-        const url = new URL('https://platform.fatsecret.com/rest/server.api');
+        const url = new URL(window.location.origin + '/fatsecret/api');
         url.searchParams.append('method', 'foods.search');
         url.searchParams.append('format', 'json');
         url.searchParams.append('search_expression', query);
         url.searchParams.append('region', 'ES');
-        // url.searchParams.append('language', 'es'); // Optional: Spanish results
+        url.searchParams.append('language', 'es'); // Optional: Spanish results
 
         const response = await fetch(url.toString(), {
             headers: {
@@ -73,11 +73,24 @@ export const searchFoodFatSecret = async (query) => {
         });
 
         if (!response.ok) {
+            console.error('FatSecret Search Failed:', response.status, response.statusText);
             throw new Error('Failed to fetch data from FatSecret');
         }
 
         const data = await response.json();
-        return data.foods ? data.foods.food : [];
+        console.log('FatSecret Search Response:', data);
+
+        // Check for application-level error (e.g., Invalid IP, Invalid Signature)
+        if (data.error) {
+            throw new Error(`FatSecret API Error (${data.error.code}): ${data.error.message}`);
+        }
+
+        // Handle case where 'foods' key might be missing or empty
+        if (!data.foods || !data.foods.food) return [];
+
+        // FatSecret API returns valid 'food' as object if single result, or array if multiple
+        const results = data.foods.food;
+        return Array.isArray(results) ? results : [results];
     } catch (error) {
         console.error('FatSecret Search Error:', error);
         throw error;
@@ -91,7 +104,7 @@ export const searchFoodFatSecret = async (query) => {
 export const getFoodDetails = async (foodId) => {
     try {
         const token = await getAccessToken();
-        const url = new URL('https://platform.fatsecret.com/rest/server.api');
+        const url = new URL(window.location.origin + '/fatsecret/api');
         url.searchParams.append('method', 'food.get.v2');
         url.searchParams.append('format', 'json');
         url.searchParams.append('food_id', foodId);
