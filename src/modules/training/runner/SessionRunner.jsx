@@ -53,6 +53,9 @@ const SessionRunner = () => {
     const location = useLocation();
     const { currentUser } = useAuth();
 
+    // Isolation: We use the scheduled date to separate state between different days
+    const scheduledDate = location.state?.scheduledDate || new Date().toISOString().split('T')[0];
+
     // Data State - now using the new hook
     const { session, modules, timeline: originalTimeline, protocol, history, loading, error } = useSessionData(sessionId, currentUser?.uid);
 
@@ -64,7 +67,6 @@ const SessionRunner = () => {
         const fetchOverrides = async () => {
             if (!currentUser?.uid || !sessionId) return;
             try {
-                const scheduledDate = location.state?.scheduledDate || new Date().toISOString().split('T')[0];
                 const userDoc = await TrainingDB.users.getById(currentUser.uid);
                 const tasks = userDoc?.schedule?.[scheduledDate] || [];
                 // Find session task - Prioritize TaskID for uniqueness, fallback to SessionID
@@ -237,12 +239,13 @@ const SessionRunner = () => {
         globalTime: 0,
     });
 
+    const [isRestored, setIsRestored] = useState(false);
 
 
     // --- PERSISTENCE: Save/Load Session State ---
     useEffect(() => {
         if (!sessionId || !currentUser) return;
-        const key = `runner_v2_${currentUser.uid}_${sessionId}`;
+        const key = `runner_v3_${currentUser.uid}_${sessionId}_${scheduledDate}`;
 
         // Initial Load
         const saved = localStorage.getItem(key);
@@ -261,11 +264,12 @@ const SessionRunner = () => {
                 }
             } catch (e) { console.warn("Failed to restore session", e); }
         }
+        setIsRestored(true);
     }, [sessionId, currentUser]); // Run once on mount
 
     useEffect(() => {
-        if (!sessionId || !currentUser) return;
-        const key = `runner_v2_${currentUser.uid}_${sessionId}`;
+        if (!isRestored || !sessionId || !currentUser) return;
+        const key = `runner_v3_${currentUser.uid}_${sessionId}_${scheduledDate}`;
         // Debounce save slightly or just save on every change (low cost for localstorage)
         const payload = {
             currentIndex,
@@ -274,7 +278,7 @@ const SessionRunner = () => {
             timestamp: Date.now()
         };
         localStorage.setItem(key, JSON.stringify(payload));
-    }, [currentIndex, sessionState, globalTime, sessionId, currentUser]);
+    }, [isRestored, currentIndex, sessionState, globalTime, sessionId, currentUser]);
     // ---------------------------------------------
 
 
