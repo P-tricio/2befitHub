@@ -17,6 +17,22 @@ import RPESelector from '../components/RPESelector';
 import { generateSessionAnalysis } from './utils/analysisUtils';
 import WorkBlock from './components/WorkBlock';
 
+// Utility to remove undefined fields from objects for Firestore
+const sanitizeForFirestore = (obj) => {
+    if (!obj || typeof obj !== 'object') return obj;
+    const sanitized = Array.isArray(obj) ? [] : {};
+    Object.keys(obj).forEach(key => {
+        const val = obj[key];
+        if (val === undefined) return;
+        if (val !== null && typeof val === 'object') {
+            sanitized[key] = sanitizeForFirestore(val);
+        } else {
+            sanitized[key] = val;
+        }
+    });
+    return sanitized;
+};
+
 const SessionRunner = () => {
     // Keep screen awake during session
     useKeepAwake();
@@ -507,9 +523,9 @@ const SessionRunner = () => {
                 status: 'pending' // Mark as pending until session is finished
             };
 
-            await TrainingDB.logs.create(currentUser.uid, logEntry);
+            await TrainingDB.logs.create(currentUser.uid, sanitizeForFirestore(logEntry));
 
-            // ðŸ†• Log exercise-level history for cross-session tracking
+            // 🆕 Log exercise-level history for cross-session tracking
             try {
                 const moduleExercises = currentStep.module.exercises || [];
                 for (let idx = 0; idx < moduleExercises.length; idx++) {
@@ -538,18 +554,18 @@ const SessionRunner = () => {
 
                         const maxWeight = Math.max(...sets.map(s => s.weight || 0).filter(w => w > 0));
 
-                        await TrainingDB.exerciseHistory.log(currentUser.uid, exId, {
+                        await TrainingDB.exerciseHistory.log(currentUser.uid, exId, sanitizeForFirestore({
                             date: new Date(),
                             sessionId: session.id,
                             moduleId: currentStep.module.id,
                             exerciseName: ex.nameEs || ex.name || 'Ejercicio',
                             sets: sets,
                             maxWeight: maxWeight,
-                            // ðŸ†• Context fields for smart lookup (Sanitized to avoid undefined crashes)
+                            // 🆕 Context fields for smart lookup (Sanitized to avoid undefined crashes)
                             protocol: currentStep.module.protocol || null,
                             blockType: currentStep.blockType || null,
                             manifestation: currentStep.module.manifestation || null
-                        });
+                        }));
                     }
                 }
             } catch (historyErr) {
