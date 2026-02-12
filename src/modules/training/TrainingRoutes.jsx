@@ -8,6 +8,7 @@ import AthleteTracking from './athlete/pages/AthleteTracking';
 import AthleteHistory from './athlete/pages/AthleteHistory';
 import AthleteHabits from './athlete/pages/AthleteHabits';
 import Profile from '../../components/dashboard/Profile';
+import BillingPage from '../billing/BillingPage';
 
 // Admin Import (Lazy load or direct if needed)
 import UserManager from './admin/UserManager';
@@ -38,6 +39,7 @@ const TrainingRoutes = () => {
                 <Route path="tracking" element={<AthleteTracking />} />
                 <Route path="history" element={<AthleteHistory />} />
                 <Route path="profile" element={<Profile />} />
+                <Route path="billing" element={<BillingPage />} />
                 <Route path="shop" element={<div className='p-6 text-center text-slate-400'>Tienda (Próximamente)</div>} />
                 <Route path="bookings" element={<div className='p-6 text-center text-slate-400'>Reservas (Próximamente)</div>} />
                 <Route path="nutrition" element={<Navigate to="/training/habits" replace />} />

@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { User, Mail, Shield, LogOut, Settings, Award, ChevronRight, Edit2, ArrowRight, ShieldCheck, Camera } from 'lucide-react';
+import { User, Mail, Shield, LogOut, Settings, Award, ChevronRight, Edit2, ArrowRight, ShieldCheck, Camera, CreditCard } from 'lucide-react';
 import { uploadToImgBB } from '../../modules/training/services/imageService';
 import NotificationToggle from '../common/NotificationToggle';
 
@@ -220,9 +220,10 @@ const Profile = () => {
                 <div className="divide-y divide-slate-50">
                     <ProfileLink icon={User} label="Editar datos y foto" onClick={handleStartEdit} />
                     <ProfileLink icon={Award} label="Historial de Logros" onClick={() => navigate('/training/history')} />
+                    <ProfileLink icon={CreditCard} label="Planes y Pagos" onClick={() => navigate('/training/billing')} className="bg-blue-50/30" />
 
                     {/* Admin Panel Button - Only for admins */}
-                    {(user.role === 'admin' || user.email === 'pabloadrian91@gmail.com') && (
+                    {user.role === 'admin' && (
                         <ProfileLink
                             icon={ShieldCheck}
                             label="Panel de Administración"
@@ -232,17 +233,17 @@ const Profile = () => {
                     )}
                     <div className="my-2 border-t border-slate-50"></div>
 
-                    {/* Push Notifications Toggle */}
-                    <div className="p-4">
-                        <NotificationToggle userId={user.uid} />
-                    </div>
-
                     <ProfileLink
                         icon={ArrowRight}
-                        label="Volver al HUB (Módulos)"
+                        label="Explorar otras apps"
                         onClick={() => navigate('/hub')}
                         className="text-emerald-600 bg-emerald-50/30"
                     />
+
+                    <div className="my-2 border-t border-slate-50"></div>
+
+                    {/* Push Notifications - Bottom row */}
+                    <NotificationToggle userId={user.uid} variant="row" />
                 </div>
             </div>
 

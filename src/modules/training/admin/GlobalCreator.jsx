@@ -3281,7 +3281,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                                                 onKeyDown={e => e.key === 'Enter' && handleCreateGroup()}
                                             />
                                             <button
-                                                onClick={handleCreateGroup}
+                                                onClick={() => handleCreateGroup()}
                                                 disabled={isCreatingGroup || !newGroupName.trim()}
                                                 className="p-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                                 title="Crear Grupo"
