@@ -97,7 +97,7 @@ const AdminLayout = () => {
                 </div>
             </aside>
 
-            <div className={`lg:hidden bg-slate-900 text-white shrink-0 flex justify-between items-center border-b border-slate-800 transition-all z-20 relative ${isMobileLandscape ? 'p-1 px-4' : 'p-3'}`}>
+            <div className={`lg:hidden bg-slate-900 text-white shrink-0 flex justify-between items-center border-b border-slate-800 transition-all z-50 relative ${isMobileLandscape ? 'p-1 px-4' : 'p-3'}`}>
                 {/* Left: Exit */}
                 <NavLink to="/training" className={`rounded-full text-slate-300 font-bold transition-colors bg-slate-800 hover:bg-slate-700 flex items-center gap-2 ${isMobileLandscape ? 'text-[9px] px-3 py-1' : 'text-xs px-3 py-1.5'}`}>
                     <ArrowLeft size={14} />

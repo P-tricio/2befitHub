@@ -16,6 +16,8 @@ export const EQUIPMENT = [
     'Foam Roller',
     'TRX/anillas',
     'Disco',
+    'Barra fija',
+    'Banco',
     'Otro'
 ];
 
@@ -29,3 +31,21 @@ export const QUALITIES = [
 export const FORCES = ['Push', 'Pull', 'Static'];
 
 export const MECHANICS = ['Compuesto', 'Aislamiento'];
+
+export const MUSCLE_GROUPS = [
+    'Pectorales',
+    'Dorsales',
+    'Deltoides',
+    'Bíceps',
+    'Tríceps',
+    'Cuádriceps',
+    'Isquiosurales',
+    'Glúteos',
+    'Gemelos',
+    'Abdominales',
+    'Erectores Espinales',
+    'Trapecio',
+    'Antebrazos',
+    'Aductores',
+    'Abductores'
+];

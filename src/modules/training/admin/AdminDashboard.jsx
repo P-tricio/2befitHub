@@ -16,8 +16,9 @@ import {
     AlertCircle,
     Utensils
 } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { ensureDate } from '../../../lib/dateUtils';
 
 const AdminDashboard = () => {
     const [stats, setStats] = useState({
@@ -33,12 +34,16 @@ const AdminDashboard = () => {
     useEffect(() => {
         const loadUsers = async () => {
             try {
-                const users = await TrainingDB.users.getAll();
+                const metrics = await TrainingDB.admin.getBatchAthleteMetrics();
+                const red = metrics.filter(m => m.alertLevel === 'red').length;
+                const yellow = metrics.filter(m => m.alertLevel === 'yellow').length;
+
                 setStats(prev => ({
                     ...prev,
-                    totalUsers: users.length,
-                    unreadMessages: users.reduce((acc, u) => acc + (u.unreadAdmin || 0), 0),
-                    pendingForms: users.filter(u => u.unreadAdmin > 0).length
+                    totalUsers: metrics.length,
+                    unreadMessages: metrics.reduce((acc, u) => acc + (u.unreadAdmin || 0), 0),
+                    red,
+                    yellow
                 }));
             } catch (err) { console.error(err); }
         };
@@ -64,22 +69,53 @@ const AdminDashboard = () => {
         { title: 'Actividad Hoy', value: stats.todayActivities, icon: <Activity className="text-emerald-500" />, link: '/training/admin/activity', color: 'emerald' },
         { title: 'Mensajes', value: stats.unreadMessages, icon: <MessageSquare className="text-amber-500" />, link: '/training/admin/users', color: 'amber' },
         { title: 'Nutrición', value: 'Dietas', icon: <Utensils className="text-orange-500" />, link: '/training/admin/nutrition/plans', color: 'orange' },
+        { title: 'Auditoría', value: stats.red + stats.yellow, icon: <AlertCircle className="text-rose-500" />, link: '/training/admin/audit', color: 'rose' },
         { title: 'Gestión', value: 'Forms', icon: <ClipboardList className="text-violet-500" />, link: '/training/admin/forms', color: 'violet' }
     ];
 
     if (loading) return <div className="p-8 text-center text-slate-400 font-bold">Cargando dashboard...</div>;
 
     return (
-        <div className="p-4 max-w-7xl mx-auto space-y-4">
+        <div className="p-4 max-w-7xl mx-auto space-y-8">
             {/* Simple Header */}
             <header className="flex justify-between items-center px-2">
-                <h1 className="text-xl font-black text-slate-900 tracking-tight">Control Hub</h1>
+                <div className="flex flex-col">
+                    <h1 className="text-2xl font-black text-slate-900 tracking-tight">Control Hub</h1>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Gestión de Rendimiento</p>
+                </div>
                 <div className="flex gap-2">
-                    <Link to="/training/admin/activity" className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-full text-[10px] font-black uppercase tracking-wide hover:bg-emerald-100 transition-all">
-                        <Activity size={12} /> {stats.todayActivities} hoy
+                    <Link to="/training/admin/activity" className="flex items-center gap-1.5 px-4 py-2 bg-emerald-50 text-emerald-600 rounded-2xl text-[10px] font-black uppercase tracking-wide hover:bg-emerald-100 transition-all border border-emerald-100 shadow-sm">
+                        <Activity size={14} /> {stats.todayActivities} hoy
                     </Link>
                 </div>
             </header>
+
+            {/* Quick Actions Grid */}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                {cards.map((card, i) => (
+                    <Link
+                        key={i}
+                        to={card.link}
+                        className="group bg-white p-6 rounded-[2rem] border border-slate-100 hover:border-indigo-100 hover:shadow-xl hover:shadow-indigo-500/5 transition-all flex flex-col items-center text-center gap-3 relative overflow-hidden"
+                    >
+                        {/* Background Decoration */}
+                        <div className={`absolute -right-4 -top-4 w-16 h-16 rounded-full opacity-5 group-hover:scale-150 transition-transform ${card.color === 'blue' ? 'bg-blue-500' :
+                                card.color === 'emerald' ? 'bg-emerald-500' :
+                                    card.color === 'amber' ? 'bg-amber-500' :
+                                        card.color === 'orange' ? 'bg-orange-500' :
+                                            card.color === 'rose' ? 'bg-rose-500' : 'bg-violet-500'
+                            }`} />
+
+                        <div className="p-3 bg-slate-50 rounded-2xl group-hover:scale-110 transition-transform">
+                            {card.icon}
+                        </div>
+                        <div>
+                            <div className="text-xl font-black text-slate-900">{card.value}</div>
+                            <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{card.title}</div>
+                        </div>
+                    </Link>
+                ))}
+            </div>
 
             {/* Recent Activity Feed - Full Width */}
             <div className="space-y-3">
@@ -141,10 +177,10 @@ const AdminDashboard = () => {
                                                 {noti.athleteName || noti.title || 'Atleta'}
                                             </h3>
                                             <p className="text-xs text-slate-400 truncate">{noti.message}</p>
+                                            <span className="text-[8px] font-bold text-slate-300 uppercase shrink-0">
+                                                {formatDistanceToNow(ensureDate(noti.createdAt), { addSuffix: false, locale: es })}
+                                            </span>
                                         </div>
-                                        <span className="text-[9px] font-bold text-slate-300 shrink-0">
-                                            {format(noti.createdAt, 'HH:mm')}
-                                        </span>
                                     </div>
                                 );
                             })}

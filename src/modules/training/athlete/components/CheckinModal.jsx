@@ -30,8 +30,8 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
     const [customValues, setCustomValues] = useState({});
 
     // NEAT / Activity State
-    const [activityType, setActivityType] = useState('steps');
-    const [duration, setDuration] = useState(task.config?.target || 0);
+    const [activityType, setActivityType] = useState('minutes');
+    const [duration, setDuration] = useState(task.config?.target || 30);
     const [rpe, setRpe] = useState(null);
 
     // Custom Form State
@@ -114,6 +114,12 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                 if (task.config?.formId) {
                     const form = await TrainingDB.forms.getById(task.config.formId);
                     setFormDefinition(form);
+                }
+
+                // If no existing data, ensure we use the prescribed type from config (default to minutes)
+                if (!existing) {
+                    setActivityType('minutes');
+                    if (task.config?.target) setDuration(task.config.target);
                 }
 
                 // If nutrition/habits OR neat, fetch user minimums
@@ -347,7 +353,9 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
             try {
                 // Determine granular notification type
                 let notiType = 'tracking';
-                if (task.type === 'free_training' || task.type === 'neat') {
+                if (task.type === 'neat') {
+                    notiType = 'neat';
+                } else if (task.type === 'free_training') {
                     notiType = 'session';
                 } else if (task.type === 'nutrition') {
                     notiType = 'habit';
@@ -574,7 +582,9 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                                 <div className="flex gap-2">
                                     <div className="flex-1 flex flex-col items-center gap-2 py-5 rounded-3xl bg-slate-900 border-2 border-slate-900 text-white shadow-xl">
                                         <Clock size={20} />
-                                        <span className="text-[10px] font-black uppercase tracking-wider">Tiempo (min)</span>
+                                        <span className="text-[10px] font-black uppercase tracking-wider">
+                                            Tiempo (min)
+                                        </span>
                                     </div>
                                 </div>
 
@@ -588,9 +598,11 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                                                 max="300"
                                                 value={duration}
                                                 onChange={e => setDuration(Math.max(1, parseInt(e.target.value) || 0))}
-                                                className="w-20 text-4xl font-black text-slate-900 bg-transparent text-right outline-none border-b-2 border-transparent focus:border-emerald-400"
+                                                className="w-24 text-4xl font-black text-slate-900 bg-transparent text-right outline-none border-b-2 border-transparent focus:border-emerald-400"
                                             />
-                                            <span className="text-base text-slate-400 font-bold">min</span>
+                                            <span className="text-base text-slate-400 font-bold">
+                                                min
+                                            </span>
                                         </div>
                                     </div>
                                     <input

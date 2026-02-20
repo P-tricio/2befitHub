@@ -1,19 +1,27 @@
-﻿import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
     MoreVertical, Plus, Copy, Trash2, ChevronDown, ChevronUp, ChevronRight,
     Link, Link2, Move, Clock, Repeat, Flame, Dumbbell, Footprints, Edit2,
-    Settings, Eye, Check, X, Search, Lock, Unlock, Save, Download, Coffee, Filter, UploadCloud, Loader2, Zap, Library, List, ClipboardList, Info,
+    Settings, ArrowRightLeft, Eye, Check, X, Search, Lock, Unlock, Save, Download, Coffee, Filter, UploadCloud, Loader2, Zap, Library, List, ClipboardList, Info, TrendingUp,
     Type, Target, Activity, Hash, Video, Tag, FileText, GripVertical
 } from 'lucide-react';
 import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion';
 import { TrainingDB } from '../services/db';
 import { ExerciseAPI } from '../services/exerciseApi';
 import ActionMenu from '../../../components/admin/ActionMenu';
-import { ImageUploadInput, ExerciseCard, ExerciseFormDrawer, ExerciseBrowser, getPatternColor } from './components';
+import { ImageUploadInput, ExerciseCard, ExerciseFormDrawer, ExerciseBrowser, FilterDropdown, getPatternColor } from './components';
 import { uploadToImgBB } from '../services/imageService';
+import * as ProtocolService from '../services/protocolService';
+import {
+    PDP_PROTOCOLS,
+    PDP_T_RANGES,
+    PDP_R_THRESHOLDS,
+    PDP_E_CONFIG,
+    PDP_DESCRIPTIONS as CENTRAL_PDP_DESCRIPTIONS
+} from '../services/pdpConstants';
 import ExerciseMedia from '../components/ExerciseMedia';
 import SessionPreviewModal from './SessionPreviewModal';
-import { PATTERNS, EQUIPMENT, LEVELS, QUALITIES } from './constants';
+import { PATTERNS, EQUIPMENT, LEVELS, QUALITIES, FORCES, MECHANICS, MUSCLE_GROUPS } from './constants';
 import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges';
 
 // Nutrition Imports
@@ -891,9 +899,42 @@ const DraggableBlock = ({ block, idx, ...props }) => {
 
 const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, onSave, onDirtyChange }) => {
     // Main View State: 'editor' | 'library' | 'sessions'
-    const [mainView, setMainView] = useState('editor');
+    const [mainView, setMainView] = useState('editor'); // 'editor', 'library', 'sessions'
+    const [evolutionModalOpen, setEvolutionModalOpen] = useState(false);
+    const [evolutionData, setEvolutionData] = useState([]);
 
-    // Session State
+    const handleEvolveSession = () => {
+        const evolutions = blocks.flatMap((b, bIdx) =>
+            b.exercises.map((ex, exIdx) => ({
+                blockIdx: bIdx,
+                exIdx: exIdx,
+                original: ex,
+                variants: ProtocolService.getEvolutionVariants(ex, allExercises)
+            }))
+        ).filter(item => item.variants.length > 0);
+
+        if (evolutions.length === 0) {
+            alert('No se encontraron variantes automáticas para los ejercicios actuales. Asegúrate de que tengan asignado Patrón y Calidad.');
+            return;
+        }
+
+        setEvolutionData(evolutions);
+        setEvolutionModalOpen(true);
+    };
+
+    const applyEvolution = (evolItem, variant) => {
+        const newBlocks = [...blocks];
+        newBlocks[evolItem.blockIdx].exercises[evolItem.exIdx] = {
+            ...variant,
+            // Keep the config (sets/reps) from the original exercise for continuity
+            config: evolItem.original.config,
+            id: crypto.randomUUID()
+        };
+        setBlocks(newBlocks);
+        setEvolutionData(prev => prev.filter(item => item !== evolItem));
+        if (evolutionData.length <= 1) setEvolutionModalOpen(false);
+    };
+
     const [sessionTitle, setSessionTitle] = useState(initialSession?.name || initialSession?.title || 'Día 1 SESIÓN');
     const [sessionGroup, setSessionGroup] = useState(initialSession?.group || '');
     const [sessionDescription, setSessionDescription] = useState(initialSession?.description || '');
@@ -937,13 +978,25 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
     const [modulePickerOpen, setModulePickerOpen] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [pickerSearch, setPickerSearch] = useState('');
-    const [pickerFilter, setPickerFilter] = useState({ pattern: [], equipment: [], level: [], quality: [], group: [] });
+    const [pickerFilter, setPickerFilter] = useState({
+        pattern: [],
+        equipment: [],
+        level: [],
+        quality: [],
+        group: [],
+        force: [],
+        mechanic: [],
+        primaryMuscle: [],
+        secondaryMuscles: [],
+        isWarmup: false
+    });
     const [pickerTab, setPickerTab] = useState('library'); // 'library' | 'online'
     const [onlineResults, setOnlineResults] = useState([]);
     const [isSearchingOnline, setIsSearchingOnline] = useState(false);
     const [expandedOnlineEx, setExpandedOnlineEx] = useState(null);
     const [discoveryMode, setDiscoveryMode] = useState(false);
     const [bulkExercises, setBulkExercises] = useState([]); // Cache for all exercises
+    const catalogFetchAttempted = useRef(false);
 
     // Swap Mode State (for replacing exercise while keeping config)
     const [swapMode, setSwapMode] = useState(false);
@@ -955,11 +1008,14 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
         name: '',
         group: '',
         pattern: 'Squat',
-        equipment: 'Ninguno (Peso Corporal)',
+        equipment: ['Ninguno (Peso Corporal)'],
         level: 'Intermedio',
         quality: 'Fuerza',
         mediaUrl: '', imageStart: '', imageEnd: '', youtubeUrl: '', description: '',
-        tags: []
+        tags: [],
+        primaryMuscle: '',
+        secondaryMuscles: [],
+        isWarmup: false
     });
 
     const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
@@ -1022,6 +1078,25 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                 const exGroup = ex.group || 'Sin agrupar';
                 if (!filters.group.includes(exGroup)) return false;
             }
+
+            if (filters.force && filters.force.length > 0 && !filters.force.includes(ex.forceType)) return false;
+            if (filters.mechanic && filters.mechanic.length > 0 && !filters.mechanic.includes(ex.movementType)) return false;
+
+            // Muscle Filter (Primary)
+            if (filters.primaryMuscle && filters.primaryMuscle.length > 0 && !filters.primaryMuscle.includes(ex.primaryMuscle)) return false;
+
+            // Muscle Filter (Secondary)
+            if (filters.secondaryMuscles && filters.secondaryMuscles.length > 0) {
+                const exSecMuscles = [
+                    ...(ex.secondaryMuscles || []),
+                    ...(ex.secondary_muscles || [])
+                ].filter(Boolean);
+                const matchesSec = filters.secondaryMuscles.some(m => exSecMuscles.includes(m));
+                if (!matchesSec) return false;
+            }
+
+            // Warmup Filter
+            if (filters.isWarmup && !ex.isWarmup) return false;
 
             return true;
         });
@@ -1596,8 +1671,9 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                 // Library exercises come first to prioritize user's custom/perfectly-saved versions
                 let catalog = [...allExercises, ...bulkExercises];
 
-                if (bulkExercises.length === 0) {
+                if (!catalogFetchAttempted.current && bulkExercises.length === 0) {
                     console.log('Fetching catalog to hydrate legacy session...');
+                    catalogFetchAttempted.current = true;
                     const fetchedBulk = await ExerciseAPI.fetchFullCatalog();
                     setBulkExercises(fetchedBulk);
                     catalog = [...allExercises, ...fetchedBulk];
@@ -1684,6 +1760,48 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
         }
     };
 
+    const handleMirrorSession = async (session) => {
+        try {
+            setIsSaving(true);
+            const targets = ['PDP-R', 'PDP-T', 'PDP-E'].filter(p => p !== session.type);
+
+            for (const p of targets) {
+                const transformed = ProtocolService.transformSessionProtocol(session, p);
+                const suffix = p.split('-')[1]; // R, T, or E
+
+                await TrainingDB.sessions.create({
+                    ...transformed,
+                    name: `${session.name} [${suffix}]`,
+                    group: session.group || ''
+                });
+            }
+
+            // Refresh sessions
+            const updatedSessions = await TrainingDB.sessions.getAll();
+            setAllSessions(updatedSessions);
+            alert(`✅ Variantes PDP generadas con éxito para "${session.name}"`);
+        } catch (error) {
+            console.error('Error mirroring session:', error);
+            alert('Error al espejar sesión');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleRenameSession = async (session) => {
+        const newName = window.prompt('Nuevo nombre para la sesión:', session.name);
+        if (newName && newName.trim() && newName !== session.name) {
+            try {
+                const trimmedName = newName.trim();
+                await TrainingDB.sessions.update(session.id, { name: trimmedName });
+                setAllSessions(prev => prev.map(s => s.id === session.id ? { ...s, name: trimmedName } : s));
+            } catch (error) {
+                console.error('Error renaming session:', error);
+                alert('Error al renombrar la sesión');
+            }
+        }
+    };
+
     const handleDeleteSession = async (sessionId) => {
         if (window.confirm('¿Eliminar esta sesión permanentemente?')) {
             try {
@@ -1725,175 +1843,19 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
         }
     };
 
-    // PDP Protocol Templates
-    const PDP_TEMPLATES = {
-        'PDP-T': [
-            { name: 'BOOST - Activación', timeCap: 240, description: '4 min - Activación dinámica (Superserie)' },
-            { name: 'BASE - Fuerza', timeCap: 240, description: '4 min - Fuerza fundamental (Solo)' },
-            { name: 'BUILD A - Capacidad', timeCap: 300, description: '5 min - Construcción capacidad (Solo)' },
-            { name: 'BUILD B - Capacidad', timeCap: 300, description: '5 min - Construcción capacidad (Solo)' },
-            { name: 'BURN A - Acondicionamiento', timeCap: 360, description: '6 min - Metabólico (Superserie)' },
-            { name: 'BURN B - Acondicionamiento', timeCap: 360, description: '6 min - Metabólico (Superserie)' }
-        ],
-        'PDP-R': [
-            { name: 'BOOST - Activación', targetReps: 30, description: '30 reps - Activación dinámica (Superserie)' },
-            { name: 'BASE - Fuerza', targetReps: 30, description: '30 reps - Fuerza fundamental (Solo)' },
-            { name: 'BUILD A - Capacidad', targetReps: 40, description: '40 reps - Construcción capacidad (Solo)' },
-            { name: 'BUILD B - Capacidad', targetReps: 40, description: '40 reps - Construcción capacidad (Solo)' },
-            { name: 'BURN A - Acondicionamiento', targetReps: 60, description: '60 reps - Metabólico (Superserie)' },
-            { name: 'BURN B - Acondicionamiento', targetReps: 60, description: '60 reps - Metabólico (Superserie)' }
-        ],
-        'PDP-E': [
-            { name: 'BOOST - Activación', emomMinutes: 4, description: 'EMOM 4 min - Superserie A+B' },
-            { name: 'BASE - Fuerza', emomMinutes: 4, description: 'EMOM 4 min - 5-6 reps estrictas' },
-            { name: 'BUILD A - Capacidad', emomMinutes: 5, description: 'EMOM 5 min - 8 reps/min' },
-            { name: 'BUILD B - Capacidad', emomMinutes: 5, description: 'EMOM 5 min - 8 reps/min' },
-            { name: 'BURN A - Acondicionamiento', emomMinutes: 6, description: 'EMOM 6 min - Biseries (10+10)' },
-            { name: 'BURN B - Acondicionamiento', emomMinutes: 6, description: 'EMOM 6 min - Biseries (10+10)' }
-        ]
-    };
-
-    const PDP_DESCRIPTIONS = {
-        'PDP-T': 'Progressive Density Program bajo Time Cap. Formato de trabajo: máxima densidad en tiempo fijo.\n\n• BOOST (4min): Superserie de activación alternando 2 ejercicios.\n• BASE (4min): Trabajo de fuerza en 1 ejercicio principal.\n• BUILD A/B (5min c/u): Trabajo de capacidad en ejercicios por separado.\n• BURN A/B (6min c/u): 2 bloques de acondicionamiento tipo AMRAP en superseries.',
-
-        'PDP-R': 'Progressive Density Program basado en Reps. Formato de trabajo: completar reps target en el menor tiempo posible.\n\n• BOOST (30 reps): Superserie compartiendo reps (15+15).\n• BASE (30 reps): Trabajo de fuerza en 1 ejercicio solo.\n• BUILD A/B (40 reps c/u): Capacidad en ejercicios por separado.\n• BURN A/B (60 reps c/u): Acondicionamiento en superseries (60 reps por ejercicio).',
-
-        'PDP-E': 'Progressive Density Program en formato EMOM. Formato de trabajo: Every Minute On the Minute.\n\n• BOOST (4min): Superserie A+B (6 reps/min).\n• BASE (4min): 1 Ejercicio (6 reps/min).\n• BUILD A/B (5min c/u): 1 Ejercicio (8 reps/min).\n• BURN A/B (6min c/u): Superseries (10+10 reps/min).'
-    };
-
-    // --- PDP Protocol Constants & Helpers ---
-    const OFFICIAL_BLOCK_VALUES = {
-        BOOST: { time: 240, reps: 30, emomMin: 4 },
-        BASE: { time: 240, reps: 30, emomMin: 4 },
-        BUILD: { time: 300, reps: 40, emomMin: 5 },
-        BURN: { time: 360, reps: 60, emomMin: 6 }
-    };
-
-    const determineBlockType = (name = '', idx = 0) => {
-        const upperName = name.toUpperCase();
-        if (upperName.includes('BOOST')) return 'BOOST';
-        if (upperName.includes('BASE')) return 'BASE';
-        if (upperName.includes('BUILD')) return 'BUILD';
-        if (upperName.includes('BURN')) return 'BURN';
-
-        // Fallback by index if name doesn't match
-        const defaultTypes = ['BOOST', 'BASE', 'BUILD', 'BUILD', 'BURN', 'BURN'];
-        return defaultTypes[idx] || 'BASE';
-    };
-
-    const createPlaceholderExercise = (blockType, exIdx, protocolType) => {
-        const values = OFFICIAL_BLOCK_VALUES[blockType] || OFFICIAL_BLOCK_VALUES.BASE;
-        const baseConfig = {
-            volType: protocolType === 'PDP-T' ? 'TIME' : 'REPS',
-            intType: 'RIR',
-            sets: []
-        };
-
-        // Define sets based on protocol
-        if (protocolType === 'PDP-T') {
-            let timePerExercise = values.time;
-            if (blockType === 'BOOST') timePerExercise = Math.floor(values.time / 2);
-            baseConfig.sets = [{ reps: String(timePerExercise), rir: '2-3', rest: '0' }];
-            if (blockType === 'BURN') baseConfig.sharedTime = true;
-        } else if (protocolType === 'PDP-R') {
-            let repsPerExercise = values.reps;
-            if (blockType === 'BOOST') repsPerExercise = Math.floor(values.reps / 2);
-            baseConfig.sets = [{ reps: String(repsPerExercise), rir: '2-3', rest: '0' }];
-        } else if (protocolType === 'PDP-E') {
-            const numSets = values.emomMin;
-            let repsPerRound = 6;
-            if (blockType === 'BUILD') repsPerRound = 8;
-            if (blockType === 'BURN') repsPerRound = 10;
-            baseConfig.sets = Array(numSets).fill(null).map(() => ({ reps: String(repsPerRound), rir: '2-3', rest: '0' }));
-            baseConfig.isEMOM = true;
-        }
-
-        return {
-            id: crypto.randomUUID(),
-            name: `Ejercicio ${exIdx + 1}`,
-            type: 'EXERCISE',
-            pattern: 'Global',
-            quality: 'Fuerza',
-            config: baseConfig,
-            isGrouped: (blockType === 'BOOST' || blockType === 'BURN') && exIdx % 2 === 1,
-            mediaUrl: '', imageStart: '', imageEnd: ''
-        };
-    };
+    const PDP_DESCRIPTIONS = CENTRAL_PDP_DESCRIPTIONS;
 
     const applyTemplate = (protocolType) => {
-        const template = PDP_TEMPLATES[protocolType];
-        if (!template) return;
+        const transformed = ProtocolService.transformSessionProtocol({
+            blocks,
+            description: sessionDescription,
+            name: sessionTitle
+        }, protocolType);
 
-        // Set protocol description and expand
-        setSessionDescription(PDP_DESCRIPTIONS[protocolType] || '');
+        setBlocks(transformed.blocks);
+        setSessionDescription(transformed.description);
         setSessionType(protocolType);
         setDescriptionExpanded(true);
-
-
-        // 1. Collect existing exercises to reuse
-        let availableExercises = [];
-        if (blocks && blocks.length > 0) {
-            // Flatten blocks and collect exercises
-            availableExercises = blocks.flatMap(b => b.exercises);
-        }
-        let exIterator = 0;
-
-        const newBlocks = template.map((blockDef, blockIdx) => {
-            const blockTypes = ['BOOST', 'BASE', 'BUILD', 'BUILD', 'BURN', 'BURN'];
-            const blockType = blockTypes[blockIdx];
-
-            // BOOST: 2 exercises (superseries)
-            // BASE: 1 exercise (solo)
-            // BUILD A/B: 1 exercise (solo - changed from 2)
-            // BURN A/B: 2 exercises (superseries)
-            let numExercises;
-            if (blockType === 'BOOST') numExercises = 2;
-            else if (blockType === 'BASE') numExercises = 1;
-            else if (blockType === 'BUILD') numExercises = 1; // CHANGED: Now single exercise per Build block
-            else if (blockType === 'BURN') numExercises = 2;
-            return {
-                id: crypto.randomUUID(),
-                name: blockDef.name,
-                exercises: Array(numExercises).fill(null).map((_, i) => {
-                    // Create base placeholder with correct config for new protocol
-                    const type = determineBlockType(blockDef.name, blockIdx);
-                    const placeholder = createPlaceholderExercise(type, i, protocolType);
-
-                    // If we have an existing exercise, merge it
-                    if (exIterator < availableExercises.length) {
-                        const existing = availableExercises[exIterator];
-                        exIterator++;
-
-                        return {
-                            ...existing,
-                            id: crypto.randomUUID(), // New ID for new structure
-                            config: placeholder.config, // OVERWRITE config to match new protocol (Critical!)
-                            isGrouped: placeholder.isGrouped, // Update grouping for new structure
-                            // Keep identity properties:
-                            name: existing.name || placeholder.name,
-                            mediaUrl: existing.mediaUrl || placeholder.mediaUrl,
-                            youtubeUrl: existing.youtubeUrl || '',
-                            imageStart: existing.imageStart || '',
-                            imageEnd: existing.imageEnd || '',
-                            description: existing.description || '',
-                            pattern: existing.pattern || placeholder.pattern,
-                            equipment: existing.equipment || placeholder.equipment
-                        };
-                    }
-
-                    return placeholder;
-                }),
-                description: blockDef.description,
-                protocol: protocolType,
-                params: {
-                    timeCap: blockDef.timeCap,
-                    targetReps: blockDef.targetReps,
-                    emomMinutes: blockDef.emomMinutes
-                }
-            };
-        });
-
-        setBlocks(newBlocks);
         setSessionTitle(`Sesión ${protocolType}`);
     };
 
@@ -1964,8 +1926,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
         }
 
         // Identify block type to apply correct preset
-        const blockType = determineBlockType(block.name, blockIdx);
-        const protocolValues = OFFICIAL_BLOCK_VALUES[blockType] || OFFICIAL_BLOCK_VALUES.BASE;
+        const blockType = ProtocolService.determineBlockType(block.name, blockIdx);
 
         // If block has exercises, ask for confirmation before injecting presets
         if (block.exercises.length > 0) {
@@ -1987,7 +1948,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
         if (blockType === 'BOOST' || blockType === 'BURN') numPlaceholderExercises = 2;
 
         const newExercises = Array(Math.max(numPlaceholderExercises, existingExercises.length)).fill(null).map((_, i) => {
-            const placeholder = createPlaceholderExercise(blockType, i, newProtocol);
+            const placeholder = ProtocolService.createPlaceholderExercise(blockType, i, newProtocol);
             if (i < existingExercises.length) {
                 return {
                     ...existingExercises[i],
@@ -2069,26 +2030,28 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
             name: pickerSearch || '',
             group: initialGroup || '',
             pattern: 'Squat',
-            equipment: 'Ninguno (Peso Corporal)',
+            equipment: ['Ninguno (Peso Corporal)'],
             level: 'Intermedio',
             quality: 'Fuerza',
             loadable: false, // Default: not loadable
             mediaUrl: '', imageStart: '', imageEnd: '', // New Fields
             youtubeUrl: '', description: '',
-            tags: []
+            tags: [],
+            primaryMuscle: '',
+            secondaryMuscles: []
         });
         setQuickCreatorOpen(true);
     };
 
     const handleCreateAndSelect = async () => {
         if (!creationData.name) return;
-
         // Final sanitization to prevent Firestore "undefined" errors
         const sanitizedData = JSON.parse(JSON.stringify({
             name: (creationData.name || '').trim(),
             group: creationData.group || '',
             pattern: creationData.pattern || 'Global',
-            equipment: creationData.equipment || 'Ninguno',
+            equipment: Array.isArray(creationData.equipment) ? creationData.equipment : [creationData.equipment || 'Ninguno'],
+            equipmentList_es: Array.isArray(creationData.equipment) ? creationData.equipment : [creationData.equipment || 'Ninguno'],
             level: creationData.level || 'Intermedio',
             quality: creationData.quality || 'Fuerza',
             loadable: !!creationData.loadable,
@@ -2097,7 +2060,9 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
             imageEnd: creationData.imageEnd || '',
             youtubeUrl: creationData.youtubeUrl || '',
             description: creationData.description || '',
-            tags: creationData.tags || []
+            tags: creationData.tags || [],
+            primaryMuscle: creationData.primaryMuscle || '',
+            secondaryMuscles: creationData.secondaryMuscles || []
         }, (key, value) => value === undefined ? null : value));
 
         console.log('SAVING EXERCISE:', sanitizedData);
@@ -2393,9 +2358,13 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
 
     const handleLibrarySave = async (formData) => {
         if (!libraryEditExercise) return;
+        const finalData = {
+            ...formData,
+            equipmentList_es: Array.isArray(formData.equipment) ? formData.equipment : [formData.equipment || 'Ninguno']
+        };
         try {
-            await TrainingDB.exercises.update(libraryEditExercise.id, formData);
-            setAllExercises(prev => prev.map(ex => ex.id === libraryEditExercise.id ? { ...ex, ...formData } : ex));
+            await TrainingDB.exercises.update(libraryEditExercise.id, finalData);
+            setAllExercises(prev => prev.map(ex => ex.id === libraryEditExercise.id ? { ...ex, ...finalData } : ex));
             setLibraryEditDrawerOpen(false);
             setLibraryEditExercise(null);
         } catch (error) {
@@ -2509,12 +2478,15 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                             <div className={`bg-white border-b border-slate-100 px-2 md:px-6 flex items-center gap-2 sticky top-0 md:relative z-30 shadow-sm md:shadow-none transition-all ${isMobileLandscape ? 'py-0.5' : 'py-2 md:py-3'}`}>
                                 {/* Title & Group */}
                                 <div className="flex-1 min-w-0 flex flex-col md:flex-row md:items-center gap-1">
-                                    <input
-                                        value={sessionTitle}
-                                        onChange={e => setSessionTitle(e.target.value)}
-                                        className={`bg-transparent font-black outline-none placeholder:text-slate-300 min-w-0 text-slate-900 border-none focus:ring-0 p-1 transition-all ${isMobileLandscape ? 'text-xs' : 'text-base md:text-xl'}`}
-                                        placeholder="Nombre de la Sesión"
-                                    />
+                                    <div className="relative group/title flex items-center min-w-0 flex-1">
+                                        <input
+                                            value={sessionTitle}
+                                            onChange={e => setSessionTitle(e.target.value)}
+                                            className={`bg-transparent font-black outline-none placeholder:text-slate-300 min-w-0 text-slate-900 border-none focus:ring-0 p-1 transition-all flex-1 hover:bg-slate-50 rounded-lg ${isMobileLandscape ? 'text-xs' : 'text-base md:text-xl'}`}
+                                            placeholder="Nombre de la Sesión"
+                                        />
+                                        <Edit2 size={14} className="text-slate-300 opacity-0 group-hover/title:opacity-100 transition-opacity ml-1 shrink-0" />
+                                    </div>
                                     <div className="flex items-center gap-1 md:ml-2">
                                         <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest hidden md:block">Grupo:</span>
                                         <input
@@ -2599,6 +2571,13 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                                             {!isMobileLandscape && 'Biblioteca'}
                                         </button>
                                     )}
+                                    <button
+                                        onClick={handleEvolveSession}
+                                        className={`bg-slate-50 hover:bg-amber-50 rounded-lg text-slate-500 hover:text-amber-600 flex items-center justify-center transition-colors border border-slate-200 ${isMobileLandscape ? 'w-6 h-6' : 'w-8 h-8'}`}
+                                        title="Asistente de Evolución (AI)"
+                                    >
+                                        <TrendingUp size={isMobileLandscape ? 12 : 16} />
+                                    </button>
                                     <button
                                         onClick={handleClearSession}
                                         className={`bg-slate-50 hover:bg-red-50 rounded-lg text-slate-500 hover:text-red-500 flex items-center justify-center transition-colors border border-slate-200 ${isMobileLandscape ? 'w-6 h-6' : 'w-8 h-8'}`}
@@ -2810,67 +2789,72 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                                                                         exit={{ height: 0, opacity: 0 }}
                                                                         className="overflow-hidden bg-slate-50 rounded-xl border border-slate-200"
                                                                     >
-                                                                        <div className="p-3 space-y-4 max-h-[300px] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-200">
-                                                                            <div>
-                                                                                <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Patrón</p>
-                                                                                <div className="flex flex-wrap gap-1.5">
-                                                                                    {PATTERNS.map(p => (
-                                                                                        <button
-                                                                                            key={p}
-                                                                                            onClick={() => toggleFilter('pattern', p)}
-                                                                                            className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors ${pickerFilter.pattern.includes(p) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}
-                                                                                        >
-                                                                                            {p}
-                                                                                        </button>
-                                                                                    ))}
-                                                                                </div>
-                                                                            </div>
-
-                                                                            <div>
-                                                                                <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Equipamiento</p>
-                                                                                <div className="flex flex-wrap gap-1.5">
-                                                                                    {EQUIPMENT.map(eq => (
-                                                                                        <button
-                                                                                            key={eq}
-                                                                                            onClick={() => toggleFilter('equipment', eq)}
-                                                                                            className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors ${pickerFilter.equipment.includes(eq) ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm' : 'bg-white text-slate-500 border-slate-200 hover:border-emerald-200 hover:text-emerald-600'}`}
-                                                                                        >
-                                                                                            {eq}
-                                                                                        </button>
-                                                                                    ))}
-                                                                                </div>
-                                                                            </div>
-
-                                                                            <div className="grid grid-cols-2 gap-4">
-                                                                                <div>
-                                                                                    <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Nivel</p>
-                                                                                    <div className="flex flex-col gap-1.5">
-                                                                                        {LEVELS.map(l => (
-                                                                                            <button
-                                                                                                key={l}
-                                                                                                onClick={() => toggleFilter('level', l)}
-                                                                                                className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors text-left ${pickerFilter.level.includes(l) ? 'bg-amber-500 text-white border-amber-600' : 'bg-white text-slate-500 border-slate-200'}`}
-                                                                                            >
-                                                                                                {l}
-                                                                                            </button>
-                                                                                        ))}
-                                                                                    </div>
-                                                                                </div>
-                                                                                <div>
-                                                                                    <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Cualidad</p>
-                                                                                    <div className="flex flex-col gap-1.5">
-                                                                                        {QUALITIES.map(q => (
-                                                                                            <button
-                                                                                                key={q.id}
-                                                                                                onClick={() => toggleFilter('quality', q.id)}
-                                                                                                className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors text-left ${pickerFilter.quality.includes(q.id) ? 'bg-indigo-500 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}
-                                                                                            >
-                                                                                                {q.label}
-                                                                                            </button>
-                                                                                        ))}
-                                                                                    </div>
-                                                                                </div>
-                                                                            </div>
+                                                                        <div className="p-3 space-y-3 max-h-[400px] overflow-y-auto scrollbar-thin">
+                                                                            <FilterDropdown
+                                                                                label="Patrón"
+                                                                                options={PATTERNS}
+                                                                                category="pattern"
+                                                                                selectedValues={pickerFilter.pattern}
+                                                                                onToggle={toggleFilter}
+                                                                            />
+                                                                            <FilterDropdown
+                                                                                label="Equipamiento"
+                                                                                options={EQUIPMENT}
+                                                                                category="equipment"
+                                                                                selectedValues={pickerFilter.equipment}
+                                                                                onToggle={toggleFilter}
+                                                                            />
+                                                                            <FilterDropdown
+                                                                                label="Fuerza"
+                                                                                options={FORCES}
+                                                                                category="force"
+                                                                                selectedValues={pickerFilter.force}
+                                                                                onToggle={toggleFilter}
+                                                                            />
+                                                                            <FilterDropdown
+                                                                                label="Mecánica"
+                                                                                options={MECHANICS}
+                                                                                category="mechanic"
+                                                                                selectedValues={pickerFilter.mechanic}
+                                                                                onToggle={toggleFilter}
+                                                                            />
+                                                                            <FilterDropdown
+                                                                                label="Nivel"
+                                                                                options={LEVELS}
+                                                                                category="level"
+                                                                                selectedValues={pickerFilter.level}
+                                                                                onToggle={toggleFilter}
+                                                                            />
+                                                                            <FilterDropdown
+                                                                                label="Cualidad"
+                                                                                options={QUALITIES}
+                                                                                category="quality"
+                                                                                selectedValues={pickerFilter.quality}
+                                                                                onToggle={toggleFilter}
+                                                                            />
+                                                                            <FilterDropdown
+                                                                                label="Músculo Primario"
+                                                                                options={MUSCLE_GROUPS}
+                                                                                category="primaryMuscle"
+                                                                                selectedValues={pickerFilter.primaryMuscle}
+                                                                                onToggle={toggleFilter}
+                                                                            />
+                                                                            <FilterDropdown
+                                                                                label="Músculos Secundarios"
+                                                                                options={MUSCLE_GROUPS}
+                                                                                category="secondaryMuscles"
+                                                                                selectedValues={pickerFilter.secondaryMuscles}
+                                                                                onToggle={toggleFilter}
+                                                                            />
+                                                                            <button
+                                                                                onClick={() => setPickerFilter({
+                                                                                    pattern: [], equipment: [], level: [], quality: [], group: [],
+                                                                                    force: [], mechanic: [], primaryMuscle: [], secondaryMuscles: []
+                                                                                })}
+                                                                                className="w-full py-2 text-[10px] font-black uppercase text-red-500 hover:bg-red-50 rounded-xl transition-colors"
+                                                                            >
+                                                                                Limpiar Filtros
+                                                                            </button>
                                                                         </div>
                                                                     </motion.div>
                                                                 )}
@@ -3051,49 +3035,76 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                                                     initial={{ height: 0, opacity: 0 }}
                                                     animate={{ height: 'auto', opacity: 1 }}
                                                     exit={{ height: 0, opacity: 0 }}
-                                                    className="overflow-hidden bg-white rounded-xl border border-slate-200 mt-2"
+                                                    className="overflow-hidden bg-white rounded-xl border border-slate-200 mt-2 shadow-lg"
                                                 >
-                                                    <div className="p-3 space-y-4">
-                                                        <div>
-                                                            <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Patrón</p>
-                                                            <div className="flex flex-wrap gap-2">
-                                                                {PATTERNS.map(p => (
-                                                                    <button key={p} onClick={() => toggleFilter('pattern', p)} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${pickerFilter.pattern.includes(p) ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>{p}</button>
-                                                                ))}
-                                                            </div>
+                                                    <div className="p-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 max-h-[60vh] overflow-y-auto scrollbar-thin">
+                                                        <FilterDropdown
+                                                            label="Patrón"
+                                                            options={PATTERNS}
+                                                            category="pattern"
+                                                            selectedValues={pickerFilter.pattern}
+                                                            onToggle={toggleFilter}
+                                                        />
+                                                        <FilterDropdown
+                                                            label="Equipamiento"
+                                                            options={EQUIPMENT}
+                                                            category="equipment"
+                                                            selectedValues={pickerFilter.equipment}
+                                                            onToggle={toggleFilter}
+                                                        />
+                                                        <FilterDropdown
+                                                            label="Fuerza"
+                                                            options={FORCES}
+                                                            category="force"
+                                                            selectedValues={pickerFilter.force}
+                                                            onToggle={toggleFilter}
+                                                        />
+                                                        <FilterDropdown
+                                                            label="Mecánica"
+                                                            options={MECHANICS}
+                                                            category="mechanic"
+                                                            selectedValues={pickerFilter.mechanic}
+                                                            onToggle={toggleFilter}
+                                                        />
+                                                        <FilterDropdown
+                                                            label="Nivel"
+                                                            options={LEVELS}
+                                                            category="level"
+                                                            selectedValues={pickerFilter.level}
+                                                            onToggle={toggleFilter}
+                                                        />
+                                                        <FilterDropdown
+                                                            label="Cualidad"
+                                                            options={QUALITIES}
+                                                            category="quality"
+                                                            selectedValues={pickerFilter.quality}
+                                                            onToggle={toggleFilter}
+                                                        />
+                                                        <FilterDropdown
+                                                            label="Músculo Primario"
+                                                            options={MUSCLE_GROUPS}
+                                                            category="primaryMuscle"
+                                                            selectedValues={pickerFilter.primaryMuscle}
+                                                            onToggle={toggleFilter}
+                                                        />
+                                                        <FilterDropdown
+                                                            label="Músculos Secundarios"
+                                                            options={MUSCLE_GROUPS}
+                                                            category="secondaryMuscles"
+                                                            selectedValues={pickerFilter.secondaryMuscles}
+                                                            onToggle={toggleFilter}
+                                                        />
+                                                        <div className="md:col-span-2 lg:col-span-4 flex justify-end pt-2 border-t border-slate-100">
+                                                            <button
+                                                                onClick={() => setPickerFilter({
+                                                                    pattern: [], equipment: [], level: [], quality: [], group: [],
+                                                                    force: [], mechanic: [], primaryMuscle: [], secondaryMuscles: []
+                                                                })}
+                                                                className="px-4 py-2 text-xs text-red-500 font-black uppercase hover:bg-red-50 rounded-xl transition-colors"
+                                                            >
+                                                                Limpiar Filtros
+                                                            </button>
                                                         </div>
-                                                        <div>
-                                                            <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Equipamiento</p>
-                                                            <div className="flex flex-wrap gap-2">
-                                                                {EQUIPMENT.map(e => (
-                                                                    <button key={e} onClick={() => toggleFilter('equipment', e)} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${pickerFilter.equipment.includes(e) ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>{e}</button>
-                                                                ))}
-                                                            </div>
-                                                        </div>
-                                                        <div className="grid grid-cols-2 gap-4">
-                                                            <div>
-                                                                <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Nivel</p>
-                                                                <div className="flex flex-col gap-2">
-                                                                    {LEVELS.map(l => (
-                                                                        <button key={l} onClick={() => toggleFilter('level', l)} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors text-left ${pickerFilter.level.includes(l) ? 'bg-orange-100 text-orange-700 border-orange-200' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>{l}</button>
-                                                                    ))}
-                                                                </div>
-                                                            </div>
-                                                            <div>
-                                                                <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Cualidad</p>
-                                                                <div className="flex flex-col gap-2">
-                                                                    {QUALITIES.map(q => (
-                                                                        <button key={q.id} onClick={() => toggleFilter('quality', q.id)} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors text-left ${pickerFilter.quality.includes(q.id) ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>{q.label}</button>
-                                                                    ))}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                        <button
-                                                            onClick={() => setPickerFilter({ pattern: [], equipment: [], level: [], quality: [] })}
-                                                            className="w-full py-2 text-xs text-red-500 font-bold hover:bg-red-50 rounded-lg"
-                                                        >
-                                                            Limpiar Filtros
-                                                        </button>
                                                     </div>
                                                 </motion.div>
                                             )}
@@ -3392,6 +3403,13 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                                                                                         actions={[
                                                                                             { label: 'Ver Detalles', icon: <Eye size={16} />, onClick: () => setPreviewingSession(session) },
                                                                                             { label: 'Cargar en Editor', icon: <Download size={16} />, onClick: () => handleLoadSession(session) },
+                                                                                            {
+                                                                                                label: 'Espejar PDP (R/T/E)',
+                                                                                                icon: <Zap size={16} />,
+                                                                                                onClick: () => handleMirrorSession(session),
+                                                                                                disabled: !['PDP-R', 'PDP-T', 'PDP-E', 'LIBRE'].includes(session.type)
+                                                                                            },
+                                                                                            { label: 'Renombrar', icon: <Edit2 size={16} />, onClick: () => handleRenameSession(session) },
                                                                                             { label: 'Mover a Grupo', icon: <Move size={16} />, onClick: () => setMovingSession(session) },
                                                                                             { label: 'Eliminar', icon: <Trash2 size={16} />, onClick: () => handleDeleteSession(session.id), variant: 'danger' }
                                                                                         ]}
@@ -3608,100 +3626,93 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                                                             initial={{ height: 0, opacity: 0 }}
                                                             animate={{ height: 'auto', opacity: 1 }}
                                                             exit={{ height: 0, opacity: 0 }}
-                                                            className="overflow-hidden bg-slate-50 rounded-xl border border-slate-200 mt-2"
+                                                            className="overflow-hidden bg-slate-50 rounded-xl border border-slate-200 mt-2 shadow-lg"
                                                         >
-                                                            <div className="p-3 space-y-4">
-                                                                <div>
-                                                                    <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Patrón de Movimiento</p>
-                                                                    <div className="flex flex-wrap gap-2">
-                                                                        {PATTERNS.map(p => (
-                                                                            <button
-                                                                                key={p}
-                                                                                onClick={() => toggleFilter('pattern', p)}
-                                                                                className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${pickerFilter.pattern.includes(p)
-                                                                                    ? 'bg-blue-100 text-blue-700 border-blue-200'
-                                                                                    : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
-                                                                                    }`}
-                                                                            >
-                                                                                {p}
-                                                                            </button>
-                                                                        ))}
-                                                                    </div>
-                                                                </div>
-                                                                <div>
-                                                                    <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Equipamiento</p>
-                                                                    <div className="flex flex-wrap gap-2">
-                                                                        {EQUIPMENT.map(e => (
-                                                                            <button
-                                                                                key={e}
-                                                                                onClick={() => toggleFilter('equipment', e)}
-                                                                                className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${pickerFilter.equipment.includes(e)
-                                                                                    ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
-                                                                                    : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
-                                                                                    }`}
-                                                                            >
-                                                                                {e}
-                                                                            </button>
-                                                                        ))}
-                                                                    </div>
-                                                                </div>
-                                                                <div>
-                                                                    <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Dificultad (Nivel)</p>
-                                                                    <div className="flex flex-wrap gap-2">
-                                                                        {LEVELS.map(l => (
-                                                                            <button
-                                                                                key={l}
-                                                                                onClick={() => toggleFilter('level', l)}
-                                                                                className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${pickerFilter.level.includes(l)
-                                                                                    ? 'bg-purple-100 text-purple-700 border-purple-200'
-                                                                                    : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
-                                                                                    }`}
-                                                                            >
-                                                                                {l}
-                                                                            </button>
-                                                                        ))}
-                                                                    </div>
-                                                                </div>
-                                                                <div>
-                                                                    <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Cualidad</p>
-                                                                    <div className="flex flex-wrap gap-2">
-                                                                        {QUALITIES.map(q => (
-                                                                            <button
-                                                                                key={q.id}
-                                                                                onClick={() => toggleFilter('quality', q.id)}
-                                                                                className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${pickerFilter.quality.includes(q.id)
-                                                                                    ? 'bg-orange-100 text-orange-700 border-orange-200'
-                                                                                    : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
-                                                                                    }`}
-                                                                            >
-                                                                                {q.label}
-                                                                            </button>
-                                                                        ))}
-                                                                    </div>
-                                                                </div>
-                                                                <div>
-                                                                    <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Grupo / Carpeta</p>
-                                                                    <div className="flex flex-wrap gap-2">
-                                                                        {[{ id: 'none', name: 'Sin agrupar' }, ...exerciseGroups].map(g => (
-                                                                            <button
-                                                                                key={g.id}
-                                                                                onClick={() => toggleFilter('group', g.name)}
-                                                                                className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${pickerFilter.group.includes(g.name)
-                                                                                    ? 'bg-slate-900 text-white border-slate-900'
-                                                                                    : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
-                                                                                    }`}
-                                                                            >
-                                                                                {g.name}
-                                                                            </button>
-                                                                        ))}
-                                                                    </div>
-                                                                </div>
+                                                            <div className="p-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                                <FilterDropdown
+                                                                    label="Patrón"
+                                                                    options={PATTERNS}
+                                                                    category="pattern"
+                                                                    selectedValues={pickerFilter.pattern}
+                                                                    onToggle={toggleFilter}
+                                                                />
+                                                                <FilterDropdown
+                                                                    label="Equipamiento"
+                                                                    options={EQUIPMENT}
+                                                                    category="equipment"
+                                                                    selectedValues={pickerFilter.equipment}
+                                                                    onToggle={toggleFilter}
+                                                                />
+                                                                <FilterDropdown
+                                                                    label="Fuerza"
+                                                                    options={FORCES}
+                                                                    category="force"
+                                                                    selectedValues={pickerFilter.force}
+                                                                    onToggle={toggleFilter}
+                                                                />
+                                                                <FilterDropdown
+                                                                    label="Mecánica"
+                                                                    options={MECHANICS}
+                                                                    category="mechanic"
+                                                                    selectedValues={pickerFilter.mechanic}
+                                                                    onToggle={toggleFilter}
+                                                                />
+                                                                <FilterDropdown
+                                                                    label="Nivel"
+                                                                    options={LEVELS}
+                                                                    category="level"
+                                                                    selectedValues={pickerFilter.level}
+                                                                    onToggle={toggleFilter}
+                                                                />
+                                                                <FilterDropdown
+                                                                    label="Cualidad"
+                                                                    options={QUALITIES}
+                                                                    category="quality"
+                                                                    selectedValues={pickerFilter.quality}
+                                                                    onToggle={toggleFilter}
+                                                                />
+                                                                <FilterDropdown
+                                                                    label="Músculo Primario"
+                                                                    options={MUSCLE_GROUPS}
+                                                                    category="primaryMuscle"
+                                                                    selectedValues={pickerFilter.primaryMuscle}
+                                                                    onToggle={toggleFilter}
+                                                                />
+                                                                <FilterDropdown
+                                                                    label="Músculos Secundarios"
+                                                                    options={MUSCLE_GROUPS}
+                                                                    category="secondaryMuscles"
+                                                                    selectedValues={pickerFilter.secondaryMuscles}
+                                                                    onToggle={toggleFilter}
+                                                                />
+                                                                <FilterDropdown
+                                                                    label="Grupo / Carpeta"
+                                                                    options={[{ id: 'none', label: 'Sin agrupar' }, ...exerciseGroups.map(g => ({ id: g.name, label: g.name }))]}
+                                                                    category="group"
+                                                                    selectedValues={pickerFilter.group}
+                                                                    onToggle={toggleFilter}
+                                                                />
                                                                 <button
-                                                                    onClick={() => setPickerFilter({ pattern: [], equipment: [], level: [], quality: [], group: [] })}
-                                                                    className="w-full py-2 text-xs text-red-500 font-bold hover:bg-red-50 rounded-lg"
+                                                                    onClick={() => setPickerFilter(prev => ({ ...prev, isWarmup: !prev.isWarmup }))}
+                                                                    className={`px-4 py-2.5 rounded-xl border text-[10px] font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${pickerFilter.isWarmup
+                                                                        ? 'bg-orange-500 border-orange-500 text-white shadow-md'
+                                                                        : 'bg-slate-50 border-slate-200 text-slate-400 hover:border-slate-300'
+                                                                        }`}
                                                                 >
-                                                                    Limpiar Filtros
+                                                                    <span>🔥 Sólo Calentamiento</span>
                                                                 </button>
+                                                                <div className="md:col-span-2 flex justify-end pt-2 border-t border-slate-100">
+                                                                    <button
+                                                                        onClick={() => setPickerFilter({
+                                                                            pattern: [], equipment: [], level: [], quality: [], group: [],
+                                                                            force: [], mechanic: [], primaryMuscle: [], secondaryMuscles: [],
+                                                                            isWarmup: false
+                                                                        })}
+                                                                        className="px-4 py-2 text-xs text-red-500 font-black uppercase hover:bg-red-50 rounded-xl transition-colors"
+                                                                    >
+                                                                        Limpiar Filtros
+                                                                    </button>
+                                                                </div>
                                                             </div>
                                                         </motion.div>
                                                     )}
@@ -3984,13 +3995,28 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                                                 </div>
                                                 <div className="space-y-1">
                                                     <label className="text-[10px] font-bold uppercase text-slate-400 px-1">Equipamiento</label>
-                                                    <select
-                                                        value={creationData.equipment}
-                                                        onChange={e => setCreationData({ ...creationData, equipment: e.target.value })}
-                                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-semibold outline-none cursor-pointer"
-                                                    >
-                                                        {EQUIPMENT.map(e => <option key={e} value={e}>{e}</option>)}
-                                                    </select>
+                                                    <div className="flex flex-wrap gap-1 p-2 bg-slate-50 border border-slate-200 rounded-xl min-h-[60px]">
+                                                        {EQUIPMENT.map(e => {
+                                                            const isSelected = (creationData.equipment || []).includes(e);
+                                                            return (
+                                                                <button
+                                                                    key={e}
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        const current = creationData.equipment || [];
+                                                                        const updated = isSelected ? current.filter(x => x !== e) : [...current, e];
+                                                                        setCreationData({ ...creationData, equipment: updated });
+                                                                    }}
+                                                                    className={`px-2 py-0.5 rounded-lg text-[9px] font-bold transition-all border ${isSelected
+                                                                        ? 'bg-slate-900 border-slate-900 text-white'
+                                                                        : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                                                                        }`}
+                                                                >
+                                                                    {e}
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
                                                 </div>
                                             </div>
 
@@ -4020,6 +4046,59 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                                                 </div>
                                             </div>
 
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div className="space-y-1">
+                                                    <label className="text-[10px] font-bold uppercase text-slate-400 px-1">Músculo Primario</label>
+                                                    <div className="flex flex-wrap gap-1 p-2 bg-slate-50 border border-slate-200 rounded-xl min-h-[60px]">
+                                                        {MUSCLE_GROUPS.map(m => {
+                                                            const isSelected = creationData.primaryMuscle === m;
+                                                            return (
+                                                                <button
+                                                                    key={m}
+                                                                    type="button"
+                                                                    onClick={() => setCreationData({ ...creationData, primaryMuscle: isSelected ? '' : m })}
+                                                                    className={`px-2 py-0.5 rounded-lg text-[9px] font-bold transition-all border ${isSelected
+                                                                        ? 'bg-slate-900 border-slate-900 text-white'
+                                                                        : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                                                                        }`}
+                                                                >
+                                                                    {m}
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-[10px] font-bold uppercase text-slate-400 px-1">Músculos Secundarios</label>
+                                                    <div className="flex flex-wrap gap-1 p-2 bg-slate-50 border border-slate-200 rounded-xl min-h-[60px]">
+                                                        {MUSCLE_GROUPS.map(m => {
+                                                            const isSelected = (creationData.secondaryMuscles || []).includes(m);
+                                                            const isPrimary = m === creationData.primaryMuscle;
+                                                            return (
+                                                                <button
+                                                                    key={m}
+                                                                    type="button"
+                                                                    disabled={isPrimary}
+                                                                    onClick={() => {
+                                                                        const current = creationData.secondaryMuscles || [];
+                                                                        const updated = isSelected ? current.filter(x => x !== m) : [...current, m];
+                                                                        setCreationData({ ...creationData, secondaryMuscles: updated });
+                                                                    }}
+                                                                    className={`px-2 py-0.5 rounded-lg text-[9px] font-bold transition-all border ${isSelected
+                                                                        ? 'bg-slate-900 border-slate-900 text-white'
+                                                                        : isPrimary
+                                                                            ? 'bg-slate-100 border-slate-100 text-slate-300 cursor-not-allowed'
+                                                                            : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                                                                        }`}
+                                                                >
+                                                                    {m}
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            </div>
+
                                             <div className="space-y-1">
                                                 <label className="text-[10px] font-bold uppercase text-slate-400 px-1">Cualidad</label>
                                                 <select
@@ -4031,15 +4110,26 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                                                 </select>
                                             </div>
 
-                                            {/* Minimal External Weight Toggle */}
-                                            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
-                                                <label className="text-xs font-bold text-slate-700">⚖️ Ejercicio con carga externa</label>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={creationData.loadable || false}
-                                                    onChange={e => setCreationData({ ...creationData, loadable: e.target.checked })}
-                                                    className="w-5 h-5 accent-blue-600 rounded cursor-pointer"
-                                                />
+                                            {/* Warmup & External Weight Toggles */}
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                                                    <label className="text-[10px] font-bold text-slate-700">⚖️ Peso Externo</label>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={creationData.loadable || false}
+                                                        onChange={e => setCreationData({ ...creationData, loadable: e.target.checked })}
+                                                        className="w-4 h-4 accent-blue-600 rounded cursor-pointer"
+                                                    />
+                                                </div>
+                                                <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                                                    <label className="text-[10px] font-bold text-slate-700">🔥 Calentamiento</label>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={creationData.isWarmup || false}
+                                                        onChange={e => setCreationData({ ...creationData, isWarmup: e.target.checked })}
+                                                        className="w-4 h-4 accent-orange-500 rounded cursor-pointer"
+                                                    />
+                                                </div>
                                             </div>
 
                                             {/* Media */}
@@ -4070,6 +4160,12 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                                             <div className="space-y-1">
                                                 <label className="text-[10px] font-bold uppercase text-slate-400 px-1">YouTube / Notas</label>
                                                 <div className="space-y-2">
+                                                    <input
+                                                        value={creationData.tags.join(', ')}
+                                                        onChange={e => setCreationData({ ...creationData, tags: e.target.value.split(',').map(t => t.trim()).filter(Boolean) })}
+                                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-xs font-medium outline-none"
+                                                        placeholder="Etiquetas (biceps, etc)..."
+                                                    />
                                                     <input
                                                         value={creationData.youtubeUrl}
                                                         onChange={e => setCreationData({ ...creationData, youtubeUrl: e.target.value })}
@@ -4225,6 +4321,111 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                 isOpen={!!previewingSession}
                 onClose={() => setPreviewingSession(null)}
             />
+            {/* Evolution Assistant Modal */}
+            <AnimatePresence>
+                {evolutionModalOpen && (
+                    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.9, opacity: 0 }}
+                            className="bg-white rounded-[2.5rem] shadow-2xl max-w-2xl w-full max-h-[80vh] flex flex-col overflow-hidden border border-slate-100"
+                        >
+                            <div className="p-8 border-b border-slate-50 flex justify-between items-center">
+                                <div>
+                                    <h3 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-3">
+                                        <TrendingUp className="text-amber-500" />
+                                        Asistente de Evolución
+                                    </h3>
+                                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mt-1">Sugerencias de sobrecarga basada en patrones</p>
+                                </div>
+                                <button onClick={() => setEvolutionModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 transition-colors">
+                                    <X size={24} />
+                                </button>
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto p-8 space-y-8 scrollbar-thin">
+                                {evolutionData.map((item, idx) => (
+                                    <div key={idx} className="space-y-4">
+                                        <div className="flex items-center gap-3 py-2 border-b border-slate-50">
+                                            <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest bg-indigo-50 px-3 py-1 rounded-full">Actual</span>
+                                            <span className="font-bold text-slate-700">{item.original.name}</span>
+                                            <ArrowRightLeft size={14} className="text-slate-300" />
+                                        </div>
+
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                            {item.variants.slice(0, 4).map((variant, vIdx) => {
+                                                const levelOrder = ['Principiante', 'Intermedio', 'Avanzado', 'Elite'];
+                                                const curLevel = variant.normalizedLevel || 'Intermedio';
+                                                const varIdx = levelOrder.indexOf(curLevel) !== -1 ? levelOrder.indexOf(curLevel) : 1;
+                                                const curIdx = levelOrder.indexOf(item.original.normalizedLevel || item.original.level) !== -1
+                                                    ? levelOrder.indexOf(item.original.normalizedLevel || item.original.level)
+                                                    : 1;
+
+                                                let typeLabel = "Variante";
+                                                let typeColor = "text-blue-500 bg-blue-50";
+                                                if (varIdx > curIdx) {
+                                                    typeLabel = "Progresión";
+                                                    typeColor = "text-emerald-600 bg-emerald-50";
+                                                } else if (varIdx < curIdx) {
+                                                    typeLabel = "Regresión";
+                                                    typeColor = "text-orange-600 bg-orange-50";
+                                                }
+
+                                                return (
+                                                    <div
+                                                        key={vIdx}
+                                                        onClick={() => applyEvolution(item, variant)}
+                                                        className="group cursor-pointer bg-slate-50 hover:bg-white p-4 rounded-3xl border-2 border-transparent hover:border-amber-400 hover:shadow-xl transition-all flex items-center gap-4"
+                                                    >
+                                                        <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center overflow-hidden border border-slate-100 shrink-0">
+                                                            {variant.mediaUrl ? (
+                                                                <img src={variant.mediaUrl} alt="" className="w-full h-full object-cover" />
+                                                            ) : (
+                                                                <Activity size={20} className="text-slate-300" />
+                                                            )}
+                                                        </div>
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="flex items-center gap-2 mb-0.5">
+                                                                <p className="text-xs font-black text-slate-900 truncate group-hover:text-amber-600 transition-colors">{variant.name}</p>
+                                                            </div>
+                                                            <div className="flex flex-wrap gap-1 items-center">
+                                                                <span className={`text-[8px] font-black uppercase tracking-tighter px-1.5 py-0.5 rounded-md ${typeColor}`}>
+                                                                    {typeLabel}
+                                                                </span>
+                                                                <span className="text-[8px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-md uppercase">
+                                                                    {curLevel}
+                                                                </span>
+                                                                {(variant.group === 'Mios' || (variant.tags || []).includes('Mios')) && (
+                                                                    <span className="text-[8px] font-black text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-md uppercase border border-amber-100">
+                                                                        Curado
+                                                                    </span>
+                                                                )}
+                                                                <span className="text-[8px] font-bold text-slate-400 truncate max-w-[80px]">
+                                                                    • {variant.equipment || 'Ninguno'}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end">
+                                <button
+                                    onClick={() => setEvolutionModalOpen(false)}
+                                    className="px-8 py-3 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-800 transition-all shadow-xl shadow-slate-900/20"
+                                >
+                                    Cerrar Asistente
+                                </button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
         </>
     );
 };

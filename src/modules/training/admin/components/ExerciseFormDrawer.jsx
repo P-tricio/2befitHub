@@ -6,7 +6,7 @@ import { ExerciseAPI } from '../../services/exerciseApi';
 // Removed direct useUnsavedChanges to avoid blocker conflicts
 // import { useUnsavedChanges } from '../../../../hooks/useUnsavedChanges';
 
-import { PATTERNS, LEVELS, EQUIPMENT, QUALITIES } from '../constants';
+import { PATTERNS, LEVELS, EQUIPMENT, QUALITIES, MUSCLE_GROUPS } from '../constants';
 
 const DEFAULT_FORM_DATA = {
     name: '',
@@ -21,7 +21,10 @@ const DEFAULT_FORM_DATA = {
     youtubeUrl: '',
     description: '',
     tags: [],
-    loadable: false
+    primaryMuscle: '',
+    secondaryMuscles: [],
+    loadable: false,
+    isWarmup: false
 };
 
 /**
@@ -44,6 +47,7 @@ const ExerciseFormDrawer = ({
 }) => {
     const [formData, setFormData] = useState(DEFAULT_FORM_DATA);
     const [isSaving, setIsSaving] = useState(false);
+    const [tagInput, setTagInput] = useState('');
 
 
     // Track dirty state
@@ -66,10 +70,14 @@ const ExerciseFormDrawer = ({
                 youtubeUrl: exercise.youtubeUrl || '',
                 description: exercise.description || '',
                 tags: exercise.tags || [],
-                loadable: exercise.loadable || false
+                primaryMuscle: exercise.primaryMuscle || '',
+                secondaryMuscles: exercise.secondaryMuscles || [],
+                loadable: exercise.loadable || false,
+                isWarmup: exercise.isWarmup || false
             } : DEFAULT_FORM_DATA;
 
             setFormData(startData);
+            setTagInput((startData.tags || []).join(', '));
             setInitialState(JSON.stringify(startData));
             setIsDirty(false);
         }
@@ -201,13 +209,82 @@ const ExerciseFormDrawer = ({
                                     </div>
                                     <div className="space-y-1">
                                         <label className="text-[10px] font-bold uppercase text-slate-400 px-1">Equipamiento</label>
-                                        <select
-                                            value={formData.equipment}
-                                            onChange={e => setFormData({ ...formData, equipment: e.target.value })}
-                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-semibold outline-none cursor-pointer"
-                                        >
-                                            {EQUIPMENT.map(eq => <option key={eq} value={eq}>{eq}</option>)}
-                                        </select>
+                                        <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 border border-slate-200 rounded-xl min-h-[100px]">
+                                            {EQUIPMENT.map(eq => {
+                                                const isSelected = (formData.equipment || []).includes(eq);
+                                                return (
+                                                    <button
+                                                        key={eq}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            const current = formData.equipment || [];
+                                                            const updated = isSelected ? current.filter(e => e !== eq) : [...current, eq];
+                                                            setFormData({ ...formData, equipment: updated });
+                                                        }}
+                                                        className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all border ${isSelected
+                                                            ? 'bg-slate-900 border-slate-900 text-white shadow-sm'
+                                                            : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                                                            }`}
+                                                    >
+                                                        {eq}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Muscle Targets (Grid) */}
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-bold uppercase text-slate-400 px-1">Músculo Primario</label>
+                                        <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 border border-slate-200 rounded-xl min-h-[100px]">
+                                            {MUSCLE_GROUPS.map(m => {
+                                                const isSelected = formData.primaryMuscle === m;
+                                                return (
+                                                    <button
+                                                        key={m}
+                                                        type="button"
+                                                        onClick={() => setFormData({ ...formData, primaryMuscle: isSelected ? '' : m })}
+                                                        className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all border ${isSelected
+                                                            ? 'bg-slate-900 border-slate-900 text-white shadow-sm'
+                                                            : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                                                            }`}
+                                                    >
+                                                        {m}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-bold uppercase text-slate-400 px-1">Músculos Secundarios</label>
+                                        <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 border border-slate-200 rounded-xl min-h-[100px]">
+                                            {MUSCLE_GROUPS.map(m => {
+                                                const isSelected = (formData.secondaryMuscles || []).includes(m);
+                                                const isPrimary = m === formData.primaryMuscle;
+                                                return (
+                                                    <button
+                                                        key={m}
+                                                        type="button"
+                                                        disabled={isPrimary}
+                                                        onClick={() => {
+                                                            const current = formData.secondaryMuscles || [];
+                                                            const updated = isSelected ? current.filter(x => x !== m) : [...current, m];
+                                                            setFormData({ ...formData, secondaryMuscles: updated });
+                                                        }}
+                                                        className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all border ${isSelected
+                                                            ? 'bg-slate-900 border-slate-900 text-white shadow-sm'
+                                                            : isPrimary
+                                                                ? 'bg-slate-100 border-slate-100 text-slate-300 cursor-not-allowed'
+                                                                : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                                                            }`}
+                                                    >
+                                                        {m}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
                                 </div>
 
@@ -247,6 +324,20 @@ const ExerciseFormDrawer = ({
                                         checked={formData.loadable || false}
                                         onChange={e => setFormData({ ...formData, loadable: e.target.checked })}
                                         className="w-5 h-5 accent-blue-600 rounded cursor-pointer"
+                                    />
+                                </div>
+
+                                {/* Warmup/Cooldown Toggle */}
+                                <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100">
+                                    <div className="flex flex-col gap-0.5">
+                                        <label className="text-xs font-bold text-slate-700">🔥 Calentamiento / Enfriamiento</label>
+                                        <span className="text-[10px] text-slate-400 font-medium">Marca este ejercicio como preparatorio o vuelta a la calma.</span>
+                                    </div>
+                                    <input
+                                        type="checkbox"
+                                        checked={formData.isWarmup || false}
+                                        onChange={e => setFormData({ ...formData, isWarmup: e.target.checked })}
+                                        className="w-5 h-5 accent-orange-500 rounded cursor-pointer"
                                     />
                                 </div>
 
@@ -317,8 +408,15 @@ const ExerciseFormDrawer = ({
                                         <label className="text-[10px] font-bold uppercase text-slate-400 px-1">Etiquetas (Tags)</label>
                                         <input
                                             type="text"
-                                            value={(formData.tags || []).join(', ')}
-                                            onChange={e => setFormData({ ...formData, tags: e.target.value.split(',').map(t => t.trim()).filter(Boolean) })}
+                                            value={tagInput}
+                                            onChange={e => {
+                                                const val = e.target.value;
+                                                setTagInput(val);
+                                                // Sync with formData but only filter empty ones on save or debounced?
+                                                // Let's keep it simple: sync on change but handle the comma gracefully
+                                                const tagArray = val.split(',').map(t => t.trim()).filter(Boolean);
+                                                setFormData(prev => ({ ...prev, tags: tagArray }));
+                                            }}
                                             className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-medium outline-none"
                                             placeholder="Ej: bíceps, secundario"
                                         />

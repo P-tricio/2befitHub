@@ -80,7 +80,11 @@ export const ExerciseAPI = {
             });
 
         } catch (error) {
-            console.error('Failed to load private catalog from Firestore:', error);
+            if (error.code === 'permission-denied') {
+                console.warn('[ExerciseAPI] Access denied to private catalog. This is normal for non-admin accounts.');
+            } else {
+                console.error('Failed to load private catalog from Firestore:', error);
+            }
             return [];
         }
     },

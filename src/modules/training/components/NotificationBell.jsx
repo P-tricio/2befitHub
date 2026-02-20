@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, X, Check, Inbox, BellOff, Activity, Dumbbell, BarChart3, Notebook, SquareCheck, AlertCircle, UserPlus, Sparkles } from 'lucide-react';
+import { Bell, X, Check, Inbox, BellOff, Activity, Dumbbell, Footprints, BarChart3, Notebook, SquareCheck, AlertCircle, UserPlus, Sparkles } from 'lucide-react';
 import { TrainingDB } from '../services/db';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { ensureDate } from '../../../lib/dateUtils';
 
 const NotificationBell = ({ recipientId, onNotificationClick }) => {
     const [notifications, setNotifications] = useState([]);
@@ -85,7 +86,7 @@ const NotificationBell = ({ recipientId, onNotificationClick }) => {
                         initial={{ opacity: 0, y: 10, scale: 0.95 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                        className="absolute right-0 mt-3 w-80 md:w-96 bg-white rounded-[2rem] shadow-2xl border border-slate-100 overflow-hidden z-[100]"
+                        className="absolute right-[-40px] md:right-0 mt-3 w-[calc(100vw-32px)] md:w-96 bg-white rounded-[2rem] shadow-2xl border border-slate-100 overflow-hidden z-[100] origin-top-right"
                     >
                         <div className="p-5 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
                             <div>
@@ -123,15 +124,20 @@ const NotificationBell = ({ recipientId, onNotificationClick }) => {
                                             )}
 
                                             {(() => {
-                                                const actualType = noti.type === 'task_completion' ? (noti.data?.type || 'session') : noti.type;
+                                                const actualType = noti.data?.type || noti.type || 'session';
                                                 const getStyle = (type, priority) => {
+                                                    const t = type?.toLowerCase();
                                                     if (priority === 'high') return { bg: 'bg-orange-50', text: 'text-orange-500', icon: <AlertCircle size={18} /> };
-                                                    switch (type) {
+                                                    switch (t) {
+                                                        case 'neat':
+                                                        case 'activity':
+                                                        case 'movimiento':
+                                                            return { bg: 'bg-emerald-50', text: 'text-emerald-500', icon: <Footprints size={18} /> };
                                                         case 'session':
                                                         case 'free_training':
-                                                        case 'neat':
                                                         case 'assignment':
                                                         case 'task_completion':
+                                                        case 'training':
                                                             return { bg: 'bg-emerald-50', text: 'text-emerald-500', icon: <Dumbbell size={18} /> };
                                                         case 'tracking':
                                                         case 'checkin':
@@ -162,7 +168,7 @@ const NotificationBell = ({ recipientId, onNotificationClick }) => {
                                                         {noti.title}
                                                     </p>
                                                     <span className="text-[8px] font-bold text-slate-300 uppercase shrink-0">
-                                                        {formatDistanceToNow(noti.createdAt, { addSuffix: false, locale: es })}
+                                                        {formatDistanceToNow(ensureDate(noti.createdAt), { addSuffix: false, locale: es })}
                                                     </span>
                                                 </div>
                                                 <p className="text-[11px] text-slate-500 mt-1 line-clamp-2 leading-relaxed">

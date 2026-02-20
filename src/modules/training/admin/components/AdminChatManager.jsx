@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
-import { X, Search, MessageCircle, Send, User as UserIcon, Check, ChevronLeft, ArrowRight, ChevronDown, ShieldCheck } from 'lucide-react';
+import { X, Search, MessageCircle, Send, User as UserIcon, Check, ChevronLeft, ArrowRight, ChevronDown, ShieldCheck, Paperclip, Mic, FileText, Download } from 'lucide-react';
 import { TrainingDB } from '../../services/db';
 import { useAuth } from '../../../../context/AuthContext';
 import { onSnapshot, collection, query, orderBy, where } from 'firebase/firestore';
 import { db } from '../../../../lib/firebase';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { ensureDate } from '../../../../lib/dateUtils';
+import { uploadFile } from '../../services/storageService';
+import AudioRecorder from '../../components/AudioRecorder';
 
 const AdminChatManager = ({ isOpen, onClose, onUserClick }) => {
     const { currentUser } = useAuth();
@@ -17,7 +20,10 @@ const AdminChatManager = ({ isOpen, onClose, onUserClick }) => {
     const [messages, setMessages] = useState([]);
     const [inputText, setInputText] = useState('');
     const [loading, setLoading] = useState(true);
+    const [isUploading, setIsUploading] = useState(false);
+    const [showAudioRecorder, setShowAudioRecorder] = useState(false);
     const scrollRef = useRef(null);
+    const fileInputRef = useRef(null);
     const dragControls = useDragControls();
 
     // Fetch Users
@@ -91,19 +97,63 @@ const AdminChatManager = ({ isOpen, onClose, onUserClick }) => {
         }
     }, [messages]);
 
-    const handleSend = async (e) => {
-        e.preventDefault();
-        if (!inputText.trim() || !selectedUser) return;
+    const handleSend = async (e, forcedText = null, attachment = null) => {
+        if (e) e.preventDefault();
+        const text = forcedText !== null ? forcedText : inputText.trim();
+        if ((!text && !attachment) || !selectedUser) return;
 
-        const text = inputText.trim();
-        setInputText('');
+        if (forcedText === null) setInputText('');
 
         try {
-            await TrainingDB.messages.send(selectedUser.id, currentUser.uid, text);
+            await TrainingDB.messages.send(selectedUser.id, currentUser.uid, text, attachment);
         } catch (error) {
             console.error("Error sending message:", error);
         }
     };
+
+    const handleFileSelect = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file || !selectedUser) return;
+
+        setIsUploading(true);
+        try {
+            let type = 'file';
+            if (file.type.startsWith('image/')) type = 'image';
+            else if (file.type.startsWith('video/')) type = 'video';
+
+            const url = await uploadFile(file, 'messages');
+
+            await handleSend(null, '', {
+                url,
+                type,
+                name: file.name,
+                size: file.size
+            });
+        } catch (error) {
+            console.error("Error uploading file:", error);
+            alert(error.message || "Error al subir el archivo.");
+        }
+        setIsUploading(false);
+    };
+
+    const handleAudioComplete = async (blob) => {
+        if (!selectedUser) return;
+        setIsUploading(true);
+        try {
+            const url = await uploadFile(blob, 'messages');
+            await handleSend(null, '', {
+                url,
+                type: 'audio',
+                name: 'audio_message.webm'
+            });
+            setShowAudioRecorder(false);
+        } catch (error) {
+            console.error("Error uploading audio:", error);
+            alert("Error al subir el audio.");
+        }
+        setIsUploading(false);
+    };
+
 
     const handleClose = () => {
         setSelectedUser(null);
@@ -220,7 +270,7 @@ const AdminChatManager = ({ isOpen, onClose, onUserClick }) => {
                                                             {user.displayName || 'Atleta'}
                                                         </h3>
                                                         <span className={`text-[9px] font-bold shrink-0 ${isActive ? 'text-slate-500' : 'text-slate-400'}`}>
-                                                            {user.lastMessageAt ? formatDistanceToNow(user.lastMessageAt.toDate(), { addSuffix: false, locale: es }).replace('alrededor de ', '') : ''}
+                                                            {user.lastMessageAt ? formatDistanceToNow(ensureDate(user.lastMessageAt), { addSuffix: false, locale: es }).replace('alrededor de ', '') : ''}
                                                         </span>
                                                     </div>
                                                     <p className={`text-xs truncate font-medium ${hasUnread && !isActive ? 'text-slate-900 font-bold' : isActive ? 'text-slate-400' : 'text-slate-500'}`}>
@@ -298,8 +348,10 @@ const AdminChatManager = ({ isOpen, onClose, onUserClick }) => {
                                                         );
                                                     })()}
                                                 </div>
+
                                             </div>
                                         </div>
+
 
                                         {/* Desktop Close */}
                                         <button
@@ -335,11 +387,56 @@ const AdminChatManager = ({ isOpen, onClose, onUserClick }) => {
                                                                 ? 'bg-slate-900 text-white rounded-tr-md shadow-slate-900/5'
                                                                 : 'bg-white text-slate-700 border border-slate-100 rounded-tl-md'
                                                                 }`}>
-                                                                {msg.text}
+                                                                {msg.text && <p>{msg.text}</p>}
+
+                                                                {msg.attachment && (
+                                                                    <div className={`mt-2 ${msg.text ? 'pt-2 border-t border-white/10' : ''}`}>
+                                                                        {msg.attachment.type === 'image' && (
+                                                                            <img
+                                                                                src={msg.attachment.url}
+                                                                                alt="Adjunto"
+                                                                                className="max-w-full h-auto rounded-lg cursor-pointer"
+                                                                                onClick={() => window.open(msg.attachment.url, '_blank')}
+                                                                            />
+                                                                        )}
+
+                                                                        {msg.attachment.type === 'audio' && (
+                                                                            <div className="flex items-center gap-3 py-1">
+                                                                                <audio controls className="h-8 max-w-[200px]">
+                                                                                    <source src={msg.attachment.url} type="audio/webm" />
+                                                                                </audio>
+                                                                            </div>
+                                                                        )}
+
+                                                                        {msg.attachment.type === 'video' && (
+                                                                            <div className="relative">
+                                                                                <video
+                                                                                    src={msg.attachment.url}
+                                                                                    controls
+                                                                                    className="max-w-full h-auto rounded-lg shadow-inner"
+                                                                                />
+                                                                            </div>
+                                                                        )}
+
+                                                                        {msg.attachment.type === 'file' && (
+                                                                            <a
+                                                                                href={msg.attachment.url}
+                                                                                target="_blank"
+                                                                                rel="noopener noreferrer"
+                                                                                className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors"
+                                                                            >
+                                                                                <FileText size={16} className="text-slate-400" />
+                                                                                <span className="text-xs truncate max-w-[150px] text-slate-600 font-bold">{msg.attachment.name}</span>
+                                                                                <Download size={14} className="ml-auto opacity-50 text-slate-400" />
+                                                                            </a>
+                                                                        )}
+                                                                    </div>
+                                                                )}
                                                             </div>
+
                                                             <div className={`flex items-center gap-1.5 px-1 opacity-60 ${isMe ? 'justify-end' : 'justify-start'}`}>
                                                                 <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
-                                                                    {msg.timestamp ? new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit' }).format(msg.timestamp) : ''}
+                                                                    {msg.timestamp ? new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit' }).format(ensureDate(msg.timestamp)) : ''}
                                                                 </span>
                                                                 {isMe && msg.read && <span className="text-[9px] font-bold text-emerald-500 flex items-center gap-0.5"><Check size={10} strokeWidth={4} /> LEÍDO</span>}
                                                             </div>
@@ -350,25 +447,60 @@ const AdminChatManager = ({ isOpen, onClose, onUserClick }) => {
                                         )}
                                     </div>
 
-                                    {/* Input */}
                                     <div className="p-4 bg-white border-t border-slate-100 shrink-0">
-                                        <form onSubmit={handleSend} className="relative flex items-center gap-2">
-                                            <input
-                                                type="text"
-                                                value={inputText}
-                                                onChange={(e) => setInputText(e.target.value)}
-                                                placeholder="Escribe un mensaje..."
-                                                className="flex-1 bg-slate-50 border-none rounded-2xl py-3.5 pl-5 pr-12 text-sm font-medium focus:ring-2 focus:ring-slate-900/10 outline-none transition-all placeholder:text-slate-300"
+                                        {showAudioRecorder ? (
+                                            <AudioRecorder
+                                                onRecordingComplete={handleAudioComplete}
+                                                onCancel={() => setShowAudioRecorder(false)}
                                             />
-                                            <button
-                                                type="submit"
-                                                disabled={!inputText.trim()}
-                                                className="absolute right-1.5 p-2 bg-slate-900 text-white rounded-xl shadow-md shadow-slate-900/20 active:scale-95 transition-all disabled:opacity-50 disabled:shadow-none hover:bg-emerald-500 hover:shadow-emerald-500/20"
-                                            >
-                                                <Send size={18} />
-                                            </button>
-                                        </form>
+                                        ) : (
+                                            <form onSubmit={handleSend} className="relative flex items-center gap-2">
+                                                <input
+                                                    type="file"
+                                                    ref={fileInputRef}
+                                                    onChange={handleFileSelect}
+                                                    className="hidden"
+                                                />
+
+                                                <button
+                                                    type="button"
+                                                    onClick={() => fileInputRef.current?.click()}
+                                                    disabled={isUploading}
+                                                    className="p-2 text-slate-400 hover:text-slate-900 hover:bg-slate-50 rounded-xl transition-all shrink-0"
+                                                >
+                                                    <Paperclip size={20} />
+                                                </button>
+
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowAudioRecorder(true)}
+                                                    disabled={isUploading}
+                                                    className="p-2 text-slate-400 hover:text-slate-900 hover:bg-slate-50 rounded-xl transition-all shrink-0"
+                                                >
+                                                    <Mic size={20} />
+                                                </button>
+
+                                                <div className="relative flex-1 flex items-center">
+                                                    <input
+                                                        type="text"
+                                                        value={inputText}
+                                                        onChange={(e) => setInputText(e.target.value)}
+                                                        placeholder={isUploading ? "Subiendo..." : "Escribe un mensaje..."}
+                                                        disabled={isUploading}
+                                                        className="w-full bg-slate-50 border-none rounded-2xl py-3.5 pl-5 pr-12 text-sm font-medium focus:ring-2 focus:ring-slate-900/10 outline-none transition-all placeholder:text-slate-300"
+                                                    />
+                                                    <button
+                                                        type="submit"
+                                                        disabled={!inputText.trim() || isUploading}
+                                                        className="absolute right-1.5 p-2 bg-slate-900 text-white rounded-xl shadow-md shadow-slate-900/20 active:scale-95 transition-all disabled:opacity-50 disabled:shadow-none hover:bg-emerald-500 hover:shadow-emerald-500/20"
+                                                    >
+                                                        <Send size={18} />
+                                                    </button>
+                                                </div>
+                                            </form>
+                                        )}
                                     </div>
+
                                 </>
                             ) : (
                                 <div className="hidden md:flex flex-col items-center justify-center h-full text-slate-300 p-8 text-center opacity-60">

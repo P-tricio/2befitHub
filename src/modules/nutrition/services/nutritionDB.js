@@ -158,33 +158,16 @@ export const NutritionDB = {
             const snap = await getDoc(doc(db, LOGS, docId));
             return snap.exists() ? { id: snap.id, ...snap.data() } : null;
         },
-        async updateMealStatus(userId, date, mealIndex, itemIndex, status) {
+        async updateMealStatus(userId, date, mealIndex, itemIndex, status, customKey = null, dayId = null) {
             const docId = `${userId}_${date}`;
             const ref = doc(db, LOGS, docId);
 
-            // This requires the log to exist. If not, we might need to create it first.
-            // For MVP simpler approach: read, modify, write (or use dot notation if structure is fixed)
-            // Assuming structure: { meals: [ { items: [ { isCompleted: true } ] } ] }
-
-            // We'll use set with merge to ensure doc exists
-            // But updating array items by index in Firestore is tricky without reading.
-            // We will fetch-modify-save for reliability.
             const snap = await getDoc(ref);
-            let data = snap.exists() ? snap.data() : { userId, date, meals: [] };
-
-            if (!data.meals) data.meals = [];
-
-            // Ensure meal exists
-            if (!data.meals[mealIndex]) data.meals[mealIndex] = { items: [] };
-            if (!data.meals[mealIndex].items) data.meals[mealIndex].items = [];
-
-            // Ensure item exists (we might just be tracking boolean status map actually)
-            // A better structure for logs might be independent of the template?
-            // "Template says Eat X", Log says "I ate X".
+            let data = snap.exists() ? snap.data() : { userId, date };
 
             // Let's store a simple map of checkbox states: completedItems: { "mealIdx-itemIdx": true }
             const currentCompleted = data.completedItems || {};
-            const key = `${mealIndex}-${itemIndex}`;
+            const key = customKey || `${mealIndex}-${itemIndex}`;
 
             if (status) {
                 currentCompleted[key] = true;
@@ -192,26 +175,41 @@ export const NutritionDB = {
                 delete currentCompleted[key];
             }
 
-            await setDoc(ref, {
+            const updateData = {
                 userId,
                 date,
                 completedItems: currentCompleted,
                 updatedAt: serverTimestamp()
-            }, { merge: true });
+            };
+
+            if (dayId) updateData.dayId = dayId;
+            // Preserve extraItems if they exist in the document but aren't being updated here
+            if (data.extraItems && !updateData.extraItems) updateData.extraItems = data.extraItems;
+
+            await setDoc(ref, updateData, { merge: true });
         },
         async saveDailyLog(userId, date, completedItems, dayId, extraItems = []) {
             const docId = `${userId}_${date}`;
             const ref = doc(db, LOGS, docId);
 
+            // Fetch current doc to preserve fields if necessary (like existing extraItems if passing empty)
+            const snap = await getDoc(ref);
+            const currentData = snap.exists() ? snap.data() : {};
+
             const data = {
                 userId,
                 date,
-                completedItems: completedItems,
+                completedItems: completedItems || currentData.completedItems || {},
                 updatedAt: serverTimestamp()
             };
 
             if (dayId) data.dayId = dayId;
-            if (extraItems) data.extraItems = extraItems;
+            // Only update extraItems if provided, otherwise keep current ones
+            if (extraItems && extraItems.length > 0) {
+                data.extraItems = extraItems;
+            } else if (currentData.extraItems) {
+                data.extraItems = currentData.extraItems;
+            }
 
             await setDoc(ref, data, { merge: true });
         }

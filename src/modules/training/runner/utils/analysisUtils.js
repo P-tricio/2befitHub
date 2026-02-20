@@ -1,3 +1,5 @@
+import { PDP_T_RANGES, PDP_R_THRESHOLDS } from '../../services/pdpConstants';
+
 /**
  * Generates insights and recommendations based on session results.
  * Now implements technical PDP logic: floor/ceiling for T, efficiency for R, success for E.
@@ -8,18 +10,7 @@ export const generateSessionAnalysis = (results, timeline, history = {}) => {
     let totalVolume = 0;
     let completedExercises = 0;
 
-    const PDP_T_RANGES = {
-        BASE: { floor: 20, ceiling: 40 },
-        BUILD: { floor: 30, ceiling: 50 },
-        BURN: { floor: 50, ceiling: 70 },
-        BOOST: { floor: 20, ceiling: 40 } // Fallback same as BASE
-    };
 
-    const PDP_R_THRESHOLDS = {
-        BASE: { cap: 300, efficiency: 180 }, // 5:00 and 3:00
-        BUILD: { cap: 360, efficiency: 216 }, // 6:00 and 3:36
-        BURN: { cap: 420, efficiency: 252 }  // 7:00 and 4:12
-    };
 
     const normalizeBlockType = (name = '') => {
         const u = name.toUpperCase();

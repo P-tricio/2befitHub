@@ -256,9 +256,8 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
             switch (type) {
                 case 'neat':
                     {
-                        const target = taskConfig.target || 0;
-                        const unit = taskConfig.type === 'steps' ? 'pasos' : 'min';
-                        title = target > 0 ? `Movimiento: ${target} ${unit}` : 'Objetivo Movimiento';
+                        const target = taskConfig.target || 30;
+                        title = `Movimiento: ${target} min`;
                     }
                     break;
                 case 'nutrition':
@@ -752,7 +751,7 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
                                                             flex items-center gap-1.5 px-2 py-1 overflow-hidden cursor-grab active:cursor-grabbing touch-none rounded-md mb-0.5 transition-all
                                                             ${task.status === 'completed' ? 'bg-emerald-500 text-white shadow-md ring-1 ring-white/20' : (
                                                                 task.type === 'session' ? 'bg-slate-900 text-white shadow-sm' :
-                                                                    task.type === 'neat' ? 'bg-purple-500 text-white shadow-sm' :
+                                                                    task.type === 'neat' ? 'bg-emerald-500 text-white shadow-sm' :
                                                                         task.type === 'nutrition_day' ? 'bg-orange-500 text-white shadow-sm' :
                                                                             task.type === 'nutrition' ? 'bg-amber-500 text-white shadow-sm' :
                                                                                 task.type === 'scheduled_message' ? 'bg-pink-500 text-white shadow-sm' :
@@ -848,7 +847,7 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
                                                                 w-10 h-10 rounded-full flex items-center justify-center text-white shrink-0
                                                                 ${task.status === 'completed' ? 'bg-emerald-500 shadow-lg shadow-emerald-500/20' : (
                                                                     task.type === 'session' ? 'bg-slate-900' :
-                                                                        task.type === 'neat' ? 'bg-purple-500' :
+                                                                        task.type === 'neat' ? 'bg-emerald-500' :
                                                                             task.type === 'nutrition_day' ? 'bg-orange-500' :
                                                                                 task.type === 'nutrition' ? 'bg-amber-500' :
                                                                                     task.type === 'scheduled_message' ? 'bg-pink-500' :
@@ -977,7 +976,7 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
                             appendTask(selectedDate, {
                                 id: crypto.randomUUID(),
                                 type,
-                                title: type === 'neat' ? 'Objetivo Movimiento'
+                                title: type === 'neat' ? 'Movimiento: 30 min'
                                     : (type === 'nutrition' ? (config.category ? `Hábitos: ${config.category}` : 'Hábitos')
                                         : (type === 'nutrition_day' ? (config.name || 'Nutrición del Día')
                                             : (type === 'free_training' ? 'Entrenamiento Libre'
@@ -1450,13 +1449,6 @@ const AddTaskModal = ({ user, date, sessions, groups, programs, nutritionDays = 
                             <ChevronRight size={20} className={`transition-transform ${expanded === 'session' ? 'rotate-90' : ''}`} />
                         </button>
 
-                        <button
-                            onClick={onOpenForms}
-                            className="absolute right-12 top-4 p-1 text-slate-300 hover:text-emerald-500"
-                            title="Gestionar Formularios"
-                        >
-                            <Settings2 size={16} />
-                        </button>
 
                         {expanded === 'session' && (
                             <div className="p-4 border-t border-slate-200 bg-slate-50 animate-in slide-in-from-top-2 duration-200">
@@ -2009,7 +2001,7 @@ const GenericTaskSection = ({ id, label, icon, expanded, toggle, onAssign, avail
                                 <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Minutos objetivo</label>
                                 <input
                                     type="number"
-                                    value={config.target}
+                                    value={config.target || 30}
                                     onChange={(e) => handleConfigChange('target', parseInt(e.target.value) || 0)}
                                     className="w-full p-2 bg-white border border-slate-200 rounded-lg text-sm font-bold"
                                     placeholder="Ej: 30"
@@ -2155,7 +2147,14 @@ const GenericTaskSection = ({ id, label, icon, expanded, toggle, onAssign, avail
                     )}
 
                     <button
-                        onClick={() => onAssign(config)}
+                        onClick={() => {
+                            const finalConfig = { ...config };
+                            if (id === 'neat') {
+                                finalConfig.type = 'minutes';
+                                if (!finalConfig.target) finalConfig.target = 30;
+                            }
+                            onAssign(finalConfig);
+                        }}
                         className="w-full py-3 bg-slate-900 text-white rounded-xl text-sm font-bold shadow-lg shadow-slate-900/20 active:scale-95 transition-all"
                     >
                         {isEdit ? 'Guardar Cambios' : 'Asignar Tarea'}
@@ -2231,7 +2230,7 @@ const TaskPreviewModal = ({ task, date, availableForms, sessions, nutritionDays 
                             <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100">
                                 <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">Configuración NEAT</p>
                                 <p className="text-lg font-black text-emerald-900">
-                                    Objetivo: {config.target || 0} {config.type === 'steps' ? 'pasos' : 'minutos'}
+                                    Objetivo: {config.target || 30} minutos
                                 </p>
                             </div>
                         )}

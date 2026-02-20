@@ -180,7 +180,7 @@ export const TrainingDB = {
     sessions: {
         async getAll() {
             const snapshot = await getDocs(collection(db, SESSIONS));
-            return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+            return snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
         },
         async create(data) {
             // data.blocks = { boost: [id, id], base: [id], ... }
@@ -191,7 +191,7 @@ export const TrainingDB = {
         },
         async getById(id) {
             const snap = await getDoc(doc(db, SESSIONS, id));
-            return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+            return snap.exists() ? { ...snap.data(), id: snap.id } : null;
         },
         async update(id, data) {
             const ref = doc(db, SESSIONS, id);
@@ -230,11 +230,11 @@ export const TrainingDB = {
             // Here we might assume they are in 'users' or we augment the Auth users.
             // For MVP let's assume we have a collection 'users' where we store profiles.
             const snapshot = await getDocs(collection(db, 'users'));
-            return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+            return snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
         },
         async getById(id) {
             const snap = await getDoc(doc(db, 'users', id));
-            return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+            return snap.exists() ? { ...snap.data(), id: snap.id } : null;
         },
         async assignProgram(userId, programId) {
             const ref = doc(db, 'users', userId);
@@ -322,6 +322,12 @@ export const TrainingDB = {
                 ...data,
                 updatedAt: serverTimestamp()
             });
+        },
+        async archive(userId) {
+            return this.updateProfile(userId, { status: 'archived' });
+        },
+        async unarchive(userId) {
+            return this.updateProfile(userId, { status: 'active' });
         },
         async updateSessionTaskInSchedule(userId, date, sessionId, updateData, taskId = null) {
             const ref = doc(db, 'users', userId);
@@ -728,13 +734,14 @@ export const TrainingDB = {
     },
     // --- MESSAGES (Real-time Chat) ---
     messages: {
-        async send(athleteId, senderId, text, customTimestamp = null) {
+        async send(athleteId, senderId, text, attachment = null, customTimestamp = null) {
             const chatRef = collection(db, 'chats', athleteId, 'messages');
             const messageData = {
                 senderId,
-                text,
+                text: text || (attachment ? (attachment.type === 'audio' ? 'Mensaje de voz' : 'Archivo adjunto') : ''),
                 timestamp: customTimestamp || serverTimestamp(),
-                read: false
+                read: false,
+                attachment: attachment // { url, type, name, size }
             };
 
             // Add message to subcollection
@@ -745,7 +752,7 @@ export const TrainingDB = {
             const isFromAdmin = senderId !== athleteId; // If sender is not the athlete, it's the admin/coach
 
             await updateDoc(userRef, {
-                lastMessage: text,
+                lastMessage: messageData.text,
                 lastMessageAt: serverTimestamp(),
                 unreadAthlete: isFromAdmin ? increment(1) : increment(0),
                 unreadAdmin: !isFromAdmin ? increment(1) : increment(0)
@@ -824,6 +831,69 @@ export const TrainingDB = {
                 })
             );
             await Promise.all(promises);
+        }
+    },
+    admin: {
+        async getBatchAthleteMetrics() {
+            try {
+                const users = await TrainingDB.users.getAll();
+                const now = new Date();
+                const last7Days = Array.from({ length: 7 }, (_, i) => {
+                    const d = new Date();
+                    d.setDate(now.getDate() - i);
+                    return d.toISOString().split('T')[0];
+                });
+
+                return users.map(user => {
+                    const schedule = user.schedule || {};
+                    let missedSessions = 0;
+                    let completedSessions = 0;
+                    let wellnessMetrics = {}; // Collect numeric scale answers
+
+                    // Analyze last 7 days from schedule (cached in user doc)
+                    last7Days.forEach(date => {
+                        const dayTasks = schedule[date] || [];
+                        if (Array.isArray(dayTasks)) {
+                            dayTasks.forEach(task => {
+                                if (task.type === 'session') {
+                                    if (task.status === 'completed') completedSessions++;
+                                    else if (date < now.toISOString().split('T')[0]) missedSessions++;
+                                }
+                                // Check for form answers with scales
+                                const answers = task.results?.formAnswers || task.results?.answers;
+                                if (answers) {
+                                    Object.entries(answers).forEach(([key, val]) => {
+                                        const num = parseFloat(val);
+                                        if (!isNaN(num)) {
+                                            wellnessMetrics[key] = num;
+                                        }
+                                    });
+                                }
+                            });
+                        }
+                    });
+
+                    // Alert logic
+                    let alertLevel = 'green';
+                    if (missedSessions >= 3) alertLevel = 'red';
+                    else if (missedSessions >= 1 || user.unreadAdmin > 0) alertLevel = 'yellow';
+
+                    return {
+                        id: user.id,
+                        name: user.name || user.displayName || 'Sin nombre',
+                        photoURL: user.photoURL,
+                        lastActivity: user.lastMessageAt || user.updatedAt,
+                        missedSessions,
+                        completedSessions,
+                        wellnessMetrics,
+                        unreadAdmin: user.unreadAdmin || 0,
+                        alertLevel
+                    };
+                });
+            } catch (error) {
+                console.error('[getBatchAthleteMetrics] Error:', error);
+                return [];
+            }
         }
     }
 };

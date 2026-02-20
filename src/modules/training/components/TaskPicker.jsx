@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, ChevronRight, Layers, Utensils, MessageCircle, Footprints, CheckSquare, ClipboardList, Check, Scale, Ruler, Camera, FileText, History, Zap, Dumbbell, Plus } from 'lucide-react';
+import { Clock, Search, ChevronRight, Layers, Utensils, MessageCircle, Footprints, CheckSquare, ClipboardList, Check, Scale, Ruler, Camera, FileText, History, Zap, Dumbbell, Plus } from 'lucide-react';
 
 export const TaskPicker = ({
     sessions = [],
@@ -169,7 +169,7 @@ export const TaskPicker = ({
             <GenericTaskSection
                 id="neat"
                 label="Movimiento"
-                icon={<Footprints size={20} className="text-purple-600" />}
+                icon={<Footprints size={20} className="text-emerald-500" />}
                 expanded={expanded === 'neat'}
                 toggle={() => toggle('neat')}
                 onAssign={(config) => handleAssignGeneric('neat', config)}
@@ -395,7 +395,14 @@ const GenericTaskSection = ({ id, label, icon, expanded, toggle, onAssign, avail
                     )}
 
                     <button
-                        onClick={() => onAssign(config)}
+                        onClick={() => {
+                            const finalConfig = { ...config };
+                            if (id === 'neat') {
+                                finalConfig.type = 'minutes';
+                                if (!finalConfig.target) finalConfig.target = 30;
+                            }
+                            onAssign(finalConfig);
+                        }}
                         className="w-full py-3 bg-slate-900 text-white rounded-xl text-sm font-bold shadow-lg shadow-slate-900/20 active:scale-95 transition-all"
                     >
                         {isEdit ? 'Guardar Cambios' : 'Asignar Tarea'}

@@ -135,11 +135,14 @@ const ExerciseCard = ({
                             {ex.source === 'exercisedb' && (
                                 <span className="text-[8px] px-1 bg-emerald-50 text-emerald-500 rounded border border-emerald-100 font-black uppercase tracking-tighter">API</span>
                             )}
+                            {ex.isWarmup && (
+                                <span className="text-[8px] px-1 bg-orange-50 text-orange-500 rounded border border-orange-100 font-black uppercase tracking-tighter">🔥 Calentamiento</span>
+                            )}
                         </div>
                         {!isExpanded && (
                             <div className="flex items-center gap-2 mt-0.5">
-                                <span className={`text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-wider ${getPatternColor(ex.pattern)}`}>{ex.pattern}</span>
-                                {ex.source === 'exercisedb' && <span className="text-[9px] font-bold text-slate-400 truncate max-w-[80px]">{ex.equipment}</span>}
+                                {ex.primaryMuscle && <span className="text-[9px] font-bold text-indigo-500 truncate max-w-[80px]">🎯 {ex.primaryMuscle}</span>}
+                                {!ex.primaryMuscle && ex.source === 'exercisedb' && <span className="text-[9px] font-bold text-slate-400 truncate max-w-[80px]">{ex.equipment}</span>}
                             </div>
                         )}
                     </div>
@@ -209,17 +212,17 @@ const ExerciseCard = ({
 
                         {/* Details Grid */}
                         <div className="grid grid-cols-2 gap-2 mb-4">
-                            {ex.target && (
+                            {(ex.primaryMuscle || ex.target) && (
                                 <div className="p-2 bg-slate-50 rounded-xl border border-slate-100">
-                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-0.5">Objetivo</p>
-                                    <p className="text-xs font-bold text-slate-700 capitalize">{ex.target}</p>
+                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-0.5">Primario / Objetivo</p>
+                                    <p className="text-xs font-bold text-slate-700 capitalize">{ex.primaryMuscle || ex.target}</p>
                                 </div>
                             )}
-                            {(ex.secondaryMuscles || []).length > 0 && (
+                            {(ex.secondaryMuscles || ex.secondary_muscles || []).length > 0 && (
                                 <div className="p-2 bg-slate-50 rounded-xl border border-slate-100">
                                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-0.5">Secundarios</p>
                                     <p className="text-xs font-medium text-slate-600 capitalize truncate">
-                                        {ex.secondaryMuscles.join(', ')}
+                                        {(ex.secondaryMuscles || ex.secondary_muscles).join(', ')}
                                     </p>
                                 </div>
                             )}

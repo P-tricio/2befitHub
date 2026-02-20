@@ -7,6 +7,7 @@ import ProgramBuilder from './admin/ProgramBuilder';
 import ControlHub from './admin/ControlHub';
 import AdminDashboard from './admin/AdminDashboard';
 import ActivityLog from './admin/ActivityLog';
+import CoachDashboard from './admin/CoachDashboard';
 import FoodLibrary from '../nutrition/admin/FoodLibrary';
 import RecipeEditor from '../nutrition/admin/RecipeEditor';
 
@@ -30,6 +31,7 @@ const TrainingAdminRoutes = () => {
                 <Route path="users" element={<UserManager />} />
                 <Route path="forms" element={<ControlHub />} />
                 <Route path="activity" element={<ActivityLog />} />
+                <Route path="audit" element={<CoachDashboard />} />
 
                 {/* Nutrition Routes */}
                 <Route path="nutrition/foods" element={<FoodLibrary />} />

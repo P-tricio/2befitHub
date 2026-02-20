@@ -48,6 +48,16 @@ const UserSessionHistory = ({ user, onClose, isEmbedded = false }) => {
                 });
             });
 
+            // Helper to safely parse any date/timestamp format
+            const safeDate = (val) => {
+                if (!val) return new Date();
+                // Handle Firestore Timestamp
+                if (val && typeof val.toDate === 'function') return val.toDate();
+                // Handle strings/numbers
+                const d = new Date(val);
+                return isNaN(d.getTime()) ? new Date() : d;
+            };
+
             // 4. DATA RECOVERY: Add sessions that have logs but aren't in schedule as "completed"
             // This handles cases where the session was saved but the schedule update failed
             logHistory.forEach(log => {
@@ -60,6 +70,18 @@ const UserSessionHistory = ({ user, onClose, isEmbedded = false }) => {
                 );
 
                 if (!exists) {
+                    // Determine best available date
+                    const rawDate = log.scheduledDate || log.timestamp || log.date || log.createdAt;
+                    let dateStr = log.scheduledDate;
+
+                    if (!dateStr) {
+                        try {
+                            dateStr = format(safeDate(rawDate), 'yyyy-MM-dd');
+                        } catch (e) {
+                            dateStr = format(new Date(), 'yyyy-MM-dd');
+                        }
+                    }
+
                     completed.push({
                         id: `recovered-${log.id}`,
                         sessionId: log.sessionId,
@@ -75,7 +97,7 @@ const UserSessionHistory = ({ user, onClose, isEmbedded = false }) => {
                             totalVolume: log.metrics?.totalVolume,
                             evidenceUrl: log.evidenceUrl
                         },
-                        scheduledDate: log.scheduledDate || format(new Date(log.timestamp), 'yyyy-MM-dd'),
+                        scheduledDate: dateStr,
                         session: sMap[log.sessionId],
                         isRecovered: true
                     });

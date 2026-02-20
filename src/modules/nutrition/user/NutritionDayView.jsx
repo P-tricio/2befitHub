@@ -121,7 +121,8 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
         setLog(newLog);
 
         // Sync API
-        await NutritionDB.logs.updateMealStatus(userId, date, mealIdx, itemIdx, newStatus);
+        // FIX: Pass overrideKey as customKey to updateMealStatus, and also pass dayId
+        await NutritionDB.logs.updateMealStatus(userId, date, mealIdx, itemIdx, newStatus, overrideKey, dayId);
     };
 
     const toggleMealExpand = (idx) => {
@@ -221,14 +222,25 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
         setActiveMealIndex(null);
 
         // Save
+        // FIX: Ensure dayId is passed to saveDailyLog to prevent session/dayId loss
         await NutritionDB.logs.saveDailyLog(userId, date, log.completedItems, dayId, newExtraItems);
     };
 
     const handleRemoveExtraItem = async (index) => {
         const newExtraItems = [...extraItems];
         newExtraItems.splice(index, 1);
+
+        // Also remove its completion status to keep the log clean
+        const newLog = { ...log };
+        const key = `extra-${index}`;
+        if (newLog.completedItems && newLog.completedItems[key]) {
+            delete newLog.completedItems[key];
+            setLog(newLog);
+        }
+
         setExtraItems(newExtraItems);
-        await NutritionDB.logs.saveDailyLog(userId, date, log.completedItems, dayId, newExtraItems);
+        // FIX: Ensure dayId is passed to saveDailyLog
+        await NutritionDB.logs.saveDailyLog(userId, date, newLog.completedItems, dayId, newExtraItems);
     };
 
     // Calculation

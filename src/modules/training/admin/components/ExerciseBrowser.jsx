@@ -1,9 +1,11 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Search, Filter, X, Check, Dumbbell, Plus, Trash2, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ExerciseCard from './ExerciseCard';
-import { PATTERNS, EQUIPMENT, LEVELS, QUALITIES, FORCES, MECHANICS } from '../constants';
+import FilterDropdown from './FilterDropdown';
+import { PATTERNS, EQUIPMENT, LEVELS, QUALITIES, FORCES, MECHANICS, MUSCLE_GROUPS } from '../constants';
 import { ExerciseAPI } from '../../services/exerciseApi';
+
 
 /**
  * ExerciseBrowser - Unified component for browsing, filtering, and selecting exercises.
@@ -40,7 +42,10 @@ const ExerciseBrowser = ({
         level: [],
         quality: [],
         force: [],
-        mechanic: []
+        mechanic: [],
+        primaryMuscle: [],
+        secondaryMuscles: [],
+        isWarmup: false
     });
 
     // Online Search State
@@ -66,12 +71,18 @@ const ExerciseBrowser = ({
             level: [],
             quality: [],
             force: [],
-            mechanic: []
+            mechanic: [],
+            primaryMuscle: [],
+            secondaryMuscles: [],
+            isWarmup: false
         });
         setSearchTerm('');
     };
 
-    const activeFilterCount = Object.values(filters).reduce((acc, curr) => acc + curr.length, 0);
+    const activeFilterCount = Object.entries(filters).reduce((acc, [key, val]) => {
+        if (key === 'isWarmup') return acc + (val ? 1 : 0);
+        return acc + (Array.isArray(val) ? val.length : 0);
+    }, 0);
 
     // Filter Logic
     const filteredExercises = useMemo(() => {
@@ -128,6 +139,22 @@ const ExerciseBrowser = ({
             if (filters.force.length > 0 && !filters.force.includes(ex.forceType)) return false;
             if (filters.mechanic.length > 0 && !filters.mechanic.includes(ex.movementType)) return false;
 
+            // Muscle Filter (Primary)
+            if (filters.primaryMuscle.length > 0 && !filters.primaryMuscle.includes(ex.primaryMuscle)) return false;
+
+            // Muscle Filter (Secondary)
+            if (filters.secondaryMuscles.length > 0) {
+                const exSecMuscles = [
+                    ...(ex.secondaryMuscles || []),
+                    ...(ex.secondary_muscles || [])
+                ].filter(Boolean);
+                const matchesSec = filters.secondaryMuscles.some(m => exSecMuscles.includes(m));
+                if (!matchesSec) return false;
+            }
+
+            // Warmup Filter
+            if (filters.isWarmup && !ex.isWarmup) return false;
+
             return true;
         });
     }, [exercises, searchTerm, filters, onlineMode, onlineResults]);
@@ -148,120 +175,91 @@ const ExerciseBrowser = ({
     };
 
     // Render Filter Section
+
     const renderFilters = () => (
         <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden bg-slate-50 border-b border-slate-100"
+            className="bg-white border-b border-slate-100 overflow-visible"
         >
             <div className="p-4 space-y-4">
-                {/* Patterns */}
-                <div>
-                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-2">Patrón</p>
-                    <div className="flex flex-wrap gap-2">
-                        {PATTERNS.map(p => (
-                            <button
-                                key={p}
-                                onClick={() => toggleFilter('pattern', p)}
-                                className={`px-2 py-1 rounded text-[10px] font-bold border transition-colors ${filters.pattern.includes(p) ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
-                                    }`}
-                            >
-                                {p}
-                            </button>
-                        ))}
-                    </div>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                    <FilterDropdown
+                        label="Patrón"
+                        options={PATTERNS}
+                        category="pattern"
+                        selectedValues={filters.pattern}
+                        onToggle={toggleFilter}
+                    />
+                    <FilterDropdown
+                        label="Equipamiento"
+                        options={EQUIPMENT}
+                        category="equipment"
+                        selectedValues={filters.equipment}
+                        onToggle={toggleFilter}
+                    />
+                    <FilterDropdown
+                        label="Cualidad"
+                        options={QUALITIES}
+                        category="quality"
+                        selectedValues={filters.quality}
+                        onToggle={toggleFilter}
+                    />
+                    <FilterDropdown
+                        label="Nivel"
+                        options={LEVELS}
+                        category="level"
+                        selectedValues={filters.level}
+                        onToggle={toggleFilter}
+                    />
+                    <FilterDropdown
+                        label="Fuerza"
+                        options={FORCES}
+                        category="force"
+                        selectedValues={filters.force}
+                        onToggle={toggleFilter}
+                    />
+                    <FilterDropdown
+                        label="Mecánica"
+                        options={MECHANICS}
+                        category="mechanic"
+                        selectedValues={filters.mechanic}
+                        onToggle={toggleFilter}
+                    />
+                    <FilterDropdown
+                        label="Músculo Primario"
+                        options={MUSCLE_GROUPS}
+                        category="primaryMuscle"
+                        selectedValues={filters.primaryMuscle}
+                        onToggle={toggleFilter}
+                    />
+                    <FilterDropdown
+                        label="Músculos Secundarios"
+                        options={MUSCLE_GROUPS}
+                        category="secondaryMuscles"
+                        selectedValues={filters.secondaryMuscles}
+                        onToggle={toggleFilter}
+                    />
+
+                    {/* Warmup Toggle Button */}
+                    <button
+                        onClick={() => setFilters(prev => ({ ...prev, isWarmup: !prev.isWarmup }))}
+                        className={`px-4 py-2.5 rounded-xl border text-[10px] font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${filters.isWarmup
+                                ? 'bg-orange-500 border-orange-500 text-white shadow-md'
+                                : 'bg-slate-50 border-slate-200 text-slate-400 hover:border-slate-300'
+                            }`}
+                    >
+                        <span>🔥 Sólo Calentamiento</span>
+                    </button>
                 </div>
 
-                {/* Qualities */}
-                <div>
-                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-2">Cualidad</p>
-                    <div className="flex flex-wrap gap-2">
-                        {QUALITIES.map(q => (
-                            <button
-                                key={q.id}
-                                onClick={() => toggleFilter('quality', q.id)}
-                                className={`px-2 py-1 rounded text-[10px] font-bold border transition-colors ${filters.quality.includes(q.id) ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
-                                    }`}
-                            >
-                                {q.label}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-
-                {/* New Filters Row: Force & Mechanic & Level */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {/* Force */}
-                    <div>
-                        <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-2">Fuerza / Tipo</p>
-                        <div className="flex flex-wrap gap-2">
-                            {FORCES.map(f => (
-                                <button
-                                    key={f}
-                                    onClick={() => toggleFilter('force', f)}
-                                    className={`px-2 py-1 rounded text-[10px] font-bold border transition-colors ${filters.force.includes(f) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
-                                        }`}
-                                >
-                                    {f}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                    {/* Mechanic */}
-                    <div>
-                        <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-2">Mecánica</p>
-                        <div className="flex flex-wrap gap-2">
-                            {MECHANICS.map(m => (
-                                <button
-                                    key={m}
-                                    onClick={() => toggleFilter('mechanic', m)}
-                                    className={`px-2 py-1 rounded text-[10px] font-bold border transition-colors ${filters.mechanic.includes(m) ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
-                                        }`}
-                                >
-                                    {m}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                    {/* Level */}
-                    <div>
-                        <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-2">Nivel</p>
-                        <div className="flex flex-wrap gap-2">
-                            {LEVELS.map(l => (
-                                <button
-                                    key={l}
-                                    onClick={() => toggleFilter('level', l)}
-                                    className={`px-2 py-1 rounded text-[10px] font-bold border transition-colors ${filters.level.includes(l) ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
-                                        }`}
-                                >
-                                    {l}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-
-                {/* Equipment */}
-                <div>
-                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-2">Equipamiento</p>
-                    <div className="flex flex-wrap gap-2">
-                        {EQUIPMENT.map(e => (
-                            <button
-                                key={e}
-                                onClick={() => toggleFilter('equipment', e)}
-                                className={`px-2 py-1 rounded text-[10px] font-bold border transition-colors ${filters.equipment.includes(e) ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
-                                    }`}
-                            >
-                                {e}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-
-                <div className="pt-2 flex justify-end">
-                    <button onClick={clearFilters} className="text-xs text-red-500 font-bold hover:underline">
-                        Limpiar Filtros
+                <div className="pt-2 flex justify-between items-center border-t border-slate-50 mt-2">
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                        {activeFilterCount > 0 ? `${activeFilterCount} filtros activos` : 'Sin filtros aplicados'}
+                    </p>
+                    <button onClick={clearFilters} className="text-xs text-red-500 font-bold hover:underline py-1 px-2 hover:bg-red-50 rounded-lg transition-colors">
+                        Limpiar Todo
                     </button>
                 </div>
             </div>

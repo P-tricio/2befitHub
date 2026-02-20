@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { Search, MoreVertical, Calendar, Activity, Trophy, MessageCircle, Trash2, Bell, Filter, ArrowUpDown, ChevronDown, TrendingUp, TrendingDown } from 'lucide-react';
+import { Search, MoreVertical, Calendar, Activity, Trophy, MessageCircle, Trash2, Bell, Filter, ArrowUpDown, ChevronDown, TrendingUp, TrendingDown, ClipboardList, X, Plus } from 'lucide-react';
+import CoachNotesView from '../components/CoachNotesView';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TrainingDB } from '../services/db';
 import UserTracking from './UserTracking';
 import ChatDrawer from '../components/ChatDrawer';
 import SendNotificationModal from './components/SendNotificationModal';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { formatDateSafely } from '../../../lib/dateUtils';
 
 const UserManager = () => {
     const navigate = useNavigate();
@@ -20,6 +22,8 @@ const UserManager = () => {
     const [activeMenuId, setActiveMenuId] = useState(null);
     const [chatUser, setChatUser] = useState(null);
     const [notificationUser, setNotificationUser] = useState(null);
+    const [notesUser, setNotesUser] = useState(null);
+    const [showArchived, setShowArchived] = useState(false); // Only show active users by default
 
     // Filtering and Sorting State
     const [sortConfig, setSortConfig] = useState({ key: 'displayName', direction: 'asc' });
@@ -101,25 +105,52 @@ const UserManager = () => {
 
         const dateFields = ['lastMessageAt', 'lastActiveAt', 'createdAt', 'updatedAt'];
         if (dateFields.includes(sortConfig.key)) {
-            const date = val?.toDate?.() || (val ? new Date(val) : null);
-            if (date && !isNaN(date.getTime())) {
-                return date.toLocaleDateString('es-ES', {
-                    day: '2-digit',
-                    month: 'short',
-                    year: '2-digit',
-                    hour: '2-digit',
-                    minute: '2-digit'
-                });
-            }
+            return formatDateSafely(val, {
+                day: '2-digit',
+                month: 'short',
+                year: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
         }
         return val?.toString() || '—';
     };
 
-    const filteredUsers = users
-        .filter(u => {
-            return (u.displayName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-                (u.email || '').toLowerCase().includes(searchTerm.toLowerCase());
-        })
+
+    const handleArchiveUser = async (user) => {
+        if (!window.confirm(`¿Estás seguro de que quieres archivar a ${user.displayName}? No podrá acceder a su plan hasta que lo desarchives.`)) return;
+        try {
+            await TrainingDB.users.archive(user.id);
+            loadData();
+            setActiveMenuId(null);
+        } catch (error) {
+            console.error('Error archiving user:', error);
+            alert('Error al archivar usuario');
+        }
+    };
+
+    const handleUnarchiveUser = async (user) => {
+        try {
+            await TrainingDB.users.unarchive(user.id);
+            loadData();
+            setActiveMenuId(null);
+        } catch (error) {
+            console.error('Error unarchiving user:', error);
+            alert('Error al desarchivar usuario');
+        }
+    };
+
+    const filteredUsers = users.filter(user => {
+        // Status Filter
+        const isArchived = user.status === 'archived';
+        if (showArchived && !isArchived) return false;
+        if (!showArchived && isArchived) return false;
+
+        // Search Term Filter
+        const lowerCaseSearchTerm = searchTerm.toLowerCase();
+        return (user.displayName || '').toLowerCase().includes(lowerCaseSearchTerm) ||
+            (user.email || '').toLowerCase().includes(lowerCaseSearchTerm);
+    })
         .sort((a, b) => {
             let valA = a[sortConfig.key];
             let valB = b[sortConfig.key];
@@ -175,16 +206,28 @@ const UserManager = () => {
                             {filteredUsers.length}
                         </span>
                     </div>
+                    {/* Filters & Actions */}
+                    <div className="flex flex-1 items-center gap-2 overflow-x-auto pb-1 md:pb-0 scrollbar-hide">
+                        <button
+                            onClick={() => setShowArchived(!showArchived)}
+                            className={`flex items-center gap-2 px-3 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all shrink-0 ${showArchived
+                                ? 'bg-amber-100 text-amber-700 border border-amber-200 shadow-sm'
+                                : 'bg-slate-50 text-slate-400 border border-slate-100 hover:bg-slate-100 hover:text-slate-900'
+                                }`}
+                            title={showArchived ? 'Ver Activos' : 'Ver Archivados'}
+                        >
+                            <Calendar size={14} />
+                            <span className="hidden sm:inline">{showArchived ? 'Ver Activos' : 'Ver Archivados'}</span>
+                        </button>
 
-                    <div className="flex flex-1 items-center gap-2">
-                        <div className="relative flex-1 group">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                        <div className="relative flex-1 min-w-[120px] group">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                             <input
                                 type="text"
                                 placeholder="Buscar..."
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium outline-none focus:border-slate-900 transition-all shadow-sm"
+                                className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:border-slate-900 transition-all shadow-sm"
                             />
                         </div>
 
@@ -261,8 +304,21 @@ const UserManager = () => {
                                                 )}
                                             </div>
                                             <div className="min-w-0">
-                                                <div className="font-black text-slate-900 text-base truncate">{user.displayName}</div>
+                                                <div className="font-black text-slate-900 text-base truncate flex items-center gap-2">
+                                                    {user.displayName}
+                                                    {user.status === 'archived' && (
+                                                        <span className="bg-amber-100 text-amber-700 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-tighter">Archivado</span>
+                                                    )}
+                                                </div>
                                                 <div className="text-xs text-slate-400 font-bold uppercase tracking-wider truncate">{user.email || 'Sin email'}</div>
+                                                {user.coachNotes && user.coachNotes.length > 0 && (
+                                                    <div className="mt-1 flex items-center gap-1.5 text-indigo-500/80">
+                                                        <ClipboardList size={10} className="shrink-0" />
+                                                        <span className="text-[9px] font-bold truncate max-w-[200px]">
+                                                            {user.coachNotes[0].text}
+                                                        </span>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     </td>
@@ -287,6 +343,13 @@ const UserManager = () => {
                                                 title="Abrir Chat"
                                             >
                                                 <MessageCircle size={20} />
+                                            </button>
+                                            <button
+                                                onClick={() => setNotesUser(user)}
+                                                className="p-2.5 bg-slate-50 text-slate-400 rounded-xl hover:bg-slate-100 hover:text-slate-900 transition-all border border-slate-100/50"
+                                                title="Ver Notas"
+                                            >
+                                                <ClipboardList size={20} />
                                             </button>
                                             <div className="relative">
                                                 <button
@@ -341,6 +404,16 @@ const UserManager = () => {
                                                         </button>
                                                         <button
                                                             onClick={() => {
+                                                                setNotesUser(user);
+                                                                setActiveMenuId(null);
+                                                            }}
+                                                            className="w-full text-left px-4 py-3 text-sm font-black text-slate-700 hover:bg-slate-50 hover:text-indigo-600 transition-all flex items-center gap-3"
+                                                        >
+                                                            <ClipboardList size={18} />
+                                                            NOTAS DEL COACH
+                                                        </button>
+                                                        <button
+                                                            onClick={() => {
                                                                 setNotificationUser(user);
                                                                 setActiveMenuId(null);
                                                             }}
@@ -350,11 +423,15 @@ const UserManager = () => {
                                                             ENVIAR AVISO
                                                         </button>
                                                         <button
-                                                            onClick={() => {
-                                                                handleDeleteUser(user);
-                                                                setActiveMenuId(null);
-                                                            }}
-                                                            className="w-full text-left px-4 py-3 text-sm font-black text-rose-500 hover:bg-rose-50 transition-all flex items-center gap-3 border-t border-slate-50"
+                                                            onClick={() => user.status === 'archived' ? handleUnarchiveUser(user) : handleArchiveUser(user)}
+                                                            className="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-2"
+                                                        >
+                                                            <Calendar size={14} className="text-slate-400" />
+                                                            {user.status === 'archived' ? 'DESARCHIVAR ATLETA' : 'ARCHIVAR ATLETA'}
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDeleteUser(user)}
+                                                            className="w-full text-left px-4 py-2.5 text-xs font-bold text-rose-600 hover:bg-rose-50 flex items-center gap-2"
                                                         >
                                                             <Trash2 size={18} />
                                                             ELIMINAR
@@ -373,111 +450,151 @@ const UserManager = () => {
                 {/* Mobile Card View */}
                 <div className="md:hidden space-y-2">
                     {filteredUsers.map(user => (
-                        <div
-                            key={user.id}
-                            onClick={() => setSelectedUser(user)}
-                            className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm active:scale-[0.98] transition-all"
-                        >
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center font-black text-sm overflow-hidden shrink-0">
-                                    {user.photoURL ? (
-                                        <img src={user.photoURL} alt={user.displayName} className="w-full h-full object-cover" />
-                                    ) : (
-                                        user.displayName?.[0] || 'U'
-                                    )}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                    <div className="font-bold text-slate-900 text-sm truncate">{user.displayName}</div>
-                                    <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider truncate mb-1">{user.email || 'Sin email'}</div>
-                                    {getSortLabel() && (
-                                        <div className="text-[8px] font-black text-slate-500 uppercase tracking-tighter bg-slate-50 px-2 py-0.5 rounded-md w-fit inline-block">
-                                            {getSortLabel()}: {formatSortValue(user)}
+                        <React.Fragment key={user.id}>
+                            <div
+                                onClick={() => setSelectedUser(user)}
+                                className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm active:scale-[0.98] transition-all"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center font-black text-sm overflow-hidden shrink-0">
+                                        {user.photoURL ? (
+                                            <img src={user.photoURL} alt={user.displayName} className="w-full h-full object-cover" />
+                                        ) : (
+                                            user.displayName?.[0] || 'U'
+                                        )}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="font-bold text-slate-900 text-sm truncate flex items-center gap-2">
+                                            {user.displayName}
+                                            {user.status === 'archived' && (
+                                                <span className="bg-amber-100 text-amber-700 text-[7px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-tighter shrink-0">Archivado</span>
+                                            )}
                                         </div>
-                                    )}
+                                        <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider truncate mb-1">{user.email || 'Sin email'}</div>
+                                        {user.coachNotes && user.coachNotes.length > 0 && (
+                                            <div className="flex items-center gap-1 text-indigo-500/70 mb-1">
+                                                <ClipboardList size={8} className="shrink-0" />
+                                                <span className="text-[8px] font-bold truncate italic">
+                                                    "{user.coachNotes[0].text}"
+                                                </span>
+                                            </div>
+                                        )}
+                                        {getSortLabel() && (
+                                            <div className="text-[8px] font-black text-slate-500 uppercase tracking-tighter bg-slate-50 px-2 py-0.5 rounded-md w-fit inline-block">
+                                                {getSortLabel()}: {formatSortValue(user)}
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
-                            </div>
 
-                            <div className="flex items-center gap-2 mt-2 pt-2 border-t border-slate-50">
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        setSelectedUser(user);
-                                        setInitialTab('planning');
-                                    }}
-                                    className="flex-1 bg-slate-900 text-white py-2 rounded-lg text-[9px] font-black uppercase tracking-wide flex items-center justify-center gap-1.5"
-                                >
-                                    <Calendar size={12} />
-                                    Gestionar
-                                </button>
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        setChatUser(user);
-                                    }}
-                                    className="p-2 bg-indigo-600 text-white rounded-lg"
-                                >
-                                    <MessageCircle size={16} />
-                                </button>
-                                <div className="relative">
+                                <div className="flex items-center gap-2 mt-2 pt-2 border-t border-slate-50">
                                     <button
                                         onClick={(e) => {
                                             e.stopPropagation();
-                                            setActiveMenuId(activeMenuId === user.id ? null : user.id);
+                                            setSelectedUser(user);
+                                            setInitialTab('planning');
                                         }}
-                                        className={`p-2 border border-slate-100 rounded-lg transition-all ${activeMenuId === user.id ? 'bg-slate-100 text-slate-900' : 'text-slate-400'}`}
+                                        className="flex-1 bg-slate-900 text-white py-2 rounded-lg text-[9px] font-black uppercase tracking-wide flex items-center justify-center gap-1.5"
                                     >
-                                        <MoreVertical size={16} />
+                                        <Calendar size={12} />
+                                        Gestionar
                                     </button>
-                                    {activeMenuId === user.id && (
-                                        <div className="absolute right-0 bottom-full mb-2 w-40 bg-white rounded-xl shadow-2xl border border-slate-100 py-1 z-20 text-left" onClick={(e) => e.stopPropagation()}>
-                                            <button
-                                                onClick={() => {
-                                                    setSelectedUser(user);
-                                                    setInitialTab('metrics');
-                                                }}
-                                                className="w-full text-left px-3 py-2 text-[10px] font-black text-slate-600 hover:bg-slate-50 uppercase tracking-wide flex items-center gap-2"
-                                            >
-                                                <Activity size={12} />
-                                                Seguimiento
-                                            </button>
-                                            <button
-                                                onClick={() => {
-                                                    setSelectedUser(user);
-                                                    setInitialTab('history');
-                                                }}
-                                                className="w-full text-left px-3 py-2 text-[10px] font-black text-slate-600 hover:bg-slate-50 uppercase tracking-wide flex items-center gap-2"
-                                            >
-                                                <Trophy size={12} />
-                                                Historial
-                                            </button>
-                                            <button
-                                                onClick={() => {
-                                                    setNotificationUser(user);
-                                                    setActiveMenuId(null);
-                                                }}
-                                                className="w-full text-left px-3 py-2 text-[10px] font-black text-indigo-600 hover:bg-slate-50 uppercase tracking-wide flex items-center gap-2 border-t border-slate-50"
-                                            >
-                                                <Bell size={12} />
-                                                Enviar Aviso
-                                            </button>
-                                            <button
-                                                onClick={() => {
-                                                    handleDeleteUser(user);
-                                                    setActiveMenuId(null);
-                                                }}
-                                                className="w-full text-left px-3 py-2 text-[10px] font-black text-rose-500 hover:bg-rose-50 uppercase tracking-wide flex items-center gap-2 border-t border-slate-50"
-                                            >
-                                                <Trash2 size={12} />
-                                                Eliminar
-                                            </button>
-                                        </div>
-                                    )}
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setChatUser(user);
+                                        }}
+                                        className="p-2 bg-indigo-600 text-white rounded-lg"
+                                    >
+                                        <MessageCircle size={16} />
+                                    </button>
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setNotesUser(user);
+                                        }}
+                                        className="p-2 bg-slate-100 text-slate-600 rounded-lg"
+                                    >
+                                        <ClipboardList size={16} />
+                                    </button>
+                                    <div className="relative">
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setActiveMenuId(activeMenuId === user.id ? null : user.id);
+                                            }}
+                                            className={`p-2 border border-slate-100 rounded-lg transition-all ${activeMenuId === user.id ? 'bg-slate-100 text-slate-900' : 'text-slate-400'}`}
+                                        >
+                                            <MoreVertical size={16} />
+                                        </button>
+                                        {activeMenuId === user.id && (
+                                            <div className="absolute right-0 bottom-full mb-2 w-40 bg-white rounded-xl shadow-2xl border border-slate-100 py-1 z-20 text-left" onClick={(e) => e.stopPropagation()}>
+                                                <button
+                                                    onClick={() => {
+                                                        setSelectedUser(user);
+                                                        setInitialTab('metrics');
+                                                    }}
+                                                    className="w-full text-left px-3 py-2 text-[10px] font-black text-slate-600 hover:bg-slate-50 uppercase tracking-wide flex items-center gap-2"
+                                                >
+                                                    <Activity size={12} />
+                                                    Seguimiento
+                                                </button>
+                                                <button
+                                                    onClick={() => {
+                                                        setSelectedUser(user);
+                                                        setInitialTab('history');
+                                                    }}
+                                                    className="w-full text-left px-3 py-2 text-[10px] font-black text-slate-600 hover:bg-slate-50 uppercase tracking-wide flex items-center gap-2"
+                                                >
+                                                    <Trophy size={12} />
+                                                    Historial
+                                                </button>
+                                                <button
+                                                    onClick={() => {
+                                                        setNotesUser(user);
+                                                        setActiveMenuId(null);
+                                                    }}
+                                                    className="w-full text-left px-3 py-2 text-[10px] font-black text-slate-600 hover:bg-slate-50 uppercase tracking-wide flex items-center gap-2"
+                                                >
+                                                    <ClipboardList size={12} />
+                                                    Notas del Coach
+                                                </button>
+                                                <button
+                                                    onClick={() => {
+                                                        setNotificationUser(user);
+                                                        setActiveMenuId(null);
+                                                    }}
+                                                    className="w-full text-left px-3 py-2 text-[10px] font-black text-indigo-600 hover:bg-slate-50 uppercase tracking-wide flex items-center gap-2 border-t border-slate-50"
+                                                >
+                                                    <Bell size={12} />
+                                                    Enviar Aviso
+                                                </button>
+                                                <button
+                                                    onClick={() => user.status === 'archived' ? handleUnarchiveUser(user) : handleArchiveUser(user)}
+                                                    className="w-full text-left px-3 py-2 text-[10px] font-black text-slate-600 hover:bg-slate-50 uppercase tracking-wide flex items-center gap-2 border-t border-slate-50"
+                                                >
+                                                    <Calendar size={12} />
+                                                    {user.status === 'archived' ? 'Desarchivar' : 'Archivar'}
+                                                </button>
+                                                <button
+                                                    onClick={() => {
+                                                        handleDeleteUser(user);
+                                                        setActiveMenuId(null);
+                                                    }}
+                                                    className="w-full text-left px-3 py-2 text-[10px] font-black text-rose-500 hover:bg-rose-50 uppercase tracking-wide flex items-center gap-2 border-t border-slate-50"
+                                                >
+                                                    <Trash2 size={12} />
+                                                    Eliminar
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
-                        </div>
+                        </React.Fragment>
                     ))}
-                </div>
-            </div>
+                </div >
+            </div >
 
             <ChatDrawer
                 isOpen={!!chatUser}
@@ -497,14 +614,79 @@ const UserManager = () => {
             />
 
             <AnimatePresence>
-                {notificationUser && (
-                    <SendNotificationModal
-                        user={notificationUser}
-                        onClose={() => setNotificationUser(null)}
+                {notesUser && (
+                    <QuickNotesModal
+                        user={notesUser}
+                        onClose={() => {
+                            setNotesUser(null);
+                            loadData(); // Refresh to catch any updates in the main list if needed
+                        }}
                     />
                 )}
             </AnimatePresence>
         </>
+    );
+};
+
+const QuickNotesModal = ({ user, onClose }) => {
+    return (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+            <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={onClose}
+                className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            />
+            <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                className="relative w-full max-w-2xl bg-slate-50 rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+            >
+                {/* Header */}
+                <div className="p-6 bg-white border-b border-slate-100 flex items-center justify-between shrink-0">
+                    <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-2xl bg-slate-900 text-white flex items-center justify-center font-black text-lg overflow-hidden shrink-0">
+                            {user.photoURL ? (
+                                <img src={user.photoURL} alt={user.displayName} className="w-full h-full object-cover" />
+                            ) : (
+                                user.displayName?.[0] || 'U'
+                            )}
+                        </div>
+                        <div>
+                            <h2 className="text-xl font-black text-slate-900 leading-tight">{user.displayName}</h2>
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Notas del Coach</p>
+                        </div>
+                    </div>
+                    <button
+                        onClick={onClose}
+                        className="p-3 bg-slate-50 hover:bg-slate-100 rounded-full transition-all text-slate-400 hover:text-slate-900 active:scale-95"
+                    >
+                        <X size={20} />
+                    </button>
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 overflow-y-auto p-6">
+                    <CoachNotesView
+                        user={user}
+                        onUpdate={(updatedUser) => {
+                            // The updates are persisted to Firestore in CoachNotesView.
+                            // We don't necessarily NEED to update local state here as the modal is self-contained,
+                            // but if UserManager had a way to update its list, we'd call it.
+                        }}
+                    />
+                </div>
+
+                {/* Footer / Hint */}
+                <div className="p-4 bg-white border-t border-slate-100 text-center">
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                        Los cambios se guardan automáticamente en la ficha del atleta
+                    </p>
+                </div>
+            </motion.div>
+        </div>
     );
 };
 

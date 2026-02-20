@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { TrainingDB } from '../services/db';
-import { X, TrendingUp, TrendingDown, Activity, Calendar, Settings, Plus, Trash2, Footprints, Heart, BarChart, Utensils, Info, Edit2, Trophy, CalendarDays, CheckSquare, Camera, FileText, ChevronDown, Dumbbell } from 'lucide-react';
+import { X, TrendingUp, TrendingDown, Activity, Calendar, Settings, Plus, Trash2, Footprints, Heart, BarChart, Utensils, Info, Edit2, Trophy, CalendarDays, CheckSquare, Camera, FileText, ChevronDown, Dumbbell, ClipboardList } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart as RechartsBarChart, Bar } from 'recharts';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -9,6 +9,7 @@ import AthleteHabits from '../athlete/pages/AthleteHabits';
 import UserPlanning from './UserPlanning';
 import UserSessionHistory from './UserSessionHistory';
 import ExerciseHistoryView from '../athlete/components/ExerciseHistoryView';
+import CoachNotesView from '../components/CoachNotesView';
 import VisualEvolutionCard from '../components/VisualEvolutionCard';
 
 const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
@@ -24,6 +25,7 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
     const [customMetrics, setCustomMetrics] = useState(user.customMeasurements?.length > 0 ? user.customMeasurements : ['waist', 'hip']);
     const [activeMetric, setActiveMetric] = useState('weight');
     const [useSmoothing, setUseSmoothing] = useState(false);
+    const [userData, setUserData] = useState(user);
 
     const [collapsedSections, setCollapsedSections] = useState({
         kpis: false,
@@ -70,11 +72,12 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
 
             const historyData = data.status === 'fulfilled' ? data.value : [];
             const formsData = forms.status === 'fulfilled' ? forms.value : [];
-            const userData = userSnap.status === 'fulfilled' ? userSnap.value : {};
-            const scheduleData = userData?.schedule || {};
+            const fetchedUserData = userSnap.status === 'fulfilled' ? userSnap.value : user;
+            const scheduleData = fetchedUserData?.schedule || {};
 
             setHistory(Array.isArray(historyData) ? historyData : []);
             setAvailableForms(Array.isArray(formsData) ? formsData : []);
+            setUserData(fetchedUserData);
 
             // Extract all form results from schedule
             const formsFound = [];
@@ -183,6 +186,7 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
                                 { id: 'habits', icon: <CheckSquare size={18} />, label: 'Hábitos' },
                                 { id: 'forms', icon: <FileText size={18} />, label: 'Cuestionarios' },
                                 { id: 'planning', icon: <CalendarDays size={18} />, label: 'Planificación' },
+                                { id: 'notes', icon: <ClipboardList size={18} />, label: 'Notas' },
                                 { id: 'loads', icon: <Dumbbell size={18} />, label: 'Cargas' },
                                 { id: 'history', icon: <Trophy size={18} />, label: 'Historial' }
                             ].map(tab => (
@@ -638,7 +642,15 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
                         </div>
                     ) : activeTab === 'planning' ? (
                         <div className="bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden p-4 min-h-[600px]">
-                            <UserPlanning user={user} isEmbedded={true} key={`planning-${user.id}`} />
+                            <UserPlanning user={userData} isEmbedded={true} key={`planning-${user.id}`} />
+                        </div>
+                    ) : activeTab === 'notes' ? (
+                        <div className="max-w-4xl mx-auto space-y-6">
+                            <div className="text-center mb-8">
+                                <h3 className="text-2xl font-black text-slate-900">Bloc de Notas del Coach</h3>
+                                <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest mt-1">Historial de anotaciones y necesidades específicas</p>
+                            </div>
+                            <CoachNotesView user={userData} onUpdate={(updated) => setUserData(updated)} />
                         </div>
                     ) : activeTab === 'loads' ? (
                         <div className="bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden min-h-[600px]">
@@ -646,7 +658,7 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
                         </div>
                     ) : (
                         <div className="bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden p-4 min-h-[600px]">
-                            <UserSessionHistory user={user} isEmbedded={true} key={`history-${user.id}`} />
+                            <UserSessionHistory user={userData} isEmbedded={true} key={`history-${user.id}`} />
                         </div>
                     )}
                 </div>

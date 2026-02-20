@@ -29,6 +29,7 @@ const AthleteHome = () => {
     const [habitFrequency, setHabitFrequency] = useState('daily');
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [unreadCount, setUnreadCount] = useState(0);
+    const [userStatus, setUserStatus] = useState('active');
     const userName = currentUser?.displayName?.split(' ')[0] || 'Atleta';
 
     // Fetch User Schedule (Real-time)
@@ -44,6 +45,7 @@ const AthleteHome = () => {
                 setUserCustomMetrics(data.customMeasurements || []);
                 setUserMinimums(data.minimums || null);
                 setHabitFrequency(data.habitFrequency || 'daily');
+                setUserStatus(data.status || 'active');
             }
         });
 
@@ -215,6 +217,40 @@ const AthleteHome = () => {
     }, [todayTasks, currentUser.uid]);
 
     const computedTasks = getComputedTasks();
+
+    if (userStatus === 'archived') {
+        return (
+            <div className="fixed inset-0 z-[200] bg-slate-900 flex items-center justify-center p-6 text-center">
+                <div className="max-w-xs w-full space-y-8">
+                    <div className="w-24 h-24 bg-slate-800 rounded-3xl flex items-center justify-center mx-auto shadow-2xl border border-slate-700">
+                        <Zap size={40} className="text-slate-600" />
+                    </div>
+                    <div className="space-y-3">
+                        <h2 className="text-3xl font-black text-white tracking-tight">Cuenta Inactiva</h2>
+                        <p className="text-slate-400 font-medium leading-relaxed">
+                            Tu plan de suscripción no está activo en este momento. Por favor, contacta con tu coach para renovar tu acceso.
+                        </p>
+                    </div>
+                    <div className="pt-4 space-y-3">
+                        <button
+                            onClick={() => setIsChatOpen(true)}
+                            className="w-full py-4 bg-emerald-500 text-slate-900 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-emerald-400 active:scale-[0.98] transition-all"
+                        >
+                            <MessageCircle size={20} fill="currentColor" />
+                            CONTACTAR CON MI COACH
+                        </button>
+                        <NotificationBell recipientId={currentUser?.uid} />
+                    </div>
+                </div>
+                <ChatDrawer
+                    isOpen={isChatOpen}
+                    onClose={() => setIsChatOpen(false)}
+                    athleteId={currentUser.uid}
+                    athleteName="Tu Coach"
+                />
+            </div>
+        );
+    }
 
     return (
         <>
