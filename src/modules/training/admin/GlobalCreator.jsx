@@ -39,12 +39,12 @@ const isResistanceExercise = (ex, isSessionCardio = false) => {
     // Explicit override in config
     if (ex.config?.forceCardio) return true;
 
-    const q = (ex.quality || '').toUpperCase();
-    const qs = (ex.qualities || []).map(tag => tag.toUpperCase());
+    const q = String(ex.quality || '').toUpperCase();
+    const qs = (ex.qualities || []).map(tag => String(tag || '').toUpperCase());
     const cardioTags = ['E', 'ENERGÍA', 'CARDIO', 'RESISTENCIA', 'C'];
     const isRes = cardioTags.includes(q) || qs.some(tag => cardioTags.includes(tag));
 
-    const name = (ex.name_es || ex.name || '').toLowerCase();
+    const name = String(ex.name_es || ex.name || '').toLowerCase();
     const cardioKeywords = ['ciclismo', 'carrera', 'running', 'bike', 'elíptica', 'remo', 'row', 'natación', 'swim', 'cardio', 'walking'];
     const isKeywordMatch = cardioKeywords.some(kw => name.includes(kw));
 
@@ -1032,9 +1032,9 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
         return exercises.filter(ex => {
             // Search Filter
             const term = searchTerm.toLowerCase();
-            const esName = (ex.name_es || '').toLowerCase();
-            const enName = (ex.name || '').toLowerCase();
-            const matchesSearch = !term || esName.includes(term) || enName.includes(term) || (ex.tags || []).some(t => t.toLowerCase().includes(term));
+            const esName = String(ex.name_es || '').toLowerCase();
+            const enName = String(ex.name || '').toLowerCase();
+            const matchesSearch = !term || esName.includes(term) || enName.includes(term) || (ex.tags || []).some(t => String(t || '').toLowerCase().includes(term));
 
             if (!matchesSearch) return false;
 
@@ -1300,12 +1300,12 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
             const filtered = bulkExercises.filter(ex => {
                 // 0. Exclude Duplicates (Already in Library)
                 if (ex.id && existingIds.has(ex.id)) return false;
-                if (ex.name && existingNames.has(ex.name.toLowerCase())) return false;
+                if (ex.name && existingNames.has(String(ex.name).toLowerCase())) return false;
 
                 // 1. Safe Text Search
-                const name = (ex.name || '').toLowerCase();
-                const target = (ex.target || '').toLowerCase();
-                const bodyPart = (ex.bodyPart || '').toLowerCase();
+                const name = String(ex.name || '').toLowerCase();
+                const target = String(ex.target || '').toLowerCase();
+                const bodyPart = String(ex.bodyPart || '').toLowerCase();
 
                 const matchesSearch = !term || name.includes(term) || target.includes(term) || bodyPart.includes(term);
                 if (!matchesSearch) return false;
@@ -4257,7 +4257,7 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                                                 <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
                                                     {allNutritionDays
                                                         .filter(d => d.id) // Filter out ghosts
-                                                        .filter(d => d.name.toLowerCase().includes(daySearchTerm.toLowerCase()))
+                                                        .filter(d => String(d.name || '').toLowerCase().includes(String(daySearchTerm || '').toLowerCase()))
                                                         .map(day => (
                                                             <div key={day.id} className="bg-white p-6 rounded-[24px] shadow-sm border border-slate-100 hover:shadow-xl hover:shadow-slate-200/50 transition-all group flex flex-col justify-between min-h-[160px]">
                                                                 <div>

@@ -126,7 +126,7 @@ const NotificationBell = ({ recipientId, onNotificationClick }) => {
                                             {(() => {
                                                 const actualType = noti.data?.type || noti.type || 'session';
                                                 const getStyle = (type, priority) => {
-                                                    const t = type?.toLowerCase();
+                                                    const t = String(type || '').toLowerCase();
                                                     if (priority === 'high') return { bg: 'bg-orange-50', text: 'text-orange-500', icon: <AlertCircle size={18} /> };
                                                     switch (t) {
                                                         case 'neat':

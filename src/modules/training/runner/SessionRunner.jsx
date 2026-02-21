@@ -103,10 +103,10 @@ const SessionRunner = () => {
             // Check if this block counts as "Cardio" for override purposes
             // Should match logic in UserPlanning approximately
             const isCardioBlock = (newModule.exercises || []).some(ex => {
-                const name = (ex.name_es || ex.name || '').toLowerCase();
+                const name = String(ex.name_es || ex.name || '').toLowerCase();
                 const cardioKeywords = ['ciclismo', 'carrera', 'running', 'bike', 'elíptica', 'remo', 'row', 'natación', 'swim', 'cardio', 'walking'];
                 const isKeywordMatch = cardioKeywords.some(kw => name.includes(kw));
-                const isEnergy = (ex.quality || '').toUpperCase() === 'E' || (ex.qualities || []).some(q => q.toUpperCase() === 'E');
+                const isEnergy = String(ex.quality || '').toUpperCase() === 'E' || (ex.qualities || []).some(q => String(q || '').toUpperCase() === 'E');
                 return isKeywordMatch || isEnergy || ex.config?.forceCardio;
             });
 

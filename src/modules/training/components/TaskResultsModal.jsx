@@ -249,7 +249,7 @@ const TaskResultsModal = ({ task, onClose, availableForms }) => {
                                         .filter(([habit, val]) => {
                                             if (val === null || val === undefined) return false;
                                             // Normalize name to catch "Caminar" vs "Caminar."
-                                            const normalized = habit.toLowerCase().trim().replace(/\.+$/, "");
+                                            const normalized = String(habit || '').toLowerCase().trim().replace(/\.+$/, "");
                                             if (seen.has(normalized)) return false;
                                             seen.add(normalized);
                                             return true;
@@ -307,7 +307,7 @@ const TaskResultsModal = ({ task, onClose, availableForms }) => {
                                     <div className="grid grid-cols-2 gap-2">
                                         {Object.entries(results.measurements)
                                             .filter(([name], _, arr) => {
-                                                const lower = name.toLowerCase();
+                                                const lower = String(name || '').toLowerCase();
                                                 if (['waist', 'hip', 'cintura', 'cadera'].includes(lower)) {
                                                     // Only keep the first one we find among synonyms to avoid duplicate rows for old data
                                                     const synonyms = lower === 'waist' || lower === 'cintura' ? ['waist', 'cintura'] : ['hip', 'cadera'];

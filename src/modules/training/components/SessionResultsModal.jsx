@@ -111,7 +111,7 @@ const SessionResultsModal = ({ task, session, onClose, userId }) => {
         const exId = exercise?.id || exercise?.exerciseId;
         const libEx = libraryMap.get(exId);
         const qualities = libEx?.qualities || (libEx?.quality ? [libEx.quality] : []);
-        const normQualities = qualities.map(q => q.toLowerCase());
+        const normQualities = qualities.map(q => String(q || '').toLowerCase());
         const isBoost = log?.blockType?.toUpperCase().includes('BOOST');
 
         if (normQualities.includes('e') || normQualities.includes('energía') || normQualities.includes('energia') || isBoost) {

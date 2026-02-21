@@ -54,7 +54,7 @@ export const TaskPicker = ({
                             />
                         </div>
                         <div className="max-h-60 overflow-y-auto space-y-1">
-                            {sessions.filter(s => s.name.toLowerCase().includes(search.toLowerCase())).map(s => (
+                            {sessions.filter(s => String(s.name || '').toLowerCase().includes(String(search || '').toLowerCase())).map(s => (
                                 <button
                                     key={s.id}
                                     onClick={() => onAssign({ type: 'session', sessionId: s.id, id: s.id })} // Structure expected by consumers
@@ -95,7 +95,7 @@ export const TaskPicker = ({
                                 />
                             </div>
                             <div className="max-h-60 overflow-y-auto space-y-1">
-                                {programs.filter(p => p.name.toLowerCase().includes(search.toLowerCase())).map(p => (
+                                {programs.filter(p => String(p.name || '').toLowerCase().includes(String(search || '').toLowerCase())).map(p => (
                                     <button
                                         key={p.id}
                                         onClick={() => onAssign({ type: 'program', programId: p.id })}
@@ -136,7 +136,7 @@ export const TaskPicker = ({
                             />
                         </div>
                         <div className="max-h-60 overflow-y-auto space-y-1">
-                            {nutritionDays.filter(n => n.id).filter(n => n.name.toLowerCase().includes(search.toLowerCase())).map(n => (
+                            {nutritionDays.filter(n => n.id).filter(n => String(n.name || '').toLowerCase().includes(String(search || '').toLowerCase())).map(n => (
                                 <button
                                     key={n.id}
                                     onClick={() => onAssign({ type: 'nutrition_day', dayId: n.id, name: n.name })}

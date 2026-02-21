@@ -39,10 +39,10 @@ export const ExerciseAPI = {
         // Local/Firestore Search
         try {
             const all = await this.getAllExercises();
-            const lower = name.toLowerCase();
+            const lower = String(name || '').toLowerCase();
             return all.filter(ex =>
-                (ex.name_es && ex.name_es.toLowerCase().includes(lower)) ||
-                (ex.name && ex.name.toLowerCase().includes(lower))
+                (ex.name_es && String(ex.name_es).toLowerCase().includes(lower)) ||
+                (ex.name && String(ex.name).toLowerCase().includes(lower))
             );
         } catch (error) {
             console.error(error);
@@ -91,7 +91,8 @@ export const ExerciseAPI = {
 
     async searchOnline(name) {
         try {
-            const url = `https://${API_HOST}/exercises/name/${name.toLowerCase()}?limit=30`;
+            const lowerLabel = String(name || '').toLowerCase();
+            const url = `https://${API_HOST}/exercises/name/${lowerLabel}?limit=30`;
             const response = await fetch(url, rapidOptions);
             if (!response.ok) throw new Error('RapidAPI Error');
             const data = await response.json();
@@ -164,12 +165,13 @@ export const ExerciseAPI = {
             'shoulders': 'Push', 'upper arms': 'Push', 'upper legs': 'Squat',
             'waist': 'Core', 'strength': 'Global', 'stretching': 'Mobility'
         };
-        return mapping[bodyPart?.toLowerCase()] || 'Global';
+        const lowerBodyPart = String(bodyPart || '').toLowerCase();
+        return mapping[lowerBodyPart] || 'Global';
     },
 
     toSentenceCase(text) {
         if (!text) return '';
-        const cleaned = text.trim().toLowerCase();
+        const cleaned = String(text).trim().toLowerCase();
         return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
     },
 

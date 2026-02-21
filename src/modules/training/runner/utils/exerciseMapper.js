@@ -43,7 +43,7 @@ export const normalizeExercise = (ex) => {
  * @returns {boolean}
  */
 const isBodyweightExercise = (equipment = '') => {
-    const eq = equipment.toLowerCase();
+    const eq = String(equipment || '').toLowerCase();
     return eq.includes('corporal') ||
         eq.includes('bodyweight') ||
         eq.includes('ninguno') ||

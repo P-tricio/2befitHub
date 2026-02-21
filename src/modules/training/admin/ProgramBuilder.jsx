@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Save, Calendar, Trash2, ChevronRight, ChevronDown, Search, Edit2, X, Copy, AlertCircle, ArrowRightLeft, BookmarkPlus, XCircle, Utensils, Zap, MessageCircle, Footprints, CheckSquare, ClipboardList, Dumbbell, ArrowDown, Clock, Filter } from 'lucide-react';
+import { Plus, Save, Calendar, Trash2, ChevronRight, ChevronDown, Search, Edit2, X, Copy, AlertCircle, ArrowRightLeft, BookmarkPlus, XCircle, Utensils, Zap, MessageCircle, Footprints, CheckSquare, ClipboardList, Dumbbell, ArrowDown, Clock, Filter, Layers } from 'lucide-react';
 import ActionMenu from '../../../components/admin/ActionMenu';
 import { TrainingDB } from '../services/db';
 import * as ProtocolService from '../services/protocolService';
@@ -455,6 +455,116 @@ const ProgramBuilder = () => {
         }
     };
 
+    const handleApplyHybridCycle = async (slotId, taskIndex) => {
+        const task = schedule[slotId][taskIndex];
+        if (task.type !== 'session') return;
+
+        const session = sessions.find(s => s.id === (task.sessionId || task.id));
+        if (!session) return;
+
+        if (!window.confirm(`¿Generar ciclo híbrido de 6 semanas para "${session.name}"? (Semanas 1-2: R, 3-4: T, 5-6: E)`)) return;
+
+        try {
+            // 1. Ensure we have at least 6 weeks
+            if (durationWeeks < 6) {
+                setDurationWeeks(6);
+            }
+
+            // 2. Identify the base Monday/Day index
+            const [wPart, dPart] = slotId.split('-');
+
+            // 3. Create/Find variants
+            const variants = {};
+            const targets = ['PDP-R', 'PDP-T', 'PDP-E'];
+
+            for (const p of targets) {
+                if (session.type === p) {
+                    variants[p] = session;
+                    continue;
+                }
+
+                const suffix = p.split('-')[1]; // R, T, or E
+
+                // --- Robust Name Matching Logic (Nomenclature: PDP-PROT-SEX-VAR) ---
+                // 1. Extract the "core" part (everything after the first two parts of PDP-X-)
+                // Or simply strip the PDP-X- prefix and handle the dash.
+                const coreName = session.name
+                    .replace(/^PDP-[RTE]-/i, '') // Remove PDP-R-, PDP-T-, etc.
+                    .replace(/\s*\[[RTE]\]$/i, '')
+                    .trim();
+
+                // 2. Generate target names based on user's exact convention
+                const possibleNames = [
+                    `PDP-${suffix}-${coreName}`,         // Exact: PDP-T-M(A1)
+                    `PDP-${suffix}-${coreName.replace(/^-/, '')}`, // Handle double dashes if they occur
+                    `${coreName} [${suffix}]`,           // Alternative: M(A1) [T]
+                ];
+
+                // 3. Match existing sessions (case-insensitive and type-safe)
+                const existing = sessions.find(s =>
+                    s.type === p &&
+                    possibleNames.some(pn => String(s.name || '').toLowerCase().trim() === String(pn || '').toLowerCase().trim())
+                );
+
+                if (existing) {
+                    variants[p] = existing;
+                } else {
+                    const transformed = ProtocolService.transformSessionProtocol(session, p);
+
+                    // Use the user's preferred convention for the new name
+                    // If the original had a prefix PDP-X-, use a prefix. Otherwise use a suffix.
+                    const usePrefix = /^PDP-[RTE]-/i.test(session.name);
+                    const newName = usePrefix ? `PDP-${suffix}-${coreName}` : `${coreName} [${suffix}]`;
+
+                    const createdSession = await TrainingDB.sessions.create({
+                        ...transformed,
+                        name: newName,
+                        group: session.group || 'Programación'
+                    });
+                    const fullCreated = { ...transformed, id: createdSession.id, type: p };
+                    variants[p] = fullCreated;
+                    // Add to local state so next lookups find it
+                    setSessions(prev => [...prev, fullCreated]);
+                }
+            }
+
+            // 4. Distribute across schedule
+            setSchedule(prev => {
+                const newSchedule = { ...prev };
+                const map = [
+                    { week: 1, type: 'PDP-R' },
+                    { week: 2, type: 'PDP-R' },
+                    { week: 3, type: 'PDP-T' },
+                    { week: 4, type: 'PDP-T' },
+                    { week: 5, type: 'PDP-E' },
+                    { week: 6, type: 'PDP-E' }
+                ];
+
+                map.forEach(item => {
+                    const targetSlot = `w${item.week}-${dPart}`;
+                    const targetSession = variants[item.type];
+
+                    const currentTasks = newSchedule[targetSlot] || [];
+                    // Check if already assigned to avoid duplicates
+                    if (!currentTasks.find(t => (t.sessionId || t.id) === targetSession.id)) {
+                        newSchedule[targetSlot] = [...currentTasks, {
+                            id: crypto.randomUUID(),
+                            type: 'session',
+                            sessionId: targetSession.id
+                        }];
+                    }
+                });
+
+                return newSchedule;
+            });
+
+            alert('Ciclo híbrido aplicado correctamente.');
+        } catch (e) {
+            console.error(e);
+            alert('Error al aplicar ciclo híbrido');
+        }
+    };
+
     // Helper to get task visual info
     const getTaskInfo = (taskOrId) => {
         if (!taskOrId) return { name: 'Desconocido', icon: <AlertCircle size={14} />, color: 'bg-slate-100 text-slate-500' };
@@ -544,7 +654,7 @@ const ProgramBuilder = () => {
     // Filter and sort programs for list view
     const filteredPrograms = programs
         .filter(p => {
-            const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase());
+            const matchesSearch = String(p.name || '').toLowerCase().includes(String(searchTerm || '').toLowerCase());
             if (!matchesSearch) return false;
 
             if (filterType === 'all') return true;
@@ -963,6 +1073,16 @@ const ProgramBuilder = () => {
                                                                                                         title="Espejar Protocolos (Mirror PDP)"
                                                                                                     >
                                                                                                         <Zap size={12} />
+                                                                                                    </button>
+                                                                                                    <button
+                                                                                                        onClick={(e) => {
+                                                                                                            e.stopPropagation();
+                                                                                                            handleApplyHybridCycle(slotId, tIdx);
+                                                                                                        }}
+                                                                                                        className="p-1 hover:bg-emerald-50 rounded text-slate-400 hover:text-emerald-600 transition-colors"
+                                                                                                        title="Aplicar Ciclo Híbrido (6 sem)"
+                                                                                                    >
+                                                                                                        <Layers size={12} />
                                                                                                     </button>
                                                                                                     <button
                                                                                                         onClick={(e) => {

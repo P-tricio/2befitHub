@@ -93,7 +93,7 @@ const ExerciseBrowser = ({
             const term = searchTerm.toLowerCase();
             const esName = (ex.name_es || '').toLowerCase();
             const enName = (ex.name || '').toLowerCase();
-            const matchesSearch = !term || esName.includes(term) || enName.includes(term) || (ex.tags || []).some(t => t.toLowerCase().includes(term));
+            const matchesSearch = !term || esName.includes(term) || enName.includes(term) || (ex.tags || []).some(t => String(t || '').toLowerCase().includes(term));
 
             if (!matchesSearch) return false;
 
@@ -246,8 +246,8 @@ const ExerciseBrowser = ({
                     <button
                         onClick={() => setFilters(prev => ({ ...prev, isWarmup: !prev.isWarmup }))}
                         className={`px-4 py-2.5 rounded-xl border text-[10px] font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${filters.isWarmup
-                                ? 'bg-orange-500 border-orange-500 text-white shadow-md'
-                                : 'bg-slate-50 border-slate-200 text-slate-400 hover:border-slate-300'
+                            ? 'bg-orange-500 border-orange-500 text-white shadow-md'
+                            : 'bg-slate-50 border-slate-200 text-slate-400 hover:border-slate-300'
                             }`}
                     >
                         <span>🔥 Sólo Calentamiento</span>

@@ -1348,10 +1348,10 @@ const AddTaskModal = ({ user, date, sessions, groups, programs, nutritionDays = 
             const cardioBlocks = (selectedSessionForConfig.blocks || []).filter(b => {
                 const ex = b.exercises?.[0];
                 if (!ex) return false;
-                const name = (ex.name_es || ex.name || '').toLowerCase();
+                const name = String(ex.name_es || ex.name || '').toLowerCase();
                 const cardioKeywords = ['ciclismo', 'carrera', 'running', 'bike', 'elíptica', 'remo', 'row', 'natación', 'swim', 'cardio', 'walking'];
                 const isKeywordMatch = cardioKeywords.some(kw => name.includes(kw));
-                const isEnergy = (ex.quality || '').toUpperCase() === 'E' || (ex.qualities || []).some(q => q.toUpperCase() === 'E');
+                const isEnergy = String(ex.quality || '').toUpperCase() === 'E' || (ex.qualities || []).some(q => String(q || '').toUpperCase() === 'E');
                 const isForced = ex.config?.forceCardio || ex.config?.type === 'cardio' || selectedSessionForConfig.isCardio || selectedSessionForConfig.type === 'CARDIO';
                 return isKeywordMatch || isEnergy || isForced;
             });
@@ -1465,7 +1465,7 @@ const AddTaskModal = ({ user, date, sessions, groups, programs, nutritionDays = 
                                 </div>
                                 <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
                                     {(() => {
-                                        const filtered = sessions.filter(s => s.name.toLowerCase().includes(search.toLowerCase()));
+                                        const filtered = sessions.filter(s => String(s.name || '').toLowerCase().includes(search.toLowerCase()));
                                         const grouped = filtered.reduce((acc, s) => {
                                             const group = s.group || 'General';
                                             if (!acc[group]) acc[group] = [];

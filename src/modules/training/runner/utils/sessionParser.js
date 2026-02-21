@@ -38,7 +38,7 @@ export const parseNewStructure = async (sessionData, globalProtocol) => {
     const libraryMap = new Map(libraryExercises.map(e => [e.id, e]));
 
     // Generic robust normalization for name matching
-    const normalizeName = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '').replace(/s$/, '');
+    const normalizeName = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').replace(/s$/, '');
 
     // Create Name Map for fallback lookup (ID is often randomized in sessions)
     const libraryNameMap = new Map();
@@ -149,7 +149,7 @@ export const parseNewStructure = async (sessionData, globalProtocol) => {
                         primaryTargeting.metric = 'time'; // Explicit metric
                     } else if (['KM', 'METROS', 'KCAL', 'REPS'].includes(s0.volType)) {
                         primaryTargeting.volume = s0.volume;
-                        primaryTargeting.metric = s0.volType.toLowerCase();
+                        primaryTargeting.metric = String(s0.volType || '').toLowerCase();
                     }
                 }
 
