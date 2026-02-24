@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { TrainingDB } from '../services/db';
 import { Plus, Trash2, Calendar, ClipboardList } from 'lucide-react';
-import { format } from 'date-fns';
+import { formatDateSafe } from '../../../lib/dateUtils';
 import { es } from 'date-fns/locale';
 import { motion } from 'framer-motion';
 
@@ -115,7 +115,7 @@ const CoachNotesView = ({ user, onUpdate }) => {
                                         <div className="flex items-center gap-2 px-3 py-1 bg-slate-50 rounded-full border border-slate-100">
                                             <Calendar size={12} className="text-slate-400" />
                                             <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                                                {format(new Date(note.createdAt), 'dd MMMM yyyy HH:mm', { locale: es })}
+                                                {formatDateSafe(new Date(note.createdAt), 'dd MMMM yyyy HH:mm')}
                                             </span>
                                         </div>
                                     </div>

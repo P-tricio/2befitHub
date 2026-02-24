@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, CheckSquare, ChevronDown, ChevronUp, PieChart, Info, Scale, Zap, X, ShoppingBasket } from 'lucide-react';
+import { Check, CheckSquare, ChevronDown, ChevronUp, PieChart, Info, Scale, Zap, X, ShoppingBasket, Sparkles, Trash2, Utensils, Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { NutritionDB } from '../services/nutritionDB';
 import { calculateItemMacros, formatMacroDisplay, gramsToPortions, PORTION_CONSTANTS } from '../services/portionService';
@@ -8,7 +8,8 @@ import { GENERIC_INGREDIENT_IDS } from '../services/shoppingListService';
 import { TrainingDB } from '../../training/services/db';
 import ShoppingListView from './ShoppingListView';
 import FoodSearch from '../components/FoodSearch';
-import { Plus } from 'lucide-react'; // Add Plus icon for Add button
+import { format, isSameDay } from 'date-fns';
+import { es } from 'date-fns/locale';
 
 const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayId is the assigned plan day
     const [day, setDay] = useState(null);
@@ -43,18 +44,18 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
             }
 
             // Fetch User Log
-            const logData = await NutritionDB.logs.getDailyLog(userId, date);
+            const dateStr = typeof date === 'string' ? date : format(date, 'yyyy-MM-dd');
+
+            const logData = await NutritionDB.logs.getDailyLog(userId, dateStr);
+
 
             setDay(dayData);
 
             // Scoping fix: If log exists but dayId has changed, it might be stale testing data
-            // We'll keep the log but if dayId differs significantly, we might want to alert or just store dayId.
-            // For now, let's just initialize if null or store current dayId in log if it doesn't have it.
             if (!logData) {
                 setLog({ userId, date, dayId, completedItems: {} });
-            } else if (logData.dayId && logData.dayId !== dayId) {
+            } else if (logData.dayId && dayId && logData.dayId !== dayId) {
                 // If dayId exists and is different, it's definitely another plan.
-                // Resetting for clean test/plan switch.
                 setLog({ userId, date, dayId, completedItems: {} });
             } else {
                 setLog({ ...logData, dayId }); // Ensure current dayId is associated
@@ -62,12 +63,13 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
 
             // Load Extra Items if any
             if (logData && logData.extraItems) {
+
                 setExtraItems(logData.extraItems);
             } else {
                 setExtraItems([]);
             }
 
-            // Check if it's a generic plan (only generic ingredients)
+            // Check if it's a generic plan
             let foundReal = false;
             if (dayData && dayData.meals) {
                 for (const meal of dayData.meals) {
@@ -89,7 +91,6 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
             }
             setIsGenericPlan(!foundReal);
 
-            // Default expand current meal based on time? 
             if (dayData && dayData.meals) {
                 const initialExpand = {};
                 dayData.meals.forEach((_, i) => initialExpand[i] = true);
@@ -107,7 +108,6 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
         const isCompleted = !!log.completedItems?.[key];
         const newStatus = !isCompleted;
 
-        // Optimistic Update
         const newLog = {
             ...log,
             completedItems: {
@@ -115,13 +115,9 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                 [key]: newStatus
             }
         };
-        // Remove key if false to keep clean? 
         if (!newStatus) delete newLog.completedItems[key];
-
         setLog(newLog);
 
-        // Sync API
-        // FIX: Pass overrideKey as customKey to updateMealStatus, and also pass dayId
         await NutritionDB.logs.updateMealStatus(userId, date, mealIdx, itemIdx, newStatus, overrideKey, dayId);
     };
 
@@ -133,7 +129,6 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
         if (!day || !day.meals[mIdx]) return;
         const meal = day.meals[mIdx];
 
-        // Check if all items in this meal are completed
         let allInMealDone = true;
         meal.items?.forEach((_, iIdx) => {
             if (!log.completedItems[`${mIdx}-${iIdx}`]) allInMealDone = false;
@@ -156,7 +151,6 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
     const toggleCompleteAll = async () => {
         if (!day) return;
 
-        // Check if all are currently completed
         let allCompleted = true;
         day.meals?.forEach((meal, mIdx) => {
             meal.items?.forEach((item, iIdx) => {
@@ -169,7 +163,6 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
         const newCompletedItems = {};
 
         if (newStatus) {
-            // Mark all as true
             day.meals?.forEach((meal, mIdx) => {
                 meal.items?.forEach((item, iIdx) => {
                     const key = `${mIdx}-${iIdx}`;
@@ -178,51 +171,44 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
             });
         }
 
-        // Optimistic Update
-        const newLog = {
-            ...log,
-            completedItems: newCompletedItems
-        };
+        const newLog = { ...log, completedItems: newCompletedItems };
         setLog(newLog);
-
-        // Sync API (Full update)
-        // We need a method to update the whole map or iterate. 
-        // Ideally NutritionDB has updateLog.
-        // Let's use updateDailyLog if available or fallback to loop (inefficient) or better, create updateLog.
-        // Assuming NutritionDB.logs.saveLog exists or similar. 
-        // Previously we used updateMealStatus. Let's try to update the whole object log.
-        // Let's check updateMealStatus implementation in mind -> it updates a specific field.
-        // I will implement a saveLog method or similar if needed, but for now let's assume updateLog or loop.
-        // Actually, let's just save the whole completedItems map.
-        // Update log with current dayId
         await NutritionDB.logs.saveDailyLog(userId, date, newLog.completedItems, dayId, extraItems);
     };
 
-    // --- Extra Items Management ---
     const handleFoodSelect = async (result) => {
-        const { type, data, quantity, unit } = result;
-
         if (activeMealIndex === null) return;
 
-        // Normalized item
-        let newItem = {
-            type: type === 'external' ? 'food' : type,
-            refId: data.id,
-            name: data.name,
-            quantity: Number(quantity) || 1,
-            unit: unit || 'g',
-            // FIX: Ensure no undefined values for Firestore
-            cachedMacros: (type === 'external' && data.macros) ? data.macros : null,
-            // Flag to identify user added
-            isUserAdded: true
-        };
+        // NEW: Batch support for AI parsing
+        const results = Array.isArray(result) ? result : [result];
 
-        const newExtraItems = [...extraItems, { mealIndex: activeMealIndex, item: newItem }];
+        const newItemsToAppend = results.map(res => {
+            const { type, data, quantity, unit } = res;
+            return {
+                mealIndex: activeMealIndex,
+                item: {
+                    type: type === 'external' ? 'food' : type,
+                    refId: data?.id || res.refId,
+                    name: data?.name || res.name,
+                    quantity: Number(quantity || res.quantity) || 1,
+                    unit: unit || res.unit || 'g',
+                    baseMacros: res.baseMacros || null,
+                    cachedMacros: res.cachedMacros || (res.calories !== undefined ? {
+                        calories: Math.round(res.calories || 0),
+                        protein: Math.round(res.protein || 0),
+                        carbs: Math.round(res.carbs || 0),
+                        fats: Math.round(res.fats || 0),
+                        fiber: Math.round(res.fiber || 0)
+                    } : ((type === 'external' && data?.macros) ? data.macros : null)),
+                    isUserAdded: true
+                }
+            };
+        });
+
+        const newExtraItems = [...extraItems, ...newItemsToAppend];
         setExtraItems(newExtraItems);
         setActiveMealIndex(null);
 
-        // Save
-        // FIX: Ensure dayId is passed to saveDailyLog to prevent session/dayId loss
         await NutritionDB.logs.saveDailyLog(userId, date, log.completedItems, dayId, newExtraItems);
     };
 
@@ -230,7 +216,6 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
         const newExtraItems = [...extraItems];
         newExtraItems.splice(index, 1);
 
-        // Also remove its completion status to keep the log clean
         const newLog = { ...log };
         const key = `extra-${index}`;
         if (newLog.completedItems && newLog.completedItems[key]) {
@@ -239,58 +224,7 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
         }
 
         setExtraItems(newExtraItems);
-        // FIX: Ensure dayId is passed to saveDailyLog
         await NutritionDB.logs.saveDailyLog(userId, date, newLog.completedItems, dayId, newExtraItems);
-    };
-
-    // Calculation
-    const calculateProgress = () => {
-        if (!day) return { target: {}, current: {} };
-
-        let target = { calories: 0, protein: 0, carbs: 0, fats: 0 };
-        let current = { calories: 0, protein: 0, carbs: 0, fats: 0 };
-
-        day.meals?.forEach((meal, mIdx) => {
-            meal.items?.forEach((item, iIdx) => {
-                // Calculate Item Macros (Need resources? Ideally Day stores snapshot or we need to fetch)
-                // In DayEditor we saved RefID + Name + Qty. But we might need real macros.
-                // Optimally NutritionDay stores a snapshot of macros to avoid N+1 lookups here.
-                // Checks DayEditor: it stores refId. 
-                // CRITICAL: We need the macros. 
-                // To fix N+1, the UserView should probably get "hydrated" day or we trust we can fetch allFoods cached.
-                // Let's assume we fetch all foods once or the Day objects *shouls* have snapshots. 
-                // For MVP let's assume we need to fetch all foods/recipes to compute.
-                // I'll add a quick fetch of all foods/recipes in loadData for calculation context.
-                // ... Wait, that's heavy.
-                // Better approach used in Training: Hydration.
-                // I'll create a `NutritionRunner` utility later?
-                // For now, I'll fetch valid foods.
-                // OR: I will assume the Day object has `items` with enough data.
-                // If DayEditor *only* saved refId, we have a problem.
-                // Let's check DayEditor save logic. 
-                // It saves `meals`. `addItemToMeal` saves `refId`, `name`, `quantity`, `unit`.
-                // It MISSES macros. This is a flaw in my DayEditor design.
-                // I should patch DayEditor or fetch here. 
-            });
-        });
-
-        // Add Extra Items to Targets (User added items increase the "Current" but usually not "Target" unless flexible dieting)
-        // Usually, simply adding items means you ate MORE than plan.
-        // So we add to "Current" if consumed (or if we treat added items as consumed? No, let's treat them like plan items)
-
-        // Wait, if user adds an item, it should likely be part of the "Plan" for today dynamically?
-        // Or just "Consumed". 
-        // If I add a cookie, my Target doesn't increase, but my Consumed does.
-        // Implementation: Iterate extraItems.
-        extraItems.forEach((entry, idx) => {
-            // We need to check if this extra item is completed?
-            // Since it's dynamic, we need a key. 
-            // Let's use `extra-${idx}` as key in completedItems
-            // But wait, key collision with plan items? Plan use `mIdx-iIdx`.
-            // We'll use `extra-${idx}`.
-        });
-
-        return { target, current };
     };
 
     const handleCompleteDay = async () => {
@@ -304,11 +238,10 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
             const pct = t.calories > 0 ? Math.round((c.calories / t.calories) * 100) : 0;
             const summary = `${Math.round(c.calories)}/${Math.round(t.calories)} kcal (${pct}%)`;
 
-            // Enriquecer completedItems con metadatos de los ítems para la revisión del admin
             const enrichedCompletedItems = {};
             if (log.completedItems && day?.meals) {
                 Object.keys(log.completedItems).forEach(key => {
-                    if (key.startsWith('extra-')) return; // Skip extra items here, handled separately
+                    if (key.startsWith('extra-')) return;
 
                     const [mIdx, iIdx] = key.split('-').map(Number);
                     const meal = day.meals[mIdx];
@@ -345,7 +278,6 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
         }
     };
 
-    // We need the food database to calculate calories
     const [resources, setResources] = useState({ foods: [], recipes: [] });
     useEffect(() => {
         const fetchResources = async () => {
@@ -362,50 +294,50 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
         let t = { calories: 0, protein: 0, carbs: 0, fats: 0, fiber: 0 }; // Target
         let c = { calories: 0, protein: 0, carbs: 0, fats: 0, fiber: 0 }; // Current (Consumed)
 
-        if (!day || !resources.foods.length) return { t, c };
+        if (!resources.foods.length && day) return { t, c };
 
         // 1. Calculate Plan Items
-        day.meals?.forEach((meal, mIdx) => {
-            meal.items?.forEach((item, iIdx) => {
-                const key = `${mIdx}-${iIdx}`;
-                const isConsumed = !!log?.completedItems?.[key];
+        if (day) {
+            day.meals?.forEach((meal, mIdx) => {
+                meal.items?.forEach((item, iIdx) => {
+                    const key = `${mIdx}-${iIdx}`;
+                    const isConsumed = !!log?.completedItems?.[key];
 
-                let m = { calories: 0, protein: 0, carbs: 0, fats: 0, fiber: 0 };
+                    let m = { calories: 0, protein: 0, carbs: 0, fats: 0, fiber: 0 };
 
-                if (item.type === 'food') {
-                    const food = resources.foods.find(f => f.id === item.refId);
-                    if (food) m = calculateItemMacros(food, item.quantity, item.unit);
-                } else if (item.type === 'recipe') {
-                    const recipe = resources.recipes.find(r => r.id === item.refId);
-                    if (recipe && recipe.totalMacros) {
-                        const ratio = item.quantity;
-                        m = {
-                            calories: (recipe.totalMacros.calories || 0) * ratio,
-                            protein: (recipe.totalMacros.protein || 0) * ratio,
-                            carbs: (recipe.totalMacros.carbs || 0) * ratio,
-                            fats: (recipe.totalMacros.fats || 0) * ratio,
-                            fiber: (recipe.totalMacros.fiber || 0) * ratio
-                        };
+                    if (item.type === 'food') {
+                        const food = resources.foods.find(f => f.id === item.refId);
+                        m = calculateItemMacros(food, item.quantity, item.unit);
+                    } else if (item.type === 'recipe') {
+                        const recipe = resources.recipes.find(r => r.id === item.refId);
+                        if (recipe && recipe.totalMacros) {
+                            const ratio = item.quantity;
+                            m = {
+                                calories: (recipe.totalMacros.calories || 0) * ratio,
+                                protein: (recipe.totalMacros.protein || 0) * ratio,
+                                carbs: (recipe.totalMacros.carbs || 0) * ratio,
+                                fats: (recipe.totalMacros.fats || 0) * ratio,
+                                fiber: (recipe.totalMacros.fiber || 0) * ratio
+                            };
+                        }
                     }
-                }
 
-                // Add to Target
-                t.calories += m.calories;
-                t.protein += m.protein;
-                t.carbs += m.carbs;
-                t.fats += m.fats;
-                t.fiber += m.fiber;
+                    t.calories += m.calories;
+                    t.protein += m.protein;
+                    t.carbs += m.carbs;
+                    t.fats += m.fats;
+                    t.fiber += m.fiber;
 
-                // Add to Current if consumed
-                if (isConsumed) {
-                    c.calories += m.calories;
-                    c.protein += m.protein;
-                    c.carbs += m.carbs;
-                    c.fats += m.fats;
-                    c.fiber += m.fiber;
-                }
+                    if (isConsumed) {
+                        c.calories += m.calories;
+                        c.protein += m.protein;
+                        c.carbs += m.carbs;
+                        c.fats += m.fats;
+                        c.fiber += m.fiber;
+                    }
+                });
             });
-        });
+        }
 
         // 2. Calculate Extra Items
         extraItems.forEach((entry, idx) => {
@@ -416,21 +348,23 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
             let m = { calories: 0, protein: 0, carbs: 0, fats: 0, fiber: 0 };
 
             if (item.type === 'food') {
-                const food = resources.foods.find(f => f.id === item.refId);
-                if (food) {
-                    m = calculateItemMacros(food, item.quantity, item.unit);
+                const foodFromDb = item.refId ? resources.foods.find(f => f.id === item.refId) : null;
+
+                if (foodFromDb) {
+                    // Item matched with DB or manually selected from search
+                    m = calculateItemMacros(foodFromDb, item.quantity, item.unit);
+                } else if (item.baseMacros) {
+                    // Item from AI Lab with normalized base calories/macros
+                    m = calculateItemMacros(item.baseMacros, item.quantity, item.unit);
                 } else if (item.cachedMacros) {
-                    // Use cached macros if available for external items
-                    // Ensure all macro fields are present, default to 0 if undefined
-                    const macros = {
+                    // Backwards compat for old AI lab items (non-scaling)
+                    m = {
                         calories: item.cachedMacros.calories || 0,
                         protein: item.cachedMacros.protein || 0,
                         carbs: item.cachedMacros.carbs || 0,
                         fats: item.cachedMacros.fats || 0,
-                        fiber: item.cachedMacros.fiber || 0,
-                        unit: item.unit // Pass the item's unit for calculation
+                        fiber: item.cachedMacros.fiber || 0
                     };
-                    m = calculateItemMacros(macros, item.quantity, item.unit);
                 }
             } else if (item.type === 'recipe') {
                 const recipe = resources.recipes.find(r => r.id === item.refId);
@@ -445,7 +379,6 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                 }
             }
 
-            // Added items do NOT increase Target, only Current
             if (isConsumed) {
                 c.calories += m.calories;
                 c.protein += m.protein;
@@ -455,20 +388,38 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
             }
         });
 
-
-        // Standardize Fiber Target to min 40g
         if (t.fiber < 40) t.fiber = 40;
-
         return { t, c };
     };
 
     const { t, c } = getStats();
 
-    if (loading) return <div className="p-10 text-center text-slate-400">Cargando nutrición...</div>;
-    if (!day) return <div className="p-10 text-center text-slate-400">No hay plan nutricional asignado para hoy.</div>;
+    if (loading) return <div className="fixed inset-0 z-[5000] bg-white flex items-center justify-center text-slate-400">Cargando nutrición...</div>;
 
-    const Ring = ({ current, total, color, label, icon }) => {
-        const radius = 36; // Back to larger size
+    // If no plan is assigned, but we have extra items, we show a simplified "Extras Only" view
+    if (!day && extraItems.length === 0) {
+        return (
+            <div className="fixed inset-0 z-[5000] flex items-center justify-center p-6">
+                <div
+                    className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+                    onClick={onClose}
+                />
+                <div className="relative bg-white p-10 rounded-3xl shadow-xl text-center max-w-sm w-full space-y-4">
+                    <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto text-slate-300">
+                        <Utensils size={32} />
+                    </div>
+                    <div>
+                        <h3 className="text-lg font-black text-slate-900">Sin Registro</h3>
+                        <p className="text-sm text-slate-500 font-medium">No hay plan asignado ni alimentos registrados para este día.</p>
+                    </div>
+                    <button onClick={onClose} className="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm">Cerrar</button>
+                </div>
+            </div>
+        );
+    }
+
+    const Ring = ({ current, total, color, label }) => {
+        const radius = 36;
         const circumference = 2 * Math.PI * radius;
         const percent = Math.min(100, Math.max(0, (current / (total || 1)) * 100));
         const offset = circumference - (percent / 100) * circumference;
@@ -487,14 +438,14 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                         />
                     </svg>
                     <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-900">
-                        <span className="text-xl font-black">{viewMode === 'GRAMS' ? Math.round(current) : (current / (label === 'P' ? 25 : (label === 'G' ? 15 : 25))).toFixed(1)}</span>
+                        <span className="text-xl font-black">{viewMode === 'GRAMS' ? Math.round(current) : (current / (label === 'PROTEIN' ? 25 : (label === 'GRASA' ? 15 : 25))).toFixed(1)}</span>
                         <span className="text-[8px] text-slate-400 font-bold uppercase">{viewMode === 'GRAMS' ? 'g' : 'P'}</span>
                     </div>
                 </div>
                 <div className="mt-2 text-center">
-                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label}</div>
+                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label === 'PROTEIN' ? 'P' : label === 'CARBS' ? 'H' : 'G'}</div>
                     <div className="text-xs font-bold text-slate-500">
-                        / {viewMode === 'GRAMS' ? Math.round(total) : (total / (label === 'P' ? 25 : (label === 'G' ? 15 : 25))).toFixed(1)}
+                        / {viewMode === 'GRAMS' ? Math.round(total) : (total / (label === 'PROTEIN' ? 25 : (label === 'GRASA' ? 15 : 25))).toFixed(1)}
                     </div>
                 </div>
             </div>
@@ -503,73 +454,41 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
 
     return createPortal(
         <div className="fixed inset-0 z-[5000] flex flex-col justify-end">
-            {/* Backdrop */}
             <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                 className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
                 onClick={onClose}
             />
 
-            {/* Sheet */}
             <motion.div
-                initial={{ y: '100%' }}
-                animate={{ y: 0 }}
-                exit={{ y: '100%' }}
+                initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
                 transition={{ type: 'spring', damping: 25, stiffness: 200 }}
                 className="relative w-full h-[95vh] bg-slate-50 rounded-t-3xl shadow-[0_-8px_30px_rgba(0,0,0,0.12)] overflow-hidden flex flex-col"
             >
                 <div className="flex-1 overflow-y-auto relative bg-white pb-72">
-                    {/* Close Button Floating */}
-                    <button
-                        onClick={onClose}
-                        className="absolute top-6 right-6 z-10 p-2 bg-white/80 backdrop-blur-md border border-slate-100 rounded-full shadow-sm text-slate-500 hover:text-slate-900 transition-colors"
-                    >
+                    <button onClick={onClose} className="absolute top-6 right-6 z-10 p-2 bg-white/80 backdrop-blur-md border border-slate-100 rounded-full shadow-sm text-slate-500 hover:text-slate-900 transition-colors">
                         <X size={20} />
                     </button>
 
-                    {/* Header / Stats */}
-                    {/* Header / Stats */}
                     <div className="bg-white text-slate-900 rounded-b-[32px] p-5 pt-6 shadow-xl shadow-slate-200/50 pb-8 relative overflow-hidden ring-1 ring-slate-100 z-0">
                         <div className="flex justify-between items-center mb-3">
                             <div>
-                                <h1 className="text-xl font-black tracking-wide flex items-center gap-2">
-                                    PLAN DIARIO
-                                </h1>
+                                <h1 className="text-xl font-black tracking-wide flex items-center gap-2">PLAN DIARIO</h1>
                                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{date}</p>
                             </div>
                         </div>
 
-                        {/* View Mode Toggle */}
                         <div className="flex gap-2 mb-4">
-                            <button
-                                onClick={toggleCompleteAll}
-                                className="bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border border-emerald-200 flex items-center gap-2 shadow-sm text-emerald-600 active:scale-95"
-                            >
+                            <button onClick={toggleCompleteAll} className="bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border border-emerald-200 flex items-center gap-2 shadow-sm text-emerald-600 active:scale-95">
                                 <CheckSquare size={12} /> <span>Marcar Todo</span>
                             </button>
                             {!isGenericPlan && (
-                                <button
-                                    onClick={() => setShowShoppingList(true)}
-                                    className="bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border border-indigo-200 flex items-center gap-2 shadow-sm text-indigo-600 active:scale-95"
-                                >
+                                <button onClick={() => setShowShoppingList(true)} className="bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border border-indigo-200 flex items-center gap-2 shadow-sm text-indigo-600 active:scale-95">
                                     <ShoppingBasket size={12} /> <span>Lista</span>
                                 </button>
                             )}
-                            <button
-                                onClick={() => setViewMode(prev => prev === 'GRAMS' ? 'PORTIONS' : 'GRAMS')}
-                                className="bg-slate-50 hover:bg-slate-100 px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border border-slate-200 flex items-center gap-2 shadow-sm active:scale-95"
-                            >
-                                {viewMode === 'GRAMS' ? (
-                                    <>
-                                        <Scale size={12} className="text-indigo-500" /> <span>Porciones</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <PieChart size={12} className="text-indigo-500" /> <span>Gramos</span>
-                                    </>
-                                )}
+                            <button onClick={() => setViewMode(prev => prev === 'GRAMS' ? 'PORTIONS' : 'GRAMS')} className="bg-slate-50 hover:bg-slate-100 px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border border-slate-200 flex items-center gap-2 shadow-sm active:scale-95">
+                                {viewMode === 'GRAMS' ? <><Scale size={12} className="text-indigo-500" /> <span>Porciones</span></> : <><PieChart size={12} className="text-indigo-500" /> <span>Gramos</span></>}
                             </button>
                         </div>
 
@@ -579,7 +498,6 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                             <Ring current={c.fats} total={t.fats} color="text-yellow-300" label="GRASA" />
                         </div>
 
-                        {/* Compact Fiber Display */}
                         <div className="flex justify-center mb-1">
                             <div className="bg-slate-50/80 rounded-full pl-3 pr-4 py-1.5 flex items-center gap-3 border border-slate-100">
                                 <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Fibra</span>
@@ -590,7 +508,6 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                             </div>
                         </div>
 
-                        {/* Calories Linear Progress */}
                         <div className="mt-5 px-3">
                             <div className="flex justify-between text-[10px] font-black uppercase tracking-widest mb-1.5 text-slate-400">
                                 <span>Calorías</span>
@@ -598,62 +515,30 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                             </div>
                             <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200/50">
                                 <motion.div
-                                    initial={{ width: 0 }}
-                                    animate={{ width: `${Math.min(100, (c.calories / t.calories) * 100)}%` }}
+                                    initial={{ width: 0 }} animate={{ width: `${Math.min(100, (c.calories / t.calories) * 100)}%` }}
                                     className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 shadow-[0_0_10px_rgba(99,102,241,0.5)]"
                                 />
                             </div>
                         </div>
                     </div>
 
-                    {/* Meals List */}
                     <div className="p-6 -mt-4 space-y-6 relative z-10">
-                        {day.meals?.map((meal, mIdx) => (
-                            <motion.div
-                                initial={{ opacity: 0, y: 20 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ delay: mIdx * 0.1 }}
-                                key={mIdx}
-                                className="bg-white rounded-[24px] shadow-lg shadow-slate-200/50 border border-slate-100 overflow-hidden"
-                            >
-                                {/* Meal Header */}
-                                <div
-                                    onClick={() => toggleMealExpand(mIdx)}
-                                    className="p-5 flex justify-between items-center cursor-pointer bg-white hover:bg-slate-50 transition-colors"
-                                >
+                        {day && day.meals?.map((meal, mIdx) => (
+                            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: mIdx * 0.1 }} key={mIdx} className="bg-white rounded-[24px] shadow-lg shadow-slate-200/50 border border-slate-100 overflow-hidden">
+                                <div onClick={() => toggleMealExpand(mIdx)} className="p-5 flex justify-between items-center cursor-pointer bg-white hover:bg-slate-50 transition-colors">
                                     <div className="flex items-center gap-3">
                                         <h3 className="font-black text-lg text-slate-900">{meal.name}</h3>
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                toggleMealComplete(mIdx);
-                                            }}
-                                            className="p-1 px-2 bg-slate-100 hover:bg-emerald-500 hover:text-white rounded-lg text-[8px] font-black uppercase tracking-widest transition-all text-slate-400 border border-slate-200"
-                                        >
-                                            Marcar Todo
-                                        </button>
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setActiveMealIndex(mIdx);
-                                            }}
-                                            className="p-1 px-2 bg-indigo-50 hover:bg-indigo-500 hover:text-white rounded-lg text-indigo-400 border border-indigo-100 transition-all"
-                                        >
-                                            <Plus size={14} />
-                                        </button>
+                                        <button onClick={(e) => { e.stopPropagation(); toggleMealComplete(mIdx); }} className="p-1 px-2 bg-slate-100 hover:bg-emerald-500 hover:text-white rounded-lg text-[8px] font-black uppercase tracking-widest transition-all text-slate-400 border border-slate-200">Marcar Todo</button>
+                                        <button onClick={(e) => { e.stopPropagation(); setActiveMealIndex(mIdx); }} className="p-1 px-2 bg-indigo-50 hover:bg-indigo-500 hover:text-white rounded-lg text-indigo-400 border border-indigo-100 transition-all"><Plus size={14} /></button>
                                     </div>
                                     <div className="flex items-center gap-3">
                                         {expandedMeals[mIdx] ? <ChevronUp size={20} className="text-slate-300" /> : <ChevronDown size={20} className="text-slate-300" />}
                                     </div>
                                 </div>
 
-                                {/* Items */}
                                 <AnimatePresence>
                                     {expandedMeals[mIdx] && (
-                                        <motion.div
-                                            initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }}
-                                            className="border-t border-slate-50"
-                                        >
+                                        <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="border-t border-slate-50">
                                             {meal.items?.map((item, iIdx) => {
                                                 const key = `${mIdx}-${iIdx}`;
                                                 const isChecked = !!log?.completedItems?.[key];
@@ -662,71 +547,21 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
 
                                                 return (
                                                     <div key={iIdx} className="border-b border-slate-50 last:border-0">
-                                                        <div
-                                                            onClick={() => toggleItem(mIdx, iIdx)}
-                                                            className={`p-4 flex items-center gap-4 cursor-pointer transition-all
-                                                                    ${isChecked ? 'bg-slate-50/50 opacity-40' : 'bg-white hover:bg-indigo-50/30'}
-                                                                `}
-                                                        >
-                                                            <div className={`
-                                                                    w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all shrink-0
-                                                                    ${isChecked ? 'bg-indigo-600 border-indigo-600' : 'border-slate-200'}
-                                                                `}>
-                                                                {isChecked && <Check size={14} className="text-white" />}
-                                                            </div>
-
+                                                        <div onClick={() => toggleItem(mIdx, iIdx)} className={`p-4 flex items-center gap-4 cursor-pointer transition-all ${isChecked ? 'bg-slate-50/50 opacity-40' : 'bg-white hover:bg-indigo-50/30'}`}>
+                                                            <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all shrink-0 ${isChecked ? 'bg-indigo-600 border-indigo-600' : 'border-slate-200'}`}>{isChecked && <Check size={14} className="text-white" />}</div>
                                                             <div className="flex-1">
                                                                 <div className="flex items-center gap-2">
                                                                     <div className={`font-bold text-sm ${isChecked ? 'text-slate-400 line-through' : 'text-slate-900'}`}>{item.name}</div>
-                                                                    {recipe && (
-                                                                        <button
-                                                                            onClick={(e) => {
-                                                                                e.stopPropagation();
-                                                                                setExpandedRecipes(prev => ({ ...prev, [key]: !prev[key] }));
-                                                                            }}
-                                                                            className={`p-1 rounded-lg border transition-all ${isExpanded ? 'bg-indigo-500 border-indigo-500 text-white' : 'bg-slate-50 border-slate-100 text-slate-400'}`}
-                                                                        >
-                                                                            <Info size={18} />
-                                                                        </button>
-                                                                    )}
+                                                                    {recipe && <button onClick={(e) => { e.stopPropagation(); setExpandedRecipes(prev => ({ ...prev, [key]: !prev[key] })); }} className={`p-1 rounded-lg border transition-all ${isExpanded ? 'bg-indigo-500 border-indigo-500 text-white' : 'bg-slate-50 border-slate-100 text-slate-400'}`}><Info size={18} /></button>}
                                                                 </div>
-                                                                <div className="text-xs text-slate-400 font-medium">
-                                                                    {item.quantity} {item.unit}
-                                                                    {item.type === 'recipe' && <span className="ml-2 text-[8px] font-black uppercase text-indigo-400 tracking-widest border border-indigo-100 px-1 rounded">Receta</span>}
-                                                                </div>
+                                                                <div className="text-xs text-slate-400 font-medium">{item.quantity} {item.unit}{item.type === 'recipe' && <span className="ml-2 text-[8px] font-black uppercase text-indigo-400 tracking-widest border border-indigo-100 px-1 rounded">Receta</span>}</div>
                                                             </div>
                                                         </div>
-
-                                                        {/* Recipe Details */}
                                                         <AnimatePresence>
                                                             {isExpanded && recipe && (
-                                                                <motion.div
-                                                                    initial={{ height: 0, opacity: 0 }}
-                                                                    animate={{ height: 'auto', opacity: 1 }}
-                                                                    exit={{ height: 0, opacity: 0 }}
-                                                                    className="px-14 pb-4 bg-slate-50 overflow-hidden"
-                                                                >
-                                                                    {recipe.ingredients && (
-                                                                        <div className="mb-3 pt-2">
-                                                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Ingredientes:</p>
-                                                                            <ul className="space-y-1">
-                                                                                {recipe.ingredients.map((ing, k) => (
-                                                                                    <li key={k} className="text-xs text-slate-600 flex justify-between">
-                                                                                        <span>• {ing.name}</span>
-                                                                                        <span className="font-bold text-slate-400">{ing.quantity || ing.amount} {ing.unit}</span>
-                                                                                    </li>
-                                                                                ))}
-                                                                            </ul>
-                                                                        </div>
-                                                                    )}
-                                                                    {recipe.instructions && (
-                                                                        <div>
-                                                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Preparación:</p>
-                                                                            <p className="text-xs text-slate-500 leading-relaxed whitespace-pre-line italic">
-                                                                                {recipe.instructions}
-                                                                            </p>
-                                                                        </div>
-                                                                    )}
+                                                                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="px-14 pb-4 bg-slate-50 overflow-hidden">
+                                                                    {recipe.ingredients && <div className="mb-3 pt-2"><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Ingredientes:</p><ul className="space-y-1">{recipe.ingredients.map((ing, k) => (<li key={k} className="text-xs text-slate-600 flex justify-between"><span>• {ing.name}</span><span className="font-bold text-slate-400">{ing.quantity || ing.amount} {ing.unit}</span></li>))}</ul></div>}
+                                                                    {recipe.instructions && <div><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Preparación:</p><p className="text-xs text-slate-500 leading-relaxed whitespace-pre-line italic">{recipe.instructions}</p></div>}
                                                                 </motion.div>
                                                             )}
                                                         </AnimatePresence>
@@ -734,9 +569,7 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                                                 );
                                             })}
 
-                                            {/* Render Extra Items for this Meal */}
                                             {extraItems.filter(e => e.mealIndex === mIdx).map((entry, idx) => {
-                                                // We need global index in extraItems to keys
                                                 const globalIdx = extraItems.indexOf(entry);
                                                 const key = `extra-${globalIdx}`;
                                                 const item = entry.item;
@@ -744,38 +577,29 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
 
                                                 return (
                                                     <div key={`extra-${idx}`} className="border-b border-slate-50 last:border-0 bg-indigo-50/20">
-                                                        <div
-                                                            onClick={() => toggleItem(null, null, key)}
-                                                            className={`p-4 flex items-center gap-4 cursor-pointer transition-all
-                                                                    ${isChecked ? 'bg-slate-50/50 opacity-40' : 'hover:bg-indigo-50/40'}
-                                                                `}
-                                                        >
-                                                            <div className={`
-                                                                    w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all shrink-0
-                                                                    ${isChecked ? 'bg-indigo-600 border-indigo-600' : 'border-indigo-200 bg-white'}
-                                                                `}>
-                                                                {isChecked && <Check size={14} className="text-white" />}
-                                                            </div>
-
+                                                        <div onClick={() => toggleItem(null, null, key)} className={`p-4 flex items-center gap-4 cursor-pointer transition-all ${isChecked ? 'bg-slate-50/50 opacity-40' : 'hover:bg-indigo-50/40'}`}>
+                                                            <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all shrink-0 ${isChecked ? 'bg-indigo-600 border-indigo-600' : 'border-indigo-200 bg-white'}`}>{isChecked && <Check size={14} className="text-white" />}</div>
                                                             <div className="flex-1">
                                                                 <div className="flex items-center gap-2">
                                                                     <div className={`font-bold text-sm ${isChecked ? 'text-slate-400 line-through' : 'text-slate-900'}`}>{item.name}</div>
                                                                     <span className="text-[8px] font-black uppercase bg-indigo-100 text-indigo-500 px-1.5 py-0.5 rounded tracking-wider">Extra</span>
                                                                 </div>
-                                                                <div className="text-xs text-slate-400 font-medium">
-                                                                    {item.quantity} {item.unit}
+                                                                <div className="flex items-center gap-2 mt-1">
+                                                                    <div className="text-xs text-slate-400 font-medium whitespace-nowrap">{item.quantity} {item.unit}</div>
+                                                                    {item.cachedMacros && (
+                                                                        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-slate-100/50 rounded-md text-[8px] font-bold text-slate-500 overflow-x-auto custom-scrollbar-hide">
+                                                                            <span className="text-indigo-600">{Math.round(item.cachedMacros.calories || 0)} kcal</span>
+                                                                            <span className="opacity-30">•</span>
+                                                                            <span>P:{Math.round(item.cachedMacros.protein || 0)}g</span>
+                                                                            <span className="opacity-30">•</span>
+                                                                            <span>H:{Math.round(item.cachedMacros.carbs || 0)}g</span>
+                                                                            <span className="opacity-30">•</span>
+                                                                            <span>G:{Math.round(item.cachedMacros.fats || 0)}g</span>
+                                                                        </div>
+                                                                    )}
                                                                 </div>
                                                             </div>
-
-                                                            <button
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    handleRemoveExtraItem(globalIdx);
-                                                                }}
-                                                                className="text-rose-400 hover:text-rose-600 p-2"
-                                                            >
-                                                                <X size={14} />
-                                                            </button>
+                                                            <button onClick={(e) => { e.stopPropagation(); handleRemoveExtraItem(globalIdx); }} className="text-rose-400 hover:text-rose-600 p-2"><X size={14} /></button>
                                                         </div>
                                                     </div>
                                                 );
@@ -785,6 +609,55 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                                 </AnimatePresence>
                             </motion.div>
                         ))}
+
+                        {!day && extraItems.length > 0 && (
+                            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-[24px] shadow-lg shadow-indigo-100 border-2 border-indigo-50 overflow-hidden">
+                                <div className="p-5 flex items-center gap-3 bg-indigo-50/30 border-b border-indigo-50">
+                                    <div className="p-2 bg-indigo-600 text-white rounded-xl shadow-md"><Sparkles size={18} /></div>
+                                    <div>
+                                        <h3 className="font-black text-lg text-slate-900 leading-tight">Alimentos Registrados</h3>
+                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Sin plan nutricional asignado</p>
+                                    </div>
+                                </div>
+                                <div className="divide-y divide-slate-50">
+                                    {extraItems.map((entry, idx) => {
+                                        const key = `extra-${idx}`;
+                                        const item = entry.item;
+                                        const isChecked = !!log?.completedItems?.[key];
+
+                                        return (
+                                            <div key={key} className="bg-white">
+                                                <div onClick={() => toggleItem(null, null, key)} className={`p-5 flex items-center gap-4 cursor-pointer transition-all ${isChecked ? 'bg-slate-50/50 opacity-40' : 'hover:bg-indigo-50/20'}`}>
+                                                    <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all shrink-0 ${isChecked ? 'bg-indigo-600 border-indigo-600' : 'border-indigo-200 bg-white shadow-sm'}`}>{isChecked && <Check size={14} className="text-white" />}</div>
+                                                    <div className="flex-1">
+                                                        <div className="flex items-center gap-2"><div className={`font-bold text-sm ${isChecked ? 'text-slate-400 line-through' : 'text-slate-900'}`}>{item.name}</div></div>
+                                                        <div className="flex flex-wrap items-center gap-2 mt-1">
+                                                            <div className="text-xs text-slate-400 font-medium whitespace-nowrap">{item.quantity} <span className="text-indigo-400">{item.unit}</span></div>
+                                                            {(() => {
+                                                                const displayMacros = item.cachedMacros || (item.baseMacros ? calculateItemMacros(item.baseMacros, item.quantity, item.unit) : null);
+                                                                if (!displayMacros) return null;
+                                                                return (
+                                                                    <div className="flex items-center gap-1.5 px-2 py-0.5 bg-slate-100/50 rounded-md text-[8px] font-bold text-slate-500 overflow-x-auto custom-scrollbar-hide">
+                                                                        <span className="text-indigo-600">{Math.round(displayMacros.calories || 0)} kcal</span>
+                                                                        <span className="opacity-30">•</span>
+                                                                        <span>P:{Math.round(displayMacros.protein || 0)}g</span>
+                                                                        <span className="opacity-30">•</span>
+                                                                        <span>H:{Math.round(displayMacros.carbs || 0)}g</span>
+                                                                        <span className="opacity-30">•</span>
+                                                                        <span>G:{Math.round(displayMacros.fats || 0)}g</span>
+                                                                    </div>
+                                                                );
+                                                            })()}
+                                                        </div>
+                                                    </div>
+                                                    <button onClick={(e) => { e.stopPropagation(); handleRemoveExtraItem(idx); }} className="p-2.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={16} /></button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </motion.div>
+                        )}
                     </div>
 
                     {onClose && (
@@ -792,56 +665,19 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                             <div className="max-w-md mx-auto w-full space-y-3">
                                 {taskId && (
                                     <>
-                                        {/* Feedback Section */}
                                         <div className="space-y-3 mb-2">
                                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">¿Qué tal lo has llevado?</p>
                                             <div className="grid grid-cols-3 gap-2">
-                                                <button
-                                                    onClick={() => setStats(s => ({ ...s, adherence: 'perfect' }))}
-                                                    className={`p-2 rounded-xl border flex flex-col items-center gap-1 transition-all ${stats.adherence === 'perfect' ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-white border-slate-200 text-slate-400 hover:border-emerald-200 hover:text-emerald-500'}`}
-                                                >
-                                                    <Zap size={20} />
-                                                    <span className="text-[9px] font-black uppercase">Clavado</span>
-                                                </button>
-                                                <button
-                                                    onClick={() => setStats(s => ({ ...s, adherence: 'partial' }))}
-                                                    className={`p-2 rounded-xl border flex flex-col items-center gap-1 transition-all ${stats.adherence === 'partial' ? 'bg-amber-500 border-amber-500 text-white' : 'bg-white border-slate-200 text-slate-400 hover:border-amber-200 hover:text-amber-500'}`}
-                                                >
-                                                    <Scale size={20} />
-                                                    <span className="text-[9px] font-black uppercase">A medias</span>
-                                                </button>
-                                                <button
-                                                    onClick={() => setStats(s => ({ ...s, adherence: 'missed' }))}
-                                                    className={`p-2 rounded-xl border flex flex-col items-center gap-1 transition-all ${stats.adherence === 'missed' ? 'bg-rose-500 border-rose-500 text-white' : 'bg-white border-slate-200 text-slate-400 hover:border-rose-200 hover:text-rose-500'}`}
-                                                >
-                                                    <X size={20} />
-                                                    <span className="text-[9px] font-black uppercase">No seguido</span>
-                                                </button>
+                                                <button onClick={() => setStats(s => ({ ...s, adherence: 'perfect' }))} className={`p-2 rounded-xl border flex flex-col items-center gap-1 transition-all ${stats.adherence === 'perfect' ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-white border-slate-200 text-slate-400 hover:border-emerald-200 hover:text-emerald-500'}`}><Zap size={20} /><span className="text-[9px] font-black uppercase">Clavado</span></button>
+                                                <button onClick={() => setStats(s => ({ ...s, adherence: 'partial' }))} className={`p-2 rounded-xl border flex flex-col items-center gap-1 transition-all ${stats.adherence === 'partial' ? 'bg-amber-500 border-amber-500 text-white' : 'bg-white border-slate-200 text-slate-400 hover:border-amber-200 hover:text-amber-500'}`}><Scale size={20} /><span className="text-[9px] font-black uppercase">A medias</span></button>
+                                                <button onClick={() => setStats(s => ({ ...s, adherence: 'missed' }))} className={`p-2 rounded-xl border flex flex-col items-center gap-1 transition-all ${stats.adherence === 'missed' ? 'bg-rose-500 border-rose-500 text-white' : 'bg-white border-slate-200 text-slate-400 hover:border-rose-200 hover:text-rose-500'}`}><X size={20} /><span className="text-[9px] font-black uppercase">No seguido</span></button>
                                             </div>
-                                            <input
-                                                type="text"
-                                                value={stats.notes}
-                                                onChange={e => setStats(s => ({ ...s, notes: e.target.value }))}
-                                                placeholder="Notas sobre el día (opcional)..."
-                                                className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-100"
-                                            />
+                                            <input type="text" value={stats.notes} onChange={e => setStats(s => ({ ...s, notes: e.target.value }))} placeholder="Notas sobre el día (opcional)..." className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-100" />
                                         </div>
 
                                         <div className="flex gap-2">
-                                            <button
-                                                onClick={onClose}
-                                                className="flex-1 bg-slate-100 text-slate-500 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-200 transition-all"
-                                            >
-                                                Cerrar
-                                            </button>
-                                            <button
-                                                onClick={handleCompleteDay}
-                                                disabled={!stats.adherence}
-                                                className="flex-[2] bg-slate-900 text-white py-3 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center justify-center gap-2 hover:bg-slate-800 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                                            >
-                                                <Check size={16} className="text-emerald-400" />
-                                                Finalizar
-                                            </button>
+                                            <button onClick={onClose} className="flex-1 bg-slate-100 text-slate-500 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-200 transition-all">Cerrar</button>
+                                            <button onClick={handleCompleteDay} disabled={!stats.adherence} className="flex-[2] bg-slate-900 text-white py-3 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center justify-center gap-2 hover:bg-slate-800 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"><Check size={16} className="text-emerald-400" />Finalizar</button>
                                         </div>
                                     </>
                                 )}
@@ -852,35 +688,17 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
             </motion.div>
 
             <AnimatePresence>
-                {showShoppingList && dayId && (
-                    <ShoppingListView
-                        dayIds={[dayId]}
-                        onClose={() => setShowShoppingList(false)}
-                    />
-                )}
+                {showShoppingList && dayId && <ShoppingListView dayIds={[dayId]} onClose={() => setShowShoppingList(false)} />}
             </AnimatePresence>
 
-            {/* Food Search Overlay or Quantity Selector */}
-            {/* Food Search Overlay */}
             {activeMealIndex !== null && (
                 <div className="absolute inset-0 z-[5010] bg-white flex flex-col animate-in fade-in zoom-in-95 duration-200 rounded-t-3xl overflow-hidden">
                     <div className="flex justify-between items-center p-4 border-b border-slate-100 bg-white">
-                        <h3 className="text-lg font-black text-slate-900">
-                            Añadir a {day.meals[activeMealIndex].name}
-                        </h3>
-                        <button
-                            onClick={() => setActiveMealIndex(null)}
-                            className="p-2 bg-slate-100 rounded-full hover:bg-slate-200 text-slate-500"
-                        >
-                            <X size={20} />
-                        </button>
+                        <h3 className="text-lg font-black text-slate-900">Añadir a {day?.meals?.[activeMealIndex]?.name || 'Comida'}</h3>
+                        <button onClick={() => setActiveMealIndex(null)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200 text-slate-500"><X size={20} /></button>
                     </div>
-
                     <div className="flex-1 overflow-hidden flex flex-col">
-                        <FoodSearch
-                            onSelect={handleFoodSelect}
-                            onClose={() => setActiveMealIndex(null)}
-                        />
+                        <FoodSearch onSelect={handleFoodSelect} onClose={() => setActiveMealIndex(null)} />
                     </div>
                 </div>
             )}

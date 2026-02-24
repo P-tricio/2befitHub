@@ -7,7 +7,8 @@ import { TrainingDB } from '../../services/db';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Bell, Zap, Clock, Footprints, Utensils, ClipboardList, LayoutGrid, Dumbbell, Scale, Plus, Camera, Check, X, User as UserIcon, CheckSquare, ShoppingBasket } from 'lucide-react';
 import CheckinModal from '../components/CheckinModal';
 import SessionResultsModal from '../../components/SessionResultsModal';
-import { format, startOfWeek, endOfWeek, addDays, isSameDay, isSameMonth, subWeeks, addWeeks, startOfMonth, endOfMonth, eachDayOfInterval, subMonths, addMonths, getDay } from 'date-fns';
+import { startOfWeek, endOfWeek, addDays, isSameDay, isSameMonth, subWeeks, addWeeks, startOfMonth, endOfMonth, eachDayOfInterval, subMonths, addMonths, getDay } from 'date-fns';
+import { formatDateSafe } from '../../../../lib/dateUtils';
 import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
 import NutritionDayView from '../../../nutrition/user/NutritionDayView';
@@ -50,7 +51,7 @@ const AthleteAgenda = () => {
         const checkNutrition = async () => {
             const ids = [];
             weekDays.forEach(date => {
-                const key = format(date, 'yyyy-MM-dd');
+                const key = formatDateSafe(date, 'yyyy-MM-dd');
                 const tasks = schedule[key] || [];
                 tasks.forEach(t => {
                     if (t.type === 'nutrition_day' && (t.dayId || t.config?.dayId)) {
@@ -89,7 +90,7 @@ const AthleteAgenda = () => {
 
     const getSessionDetails = (sessionId, task = null) => {
         const session = sessionsMap[sessionId];
-        if (!session) return { blocks: 0, duration: 60, isCardio: false };
+        if (!session) return { blockCount: 0, duration: 60, isCardio: false };
 
         const isCardio = session.isCardio || session.type === 'CARDIO';
         const blocks = session.blocks || [];
@@ -97,7 +98,7 @@ const AthleteAgenda = () => {
         if (isCardio) {
             // Priority to overrides
             if (task?.config?.overrides?.duration) {
-                return { blocks: blocks.length, duration: parseInt(task.config.overrides.duration), isCardio: true };
+                return { blockCount: blocks.length, duration: parseInt(task.config.overrides.duration), isCardio: true };
             }
 
             // Sum up exercise durations
@@ -112,7 +113,7 @@ const AthleteAgenda = () => {
                 });
             });
             return {
-                blocks: blocks.length,
+                blockCount: blocks.length,
                 duration: Math.ceil(totalSeconds / 60) || 10,
                 isCardio: true
             };
@@ -127,14 +128,14 @@ const AthleteAgenda = () => {
         const transitionTime = blocks.length > 1 ? (blocks.length - 1) * 3 : 0;
 
         return {
-            blocks: blocks.length,
+            blockCount: blocks.length,
             duration: baseDuration + transitionTime,
             isCardio: false
         };
     };
 
     const getTasksForDate = (date) => {
-        const key = format(date, 'yyyy-MM-dd');
+        const key = formatDateSafe(date, 'yyyy-MM-dd');
         const tasks = [...(schedule[key] || [])];
 
         // Inject Virtual Habit Task if none exists and user has minimums
@@ -209,7 +210,7 @@ const AthleteAgenda = () => {
     const weekDays = getWeekDays();
     const monthDays = getMonthDays();
 
-    const currentMonthLabel = format(currentDate, 'MMMM yyyy', { locale: es });
+    const currentMonthLabel = formatDateSafe(currentDate, 'MMMM yyyy');
     const selectedTasks = getTasksForDate(selectedDate);
     const showTasks = !isFutureRestricted(selectedDate);
 
@@ -283,8 +284,8 @@ const AthleteAgenda = () => {
                                     : isToday ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-white text-slate-400 border-slate-100 hover:border-slate-200'
                                     }`}
                             >
-                                <span className="text-[10px] font-black mb-2 capitalize truncate w-full px-0.5">{format(date, 'EEE', { locale: es })}</span>
-                                <span className="text-xl font-black leading-none">{format(date, 'd')}</span>
+                                <span className="text-[10px] font-black mb-2 capitalize truncate w-full px-0.5">{formatDateSafe(date, 'EEE')}</span>
+                                <span className="text-xl font-black leading-none">{formatDateSafe(date, 'd')}</span>
                                 <div className="mt-2 h-1 flex gap-0.5">
                                     {hasTasks && !restricted && <div className={`w-1 h-1 rounded-full ${isSelected ? 'bg-emerald-400' : 'bg-emerald-500'}`}></div>}
                                 </div>
@@ -317,7 +318,7 @@ const AthleteAgenda = () => {
                                         ${isOutsideMonth ? 'opacity-30 grayscale' : ''}
                                     `}
                                 >
-                                    {format(date, 'd')}
+                                    {formatDateSafe(date, 'd')}
                                     {hasTasks && !restricted && (
                                         <div className={`absolute bottom-1 w-1 h-1 rounded-full ${isSelected ? 'bg-emerald-400' : 'bg-emerald-500'}`}></div>
                                     )}
@@ -331,7 +332,7 @@ const AthleteAgenda = () => {
             {/* Task List Header */}
             <div className="pt-4 flex justify-between items-end">
                 <h2 className="text-xl font-black text-slate-900 capitalize">
-                    {isSameDay(selectedDate, new Date()) ? 'Hoy' : format(selectedDate, 'EEEE, d MMMM', { locale: es })}
+                    {isSameDay(selectedDate, new Date()) ? 'Hoy' : formatDateSafe(selectedDate, 'EEEE, d MMMM')}
                 </h2>
                 <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
                     {selectedTasks.length} Tareas
@@ -418,7 +419,7 @@ const AthleteAgenda = () => {
                                                         <div className="flex items-center gap-3 mt-0.5">
                                                             <span className="flex items-center gap-1"><Clock size={10} className="inline" /> {sessionMeta?.duration} min</span>
                                                             {!sessionMeta?.isCardio && (
-                                                                <span className="flex items-center gap-1"><Zap size={10} className="inline" /> {sessionMeta?.blocks} bloques</span>
+                                                                <span className="flex items-center gap-1"><Zap size={10} className="inline" /> {sessionMeta?.blockCount} bloques</span>
                                                             )}
                                                         </div>
                                                     ) : 'Hacer ahora'}
@@ -430,7 +431,7 @@ const AthleteAgenda = () => {
                                 {isSession && !isCompleted ? (
                                     <Link
                                         to={`/training/session/${task.sessionId}`}
-                                        state={{ scheduledDate: format(selectedDate, 'yyyy-MM-dd') }}
+                                        state={{ scheduledDate: formatDateSafe(selectedDate, 'yyyy-MM-dd') }}
                                         className="bg-slate-900 text-white w-10 h-10 rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-transform"
                                     >
                                         <ChevronRight size={18} />
@@ -468,7 +469,7 @@ const AthleteAgenda = () => {
                 {nutritionDayTask && (
                     <NutritionDayView
                         userId={currentUser.uid}
-                        date={format(selectedDate, 'yyyy-MM-dd')}
+                        date={formatDateSafe(selectedDate, 'yyyy-MM-dd')}
                         dayId={nutritionDayTask.dayId || nutritionDayTask.config?.dayId}
                         taskId={nutritionDayTask.id}
                         onClose={() => setNutritionDayTask(null)}
@@ -478,7 +479,7 @@ const AthleteAgenda = () => {
                 {showWeeklyShoppingList && (
                     <ShoppingListView
                         dayIds={weeklyDayIds}
-                        title={`Compra Semanal (${format(weekDays[0], 'd MMM', { locale: es })} - ${format(weekDays[6], 'd MMM', { locale: es })})`}
+                        title={`Compra Semanal (${formatDateSafe(weekDays[0], 'd MMM')} - ${formatDateSafe(weekDays[6], 'd MMM')})`}
                         onClose={() => setShowWeeklyShoppingList(false)}
                     />
                 )}

@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { TrainingDB } from '../services/db';
 import { X, TrendingUp, TrendingDown, Activity, Calendar, Settings, Plus, Trash2, Footprints, Heart, BarChart, Utensils, Info, Edit2, Trophy, CalendarDays, CheckSquare, Camera, FileText, ChevronDown, Dumbbell, ClipboardList } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart as RechartsBarChart, Bar } from 'recharts';
-import { format } from 'date-fns';
+import { formatDateSafe } from '../../../lib/dateUtils';
 import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
 import AthleteHabits from '../athlete/pages/AthleteHabits';
@@ -11,6 +11,7 @@ import UserSessionHistory from './UserSessionHistory';
 import ExerciseHistoryView from '../athlete/components/ExerciseHistoryView';
 import CoachNotesView from '../components/CoachNotesView';
 import VisualEvolutionCard from '../components/VisualEvolutionCard';
+
 
 const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
     const scrollContainerRef = useRef(null);
@@ -113,7 +114,7 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
     };
 
     const handleDeleteEntry = async (date) => {
-        if (!confirm(`¿Estás seguro de que deseas eliminar el registro del ${format(new Date(date + 'T12:00:00'), 'dd/MM/yyyy')}? Esta acción no se puede deshacer.`)) return;
+        if (!confirm(`¿Estás seguro de que deseas eliminar el registro del ${formatDateSafe(new Date(date + 'T12:00:00'), 'dd/MM/yyyy')}? Esta acción no se puede deshacer.`)) return;
 
         try {
             await TrainingDB.tracking.deleteEntry(user.id, date);
@@ -364,7 +365,7 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
                                                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                                             <XAxis
                                                                 dataKey="date"
-                                                                tickFormatter={(date) => format(new Date(date), 'dd MMM', { locale: es })}
+                                                                tickFormatter={(date) => formatDateSafe(new Date(date), 'dd MMM')}
                                                                 stroke="#94a3b8"
                                                                 fontSize={10}
                                                                 tickLine={false}
@@ -383,7 +384,7 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
                                                                 contentStyle={{ borderRadius: '24px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)', padding: '16px' }}
                                                                 labelStyle={{ fontWeight: '900', color: '#0f172a', marginBottom: '8px', fontSize: '12px' }}
                                                                 itemStyle={{ fontSize: '12px', fontWeight: '700' }}
-                                                                labelFormatter={(date) => format(new Date(date), 'dd MMMM yyyy', { locale: es })}
+                                                                labelFormatter={(date) => formatDateSafe(new Date(date), 'dd MMMM yyyy')}
                                                             />
                                                             <Line
                                                                 type="monotone"
@@ -432,7 +433,7 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
                                                                 .map((entry) => (
                                                                     <tr key={entry.date} className="group hover:bg-slate-50/50 transition-all">
                                                                         <td className="p-6 text-slate-500 font-bold text-xs uppercase">
-                                                                            {format(new Date(entry.date + 'T12:00:00'), 'dd MMMM yyyy', { locale: es })}
+                                                                            {formatDateSafe(new Date(entry.date + 'T12:00:00'), 'dd MMMM yyyy')}
                                                                         </td>
                                                                         <td className={`p-6 font-black text-sm ${activeMetric === 'weight' ? 'text-indigo-600 bg-indigo-50/10' : 'text-slate-900'}`}>
                                                                             {entry.weight || '-'}
@@ -602,7 +603,7 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
                                                         <div>
                                                             <h4 className="font-black text-slate-900">{formDef?.name || task.title || 'Formulario'}</h4>
                                                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                                                Completado el {format(new Date(task.date + 'T12:00:00'), 'dd MMMM yyyy', { locale: es })}
+                                                                Completado el {formatDateSafe(new Date(task.date + 'T12:00:00'), 'dd MMMM yyyy')}
                                                             </p>
                                                         </div>
                                                     </div>
@@ -656,6 +657,7 @@ const UserTracking = ({ user, onClose, initialTab = 'metrics' }) => {
                         <div className="bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden min-h-[600px]">
                             <ExerciseHistoryView userId={user.id} />
                         </div>
+
                     ) : (
                         <div className="bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden p-4 min-h-[600px]">
                             <UserSessionHistory user={userData} isEmbedded={true} key={`history-${user.id}`} />

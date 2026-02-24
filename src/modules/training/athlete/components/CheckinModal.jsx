@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { format, subDays } from 'date-fns';
+import { formatDateSafe } from '../../../../lib/dateUtils';
+import { subDays } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Camera, Trash2, X, Check, Footprints, Clock, Flame, Zap, Scale, Ruler, Utensils, FileText, Dumbbell, History } from 'lucide-react';
 import { TrainingDB } from '../../services/db';
@@ -61,11 +62,11 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
     const isRetroactive = task.config?.retroactive === true;
 
     // scheduleDateKey: Used to update the "status: completed" in the user schedule
-    const scheduleDateKey = format(targetDate || new Date(), 'yyyy-MM-dd');
+    const scheduleDateKey = formatDateSafe(targetDate || new Date(), 'yyyy-MM-dd');
 
     // trackingDateKey: Used to store/load the ACTUAL metrics/habits data in the history
     const trackingDateKey = isRetroactive
-        ? format(subDays(targetDate || new Date(), 1), 'yyyy-MM-dd')
+        ? formatDateSafe(subDays(targetDate || new Date(), 1), 'yyyy-MM-dd')
         : scheduleDateKey;
 
     // effectiveDate: Used for the UI label (Yesterday vs Today)
@@ -444,7 +445,7 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
                         <p className="text-xs text-slate-500 font-medium capitalize flex items-center gap-1">
                             {isRetroactive && <History size={12} className="text-orange-500" />}
                             {isRetroactive ? 'Reflexión: ' : ''}
-                            {format(effectiveDate, 'EEEE dd MMMM', { locale: es })}
+                            {formatDateSafe(effectiveDate, 'EEEE dd MMMM')}
                         </p>
                     </div>
                     <div className="flex gap-2">

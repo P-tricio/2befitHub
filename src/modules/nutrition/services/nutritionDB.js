@@ -12,7 +12,8 @@ import {
     orderBy,
     limit,
     serverTimestamp,
-    setDoc
+    setDoc,
+    deleteField
 } from 'firebase/firestore';
 
 // Collection References
@@ -162,56 +163,52 @@ export const NutritionDB = {
             const docId = `${userId}_${date}`;
             const ref = doc(db, LOGS, docId);
 
-            const snap = await getDoc(ref);
-            let data = snap.exists() ? snap.data() : { userId, date };
-
-            // Let's store a simple map of checkbox states: completedItems: { "mealIdx-itemIdx": true }
-            const currentCompleted = data.completedItems || {};
             const key = customKey || `${mealIndex}-${itemIndex}`;
 
-            if (status) {
-                currentCompleted[key] = true;
-            } else {
-                delete currentCompleted[key];
-            }
-
+            // Use dot-notation to atomically set or delete a single key
             const updateData = {
                 userId,
                 date,
-                completedItems: currentCompleted,
+                [`completedItems.${key}`]: status ? true : deleteField(),
                 updatedAt: serverTimestamp()
             };
 
             if (dayId) updateData.dayId = dayId;
-            // Preserve extraItems if they exist in the document but aren't being updated here
-            if (data.extraItems && !updateData.extraItems) updateData.extraItems = data.extraItems;
 
-            await setDoc(ref, updateData, { merge: true });
+            const snap = await getDoc(ref);
+            if (snap.exists()) {
+                // Doc exists: use updateDoc for atomic field-level changes
+                await updateDoc(ref, updateData);
+            } else {
+                // Doc doesn't exist yet: create it with setDoc
+                const initialData = {
+                    userId,
+                    date,
+                    completedItems: status ? { [key]: true } : {},
+                    updatedAt: serverTimestamp()
+                };
+                if (dayId) initialData.dayId = dayId;
+                await setDoc(ref, initialData);
+            }
         },
         async saveDailyLog(userId, date, completedItems, dayId, extraItems = []) {
             const docId = `${userId}_${date}`;
             const ref = doc(db, LOGS, docId);
 
-            // Fetch current doc to preserve fields if necessary (like existing extraItems if passing empty)
-            const snap = await getDoc(ref);
-            const currentData = snap.exists() ? snap.data() : {};
-
             const data = {
                 userId,
                 date,
-                completedItems: completedItems || currentData.completedItems || {},
+                completedItems: completedItems || {},
+                extraItems: extraItems || [],
                 updatedAt: serverTimestamp()
             };
 
             if (dayId) data.dayId = dayId;
-            // Only update extraItems if provided, otherwise keep current ones
-            if (extraItems && extraItems.length > 0) {
-                data.extraItems = extraItems;
-            } else if (currentData.extraItems) {
-                data.extraItems = currentData.extraItems;
-            }
 
-            await setDoc(ref, data, { merge: true });
+            // Use setDoc WITHOUT merge to fully replace the document,
+            // ensuring deleted completedItems keys and removed extraItems
+            // are actually removed from Firestore.
+            await setDoc(ref, data);
         }
     }
 };

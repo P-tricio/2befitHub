@@ -4,12 +4,14 @@ import { TaskPicker } from '../components/TaskPicker';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TrainingDB } from '../services/db';
 import { NutritionDB } from '../../nutrition/services/nutritionDB';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, getDay, addDays, startOfDay, startOfWeek, endOfWeek } from 'date-fns';
+import { startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, getDay, addDays, startOfDay, startOfWeek, endOfWeek, format } from 'date-fns';
+import { formatDateSafe } from '../../../lib/dateUtils';
 import { es } from 'date-fns/locale';
 import SessionResultsModal from '../components/SessionResultsModal';
 import TaskResultsModal from '../components/TaskResultsModal';
 import FormCreator from './FormCreator';
 import DayEditor from '../../nutrition/admin/DayEditor';
+import NutritionDayView from '../../nutrition/user/NutritionDayView';
 
 const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
     const [currentDate, setCurrentDate] = useState(new Date());
@@ -47,6 +49,7 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
     const [availableForms, setAvailableForms] = useState([]);
     const [dayEditorOpen, setDayEditorOpen] = useState(false);
     const [activeDayId, setActiveDayId] = useState(null);
+    const [nutritionViewDate, setNutritionViewDate] = useState(null);
 
     useEffect(() => {
         loadData();
@@ -99,7 +102,7 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
 
     const getSessionDetails = (id, taskOverrides = null) => {
         const session = sessions.find(s => s.id === id);
-        if (!session) return { blocks: 0, duration: 60 };
+        if (!session) return { blockCount: 0, duration: 60 };
 
         const isCardio = session.isCardio || session.type === 'CARDIO';
         const blocks = session.blocks || [];
@@ -157,7 +160,7 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
         }
 
         return {
-            blocks: blocks.length,
+            blockCount: blocks.length,
             duration
         };
     };
@@ -302,7 +305,7 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
 
     // --- Actions ---
     const appendTask = async (date, newTask) => {
-        const dateKey = format(date, 'yyyy-MM-dd');
+        const dateKey = formatDateSafe(date, 'yyyy-MM-dd');
         const currentTasks = schedule[dateKey] || [];
         const updatedTasks = [...currentTasks, newTask];
 
@@ -333,9 +336,9 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
             await TrainingDB.notifications.create(user.id, {
                 type: 'session_assigned',
                 title: 'Nueva Sesión Asignada',
-                message: `Tu entrenador te ha asignado una sesión para el ${format(selectedDate, 'd MMMM', { locale: es })}.`,
+                message: `Tu entrenador te ha asignado una sesión para el ${formatDateSafe(selectedDate, 'd MMMM')}.`,
                 priority: 'normal',
-                data: { sessionId, date: format(selectedDate, 'yyyy-MM-dd') }
+                data: { sessionId, date: formatDateSafe(selectedDate, 'yyyy-MM-dd') }
             });
         } catch (e) {
             console.error('Error creating notification:', e);
@@ -361,7 +364,7 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
 
                 const dayOffset = (weekNum * 7) + dayNum;
                 const targetDate = addDays(startDate, dayOffset);
-                const dateKey = format(targetDate, 'yyyy-MM-dd');
+                const dateKey = formatDateSafe(targetDate, 'yyyy-MM-dd');
 
                 const currentTasks = newScheduleItems[dateKey] || schedule[dateKey] || [];
 
@@ -397,7 +400,7 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
             }));
 
             setAddTaskModalOpen(false);
-            alert(`Programa "${program.name}" asignado desde el ${format(startDate, 'dd/MM')}`);
+            alert(`Programa "${program.name}" asignado desde el ${formatDateSafe(startDate, 'dd/MM')}`);
 
         } catch (error) {
             console.error(error);
@@ -493,7 +496,7 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
 
     const handleDeleteTaskInList = async (date, taskId) => {
         if (!window.confirm('¿Eliminar tarea?')) return;
-        const dateKey = format(date, 'yyyy-MM-dd');
+        const dateKey = formatDateSafe(date, 'yyyy-MM-dd');
         const current = schedule[dateKey] || [];
         const updated = current.filter(t => t.id !== taskId);
 
@@ -619,7 +622,7 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
             {/* Calendar Controls */}
             <div className="flex items-center justify-between py-2 px-2 max-w-full mx-auto w-full">
                 <h3 className="text-2xl font-black capitalize text-slate-900">
-                    {format(currentDate, 'MMMM yyyy', { locale: es })}
+                    {formatDateSafe(currentDate, 'MMMM yyyy')}
                 </h3>
                 <div className="flex items-center gap-4">
                     {/* View Toggle */}
@@ -719,7 +722,7 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
                                                     text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full
                                                     ${isToday ? 'bg-emerald-500 text-white' : (isSameDay(day, selectedDate) ? 'bg-slate-900 text-white' : 'text-slate-700')}
                                                 `}>
-                                                    {format(day, 'd')}
+                                                    {formatDateSafe(day, 'd')}
                                                 </span>
                                                 <div className="opacity-0 group-hover:opacity-100 text-slate-400">
                                                     <Plus size={12} />
@@ -877,7 +880,7 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
                                                                     ) : (
                                                                         task.type === 'session' && (() => {
                                                                             const details = getSessionDetails(task.sessionId, task.config?.overrides);
-                                                                            return `${details.blocks} bloques • ~${details.duration} min`;
+                                                                            return `${details.blockCount} bloques • ~${details.duration} min`;
                                                                         })()
                                                                     )}
                                                                     {task.type === 'neat' && !task.status && 'NEAT'}
@@ -998,6 +1001,7 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
                         date={selectedDate}
                         tasks={schedule[format(selectedDate, 'yyyy-MM-dd')] || []}
                         onClose={() => setDayDetailOpen(false)}
+                        onViewNutrition={() => setNutritionViewDate(format(selectedDate, 'yyyy-MM-dd'))}
                         onAddSession={() => { setDayDetailOpen(false); setAddTaskModalOpen(true); }}
                         onAddProgram={() => { setDayDetailOpen(false); setAddTaskModalOpen(true); }}
                         onAddGeneric={(type) => {
@@ -1102,6 +1106,17 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
                 )}
             </AnimatePresence>
 
+            {/* Nutrition Log View Modal */}
+            <AnimatePresence>
+                {nutritionViewDate && (
+                    <NutritionDayView
+                        userId={user.id}
+                        date={nutritionViewDate}
+                        onClose={() => setNutritionViewDate(null)}
+                    />
+                )}
+            </AnimatePresence>
+
             {/* Task Preview Modal */}
             <AnimatePresence>
                 {previewTask && (
@@ -1198,7 +1213,7 @@ const UserPlanning = ({ user, onClose, isEmbedded = false }) => {
 };
 
 // Sub-component for Day Details
-const DayDetailModal = ({ date, tasks, onClose, onAddSession, onAddProgram, onAddGeneric, onEditTask, onDeleteTask, onViewResults, onViewTaskResults, getSessionName, getSessionDetails, setPreviewTask, getTaskName, getTaskIcon }) => {
+const DayDetailModal = ({ date, tasks, onClose, onAddSession, onAddProgram, onAddGeneric, onEditTask, onDeleteTask, onViewResults, onViewTaskResults, getSessionName, getSessionDetails, setPreviewTask, getTaskName, getTaskIcon, onViewNutrition }) => {
     return (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
             <motion.div
@@ -1282,8 +1297,8 @@ const DayDetailModal = ({ date, tasks, onClose, onAddSession, onAddProgram, onAd
                                         <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">
                                             {task.status === 'completed' ? (task.summary || 'Completada') : (
                                                 task.type === 'session' ? (() => {
-                                                    const details = getSessionDetails(task.session?.id || task.sessionId);
-                                                    return `${details.blocks} bloques • ~${details.duration} min`;
+                                                    const details = getSessionDetails(task.sessionId, task.config?.overrides);
+                                                    return `${details.blockCount} bloques • ~${details.duration} min`;
                                                 })() : (
                                                     task.type === 'scheduled_message' ? `Para las ${task.config?.scheduledTime || '09:00'}` :
                                                         task.type === 'nutrition' ? 'Hábitos' :
@@ -1321,6 +1336,24 @@ const DayDetailModal = ({ date, tasks, onClose, onAddSession, onAddProgram, onAd
                         </div>
                     </div>
 
+                    {/* Quick Access to Nutrition Log */}
+                    <div className="pt-2 border-t border-slate-50">
+                        <button
+                            onClick={onViewNutrition}
+                            className="w-full p-4 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-between hover:bg-indigo-100 transition-all group"
+                        >
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-indigo-600 text-white rounded-xl shadow-md group-hover:scale-110 transition-transform">
+                                    <Utensils size={18} />
+                                </div>
+                                <div className="text-left">
+                                    <h4 className="text-sm font-black text-slate-900 leading-tight">Registro Nutricional</h4>
+                                    <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest mt-0.5">Ver o Añadir Alimentos</p>
+                                </div>
+                            </div>
+                            <ChevronRight size={20} className="text-indigo-300" />
+                        </button>
+                    </div>
                 </div>
 
                 {/* Simplified Actions Footer */}

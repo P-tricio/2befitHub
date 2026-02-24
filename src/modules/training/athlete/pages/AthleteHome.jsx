@@ -10,7 +10,8 @@ import SessionResultsModal from '../../components/SessionResultsModal';
 import ChatDrawer from '../../components/ChatDrawer';
 import NotificationBell from '../../components/NotificationBell';
 import { motion, AnimatePresence } from 'framer-motion';
-import { format, getDay } from 'date-fns';
+import { formatDateSafe } from '../../../../lib/dateUtils';
+import { getDay } from 'date-fns';
 import NutritionDayView from '../../../nutrition/user/NutritionDayView';
 
 
@@ -40,7 +41,7 @@ const AthleteHome = () => {
             if (doc.exists()) {
                 const data = doc.data();
                 const schedule = data.schedule || {};
-                const todayKey = format(new Date(), 'yyyy-MM-dd');
+                const todayKey = formatDateSafe(new Date(), 'yyyy-MM-dd');
                 setTodayTasks(schedule[todayKey] || []);
                 setUserCustomMetrics(data.customMeasurements || []);
                 setUserMinimums(data.minimums || null);
@@ -90,7 +91,7 @@ const AthleteHome = () => {
         const visibleTasks = todayTasks.filter(t => t.type !== 'scheduled_message');
 
         const tasks = [...visibleTasks];
-        const todayKey = format(new Date(), 'yyyy-MM-dd');
+        const todayKey = formatDateSafe(new Date(), 'yyyy-MM-dd');
 
         const hasMinimums = userMinimums && (
             Array.isArray(userMinimums)
@@ -163,7 +164,7 @@ const AthleteHome = () => {
 
         const checkScheduledMessages = async () => {
             const now = new Date();
-            const todayStr = format(now, 'yyyy-MM-dd');
+            const todayStr = formatDateSafe(now, 'yyyy-MM-dd');
 
             const pendingMessages = todayTasks.filter(t =>
                 t.type === 'scheduled_message' &&
@@ -320,11 +321,11 @@ const AthleteHome = () => {
                                 const session = isSession ? getSessionDetails(task.sessionId) : null;
 
                                 // Calculate accurate metadata if it's a session
-                                let sessionMetadata = { blocks: 0, duration: 0, isCardio: false };
+                                let sessionMetadata = { blockCount: 0, duration: 0, isCardio: false };
                                 if (isSession && session) {
                                     sessionMetadata.isCardio = session.isCardio || session.type === 'CARDIO';
                                     const blocks = session.blocks || [];
-                                    sessionMetadata.blocks = blocks.length;
+                                    sessionMetadata.blockCount = blocks.length;
 
                                     // 1. Calculate duration based on overrides first (Accurate)
                                     const overrides = task.config?.overrides || {};
@@ -418,7 +419,7 @@ const AthleteHome = () => {
                                                         <div className="flex items-center gap-3 text-[10px] text-slate-500 font-black uppercase tracking-widest mt-0.5">
                                                             <span className="flex items-center gap-1"><Clock size={12} /> {sessionMetadata.duration} min</span>
                                                             {!sessionMetadata.isCardio && (
-                                                                <span className="flex items-center gap-1"><Zap size={12} /> {sessionMetadata.blocks} bloques</span>
+                                                                <span className="flex items-center gap-1"><Zap size={12} /> {sessionMetadata.blockCount} bloques</span>
                                                             )}
                                                         </div>
                                                     )}
@@ -445,7 +446,7 @@ const AthleteHome = () => {
 
                                                             <Link
                                                                 to={`/training/session/${session.id}`}
-                                                                state={{ scheduledDate: format(new Date(), 'yyyy-MM-dd') }}
+                                                                state={{ scheduledDate: formatDateSafe(new Date(), 'yyyy-MM-dd') }}
                                                                 className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-center flex items-center justify-center gap-2 hover:bg-slate-800 active:scale-[0.98] transition-all shadow-xl shadow-slate-900/20"
                                                             >
                                                                 <Play size={18} fill="currentColor" />
@@ -604,7 +605,7 @@ const AthleteHome = () => {
                             onClose={async (wasSaved) => {
                                 if (!wasSaved && checkinTask.is_new) {
                                     try {
-                                        const today = format(new Date(), 'yyyy-MM-dd');
+                                        const today = formatDateSafe(new Date(), 'yyyy-MM-dd');
                                         const { _selectedDate, ...cleanTask } = checkinTask;
                                         await TrainingDB.users.removeTaskFromSchedule(currentUser.uid, today, cleanTask);
                                     } catch (e) {
@@ -625,7 +626,7 @@ const AthleteHome = () => {
                     {nutritionDayTask && (
                         <NutritionDayView
                             userId={currentUser.uid}
-                            date={format(new Date(), 'yyyy-MM-dd')}
+                            date={formatDateSafe(new Date(), 'yyyy-MM-dd')}
                             dayId={nutritionDayTask.config?.dayId || nutritionDayTask.dayId}
                             taskId={nutritionDayTask.id}
                             onClose={() => setNutritionDayTask(null)}
@@ -646,7 +647,7 @@ const AthleteHome = () => {
 
 const AddTaskModal = ({ onClose, onTaskCreated, userId }) => {
     const handleAdd = async (type) => {
-        const today = format(new Date(), 'yyyy-MM-dd');
+        const today = formatDateSafe(new Date(), 'yyyy-MM-dd');
         let newTask = {
             id: Date.now().toString(),
             type: type,

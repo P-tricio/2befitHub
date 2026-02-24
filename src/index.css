@@ -12,5 +12,6 @@
 
   body {
     @apply bg-white text-brand-dark antialiased font-sans;
+    overscroll-behavior-y: contain;
   }
 }

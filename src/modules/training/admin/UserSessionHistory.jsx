@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { TrainingDB } from '../services/db';
 import { X, Calendar, Trophy, ChevronRight, Search, Clock, Zap, MessageSquare } from 'lucide-react';
-import { format, parseISO } from 'date-fns';
+import { formatDateSafe } from '../../../lib/dateUtils';
 import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
 import SessionResultsModal from '../components/SessionResultsModal';
@@ -76,9 +76,9 @@ const UserSessionHistory = ({ user, onClose, isEmbedded = false }) => {
 
                     if (!dateStr) {
                         try {
-                            dateStr = format(safeDate(rawDate), 'yyyy-MM-dd');
+                            dateStr = formatDateSafe(safeDate(rawDate), 'yyyy-MM-dd');
                         } catch (e) {
-                            dateStr = format(new Date(), 'yyyy-MM-dd');
+                            dateStr = formatDateSafe(new Date(), 'yyyy-MM-dd');
                         }
                     }
 
@@ -178,7 +178,7 @@ const UserSessionHistory = ({ user, onClose, isEmbedded = false }) => {
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2 mb-1">
                                         <span className={`text-[10px] font-black ${item.isRecovered ? 'text-orange-600 bg-orange-50' : 'text-emerald-600 bg-emerald-50'} px-2 py-0.5 rounded uppercase tracking-wider`}>
-                                            {format(parseISO(item.scheduledDate), 'dd MMM yyyy', { locale: es })}
+                                            {formatDateSafe(item.scheduledDate, 'dd MMM yyyy')}
                                         </span>
                                         {item.isRecovered && (
                                             <span className="text-[10px] font-black text-orange-400 bg-white border border-orange-100 px-2 py-0.5 rounded uppercase tracking-wider flex items-center gap-1">

@@ -18,7 +18,7 @@ import {
     Dumbbell,
     Check
 } from 'lucide-react';
-import { format } from 'date-fns';
+import { formatDateSafe } from '../../../lib/dateUtils';
 import { es } from 'date-fns/locale';
 
 const ActivityLog = () => {
@@ -210,7 +210,7 @@ const ActivityLog = () => {
                                             </div>
                                             <span className="text-[10px] font-bold text-slate-300 uppercase flex items-center gap-1 shrink-0">
                                                 <Clock size={12} />
-                                                {format(noti.createdAt, "d MMM, HH:mm", { locale: es })}
+                                                {formatDateSafe(noti.createdAt, "d MMM, HH:mm")}
                                             </span>
                                         </div>
 

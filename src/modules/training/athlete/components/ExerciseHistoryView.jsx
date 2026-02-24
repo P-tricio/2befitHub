@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { TrainingDB } from '../../services/db';
 import { Search, ChevronRight, TrendingUp, Calendar, Dumbbell, History, Maximize2, Info, AlertCircle } from 'lucide-react';
-import { format, parseISO } from 'date-fns';
+import { formatDateSafe } from '../../../../lib/dateUtils';
 import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -85,8 +85,8 @@ const ExerciseHistoryView = ({ userId }) => {
         return [...selectedExerciseLogs]
             .reverse() // Chronological order
             .map(log => ({
-                date: format(log.date?.toDate?.() || new Date(log.date), 'dd/MM'),
-                fullDate: format(log.date?.toDate?.() || new Date(log.date), 'dd MMM yyyy', { locale: es }),
+                date: formatDateSafe(log.date, 'dd/MM'),
+                fullDate: formatDateSafe(log.date, 'dd MMM yyyy'),
                 weight: log.maxWeight,
                 protocol: log.protocol || '?',
                 context: log.blockType || log.protocol || 'Otro'
@@ -148,7 +148,7 @@ const ExerciseHistoryView = ({ userId }) => {
                                         <div className="text-left">
                                             <h3 className="text-sm font-black text-slate-900">{ex.name}</h3>
                                             <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
-                                                Último: {ex.lastWeight} kg • {format(ex.lastDate, 'dd MMM')}
+                                                Último: {ex.lastWeight} kg • {formatDateSafe(ex.lastDate, 'dd MMM')}
                                             </p>
                                         </div>
                                     </div>
@@ -286,12 +286,12 @@ const ExerciseHistoryView = ({ userId }) => {
                                             <div className="flex items-center gap-2">
                                                 <Calendar size={12} className="text-slate-400" />
                                                 <span className="text-[10px] font-black text-slate-900 uppercase">
-                                                    {format(log.date?.toDate?.() || new Date(log.date), 'dd MMMM yyyy', { locale: es })}
+                                                    {formatDateSafe(log.date, 'dd MMMM yyyy')}
                                                 </span>
                                             </div>
                                             <div className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest ${log.blockType === 'BOOST' ? 'bg-amber-100 text-amber-600' :
-                                                    log.blockType === 'BASE' ? 'bg-indigo-100 text-indigo-600' :
-                                                        'bg-slate-100 text-slate-500'
+                                                log.blockType === 'BASE' ? 'bg-indigo-100 text-indigo-600' :
+                                                    'bg-slate-100 text-slate-500'
                                                 }`}>
                                                 {log.blockType || log.protocol || 'Mix'}
                                             </div>

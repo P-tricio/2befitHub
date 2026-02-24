@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../../../context/AuthContext';
 import { TrainingDB } from '../../services/db';
 import { X, Calendar, Trophy, ChevronRight, Search, Clock, Zap, ArrowLeft, Footprints, Dumbbell, CheckSquare, Activity } from 'lucide-react';
-import { format, parseISO } from 'date-fns';
+import { formatDateSafe } from '../../../../lib/dateUtils';
 import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
@@ -178,7 +178,7 @@ const AthleteHistory = () => {
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center gap-2 mb-1">
                                             <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded uppercase tracking-wider">
-                                                {format(parseISO(item.scheduledDate), 'dd MMM yyyy', { locale: es })}
+                                                {formatDateSafe(item.scheduledDate, 'dd MMM yyyy')}
                                             </span>
                                             {item.results?.rpe && (
                                                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">RPE {item.results.rpe}</span>

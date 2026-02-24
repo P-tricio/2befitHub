@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Trophy, Clock, Zap, Star, MessageSquare, TrendingUp, TrendingDown, Minus, ChevronDown, ChevronUp, Dumbbell, CheckCircle, Activity, Camera, Footprints } from 'lucide-react';
 import { TrainingDB } from '../services/db';
-import { format } from 'date-fns';
+import { formatDateSafe } from '../../../lib/dateUtils';
 import ExerciseMedia from './ExerciseMedia';
 
 const SessionResultsModal = ({ task, session, onClose, userId }) => {
@@ -15,7 +15,7 @@ const SessionResultsModal = ({ task, session, onClose, userId }) => {
     const [sessionFeedback, setSessionFeedback] = useState(null);
 
     const results = task?.results || {};
-    const dateKey = task?.scheduledDate || results?.scheduledDate || format(new Date(task?.completedAt || Date.now()), 'yyyy-MM-dd');
+    const dateKey = task?.scheduledDate || results?.scheduledDate || formatDateSafe(task?.completedAt || Date.now(), 'yyyy-MM-dd');
 
     useEffect(() => {
         const fetchLogsAndLibrary = async () => {

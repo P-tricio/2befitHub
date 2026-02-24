@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { format, subDays } from 'date-fns';
+import { subDays } from 'date-fns';
+import { formatDateSafe } from '../../../lib/dateUtils';
 import { es } from 'date-fns/locale';
 import { X, Check, Footprints, Utensils, ClipboardList, Scale, Ruler, Camera, CheckSquare, Clock, History, Dumbbell, Zap } from 'lucide-react';
 
@@ -81,14 +82,14 @@ const TaskResultsModal = ({ task, onClose, availableForms }) => {
                     {/* Date/Status Info */}
                     <div className="space-y-1">
                         <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-400">
-                            <span>{task.completedAt ? format(new Date(task.completedAt), "d 'de' MMMM, HH:mm", { locale: es }) : 'No completado'}</span>
+                            <span>{task.completedAt ? formatDateSafe(task.completedAt, "d 'de' MMMM, HH:mm") : 'No completado'}</span>
                             <span className={task.status === 'completed' ? 'text-emerald-500' : 'text-amber-500'}>
                                 {task.status === 'completed' ? 'Completado' : 'Pendiente'}
                             </span>
                         </div>
                         {config.retroactive && task.completedAt && (
                             <p className="text-[9px] font-bold text-slate-400 italic">
-                                * Datos referidos al día anterior ({format(subDays(new Date(task.completedAt), 1), "d 'de' MMMM", { locale: es })})
+                                * Datos referidos al día anterior ({formatDateSafe(subDays(new Date(task.completedAt), 1), "d 'de' MMMM")})
                             </p>
                         )}
                     </div>

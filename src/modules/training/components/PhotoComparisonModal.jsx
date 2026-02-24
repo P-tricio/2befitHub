@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Calendar, ChevronLeft, ChevronRight, Camera } from 'lucide-react';
-import { format, parseISO } from 'date-fns';
+import { formatDateSafe } from '../../../lib/dateUtils';
 import { TrainingDB } from '../services/db';
 
 const PhotoComparisonModal = ({ userId, onClose }) => {
@@ -119,7 +119,7 @@ const PhotoComparisonModal = ({ userId, onClose }) => {
                                         className="bg-slate-700 text-white rounded-lg px-2 py-1.5 text-[10px] sm:text-xs font-bold border border-slate-600 outline-none w-full sm:w-auto"
                                     >
                                         {entries.map(e => (
-                                            <option key={e.date} value={e.date}>{format(parseISO(e.date), 'dd/MM/yy')}</option>
+                                            <option key={e.date} value={e.date}>{formatDateSafe(e.date, 'dd/MM/yy')}</option>
                                         ))}
                                     </select>
                                 </div>
@@ -132,7 +132,7 @@ const PhotoComparisonModal = ({ userId, onClose }) => {
                                         className="bg-slate-700 text-white rounded-lg px-2 py-1.5 text-[10px] sm:text-xs font-bold border border-slate-600 outline-none w-full sm:w-auto"
                                     >
                                         {entries.map(e => (
-                                            <option key={e.date} value={e.date}>{format(parseISO(e.date), 'dd/MM/yy')}</option>
+                                            <option key={e.date} value={e.date}>{formatDateSafe(e.date, 'dd/MM/yy')}</option>
                                         ))}
                                     </select>
                                 </div>
@@ -144,7 +144,7 @@ const PhotoComparisonModal = ({ userId, onClose }) => {
                             {/* Panel 1 */}
                             <div className="flex-1 flex flex-col gap-2">
                                 <div className="text-center">
-                                    <span className="text-xs sm:text-lg font-black text-white bg-slate-800/80 px-3 py-1 rounded-full">{date1 ? format(parseISO(date1), 'd MMM yy') : '-'}</span>
+                                    <span className="text-xs sm:text-lg font-black text-white bg-slate-800/80 px-3 py-1 rounded-full">{date1 ? formatDateSafe(date1, 'd MMM yy') : '-'}</span>
                                 </div>
                                 <div className="flex-1 rounded-2xl overflow-hidden bg-slate-900/50 border border-slate-700 relative group">
                                     {entry1?.photos?.[view] ? (
@@ -161,7 +161,7 @@ const PhotoComparisonModal = ({ userId, onClose }) => {
                             {/* Panel 2 */}
                             <div className="flex-1 flex flex-col gap-2">
                                 <div className="text-center">
-                                    <span className="text-xs sm:text-lg font-black text-white bg-slate-800/80 px-3 py-1 rounded-full">{date2 ? format(parseISO(date2), 'd MMM yy') : '-'}</span>
+                                    <span className="text-xs sm:text-lg font-black text-white bg-slate-800/80 px-3 py-1 rounded-full">{date2 ? formatDateSafe(date2, 'd MMM yy') : '-'}</span>
                                 </div>
                                 <div className="flex-1 rounded-2xl overflow-hidden bg-slate-900/50 border border-slate-700 relative group">
                                     {entry2?.photos?.[view] ? (

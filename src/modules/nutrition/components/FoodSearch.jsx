@@ -1,13 +1,26 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Loader2, Flame, Wheat, Drumstick, Droplets, Utensils, Database, Globe, Filter, X, ScanBarcode, Camera, ArrowLeft, Plus } from 'lucide-react';
+import { Search, Loader2, Flame, Wheat, Drumstick, Droplets, Utensils, Database, Globe, Filter, X, ScanBarcode, Camera, ArrowLeft, Plus, Sparkles, Send, Edit2, Save, Trash2, AlertCircle, Info, Check } from 'lucide-react';
 import BarcodeScannerComponent from 'react-qr-barcode-scanner';
 import { searchProductsOFF, getProductByBarcode } from '../../../services/openFoodFactsService';
 import { searchLocalIngredients, searchLocalRecipes } from '../../../services/nutritionDBService';
+import { NutritionDB } from '../services/nutritionDB';
+import { parseMealDescription } from '../services/aiNutritionService';
+import { findBestDatabaseMatch } from '../services/nutritionConsistency';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const FoodSearch = ({ onSelect, onClose }) => {
     const [query, setQuery] = useState('');
     const [offProducts, setOffProducts] = useState([]);
     const [localResults, setLocalResults] = useState({ ingredients: [], recipes: [] });
+
+    // Mode State
+    const [searchMode, setSearchMode] = useState('classic'); // 'classic' | 'ai'
+
+    // AI Mode State
+    const [aiText, setAiText] = useState('');
+    const [aiParsedItems, setAiParsedItems] = useState(null);
+    const [editingIdx, setEditingIdx] = useState(null);
+    const [dbFoods, setDbFoods] = useState([]);
 
     // Staging State for Quantity/Unit Selection
     const [selectedItem, setSelectedItem] = useState(null);
@@ -26,6 +39,19 @@ const FoodSearch = ({ onSelect, onClose }) => {
     const [seeding, setSeeding] = useState(false);
     const [hasSearched, setHasSearched] = useState(false);
     const [searchTerm, setSearchTerm] = useState(''); // Actual search term executed
+
+    // Fetch DB foods for AI matching
+    useEffect(() => {
+        const fetchFoods = async () => {
+            try {
+                const foods = await NutritionDB.foods.getAll();
+                setDbFoods(foods);
+            } catch (e) {
+                console.error("Error loading foods for matching:", e);
+            }
+        };
+        fetchFoods();
+    }, []);
 
     // Scanner State
     const [showScanner, setShowScanner] = useState(false);
@@ -145,12 +171,99 @@ const FoodSearch = ({ onSelect, onClose }) => {
             scanningLock.current = true; // Lock immediately
             const code = result.text;
             setQuery(code);
+            setSearchMode('classic'); // Switch to classic if scanning
             setShowScanner(false);
             if (navigator.vibrate) navigator.vibrate(200);
 
             // Trigger search immediately
             handleSearch(null, code);
         }
+    };
+
+    const handleAIParse = async () => {
+        if (!aiText.trim()) return;
+        setLoading(true);
+        setError(null);
+        setAiParsedItems(null);
+        try {
+            const items = await parseMealDescription(aiText);
+
+            // Enrich with DB matching
+            const enrichedItems = items.map(item => {
+                const match = findBestDatabaseMatch(item.name, dbFoods);
+                if (match) {
+                    const baseMacros = match.matchType === 'exact' ? (match.macros || match) : item.baseMacros;
+                    const isVerified = match.matchType === 'exact';
+
+                    // Ratio scaling for baseMacros to current quantity
+                    const ratio = (item.unit === 'g' || item.unit === 'ml') ? (item.quantity / 100) : item.quantity;
+
+                    return {
+                        ...item,
+                        refId: match.id,
+                        matchType: match.matchType,
+                        baseMacros: baseMacros,
+                        isVerified,
+                        calories: Math.round((baseMacros.calories || 0) * ratio),
+                        protein: Math.round((baseMacros.protein || 0) * ratio),
+                        carbs: Math.round((baseMacros.carbs || 0) * ratio),
+                        fats: Math.round((baseMacros.fats || 0) * ratio),
+                        dbSuggestion: match.matchType !== 'exact' ? match : null
+                    };
+                }
+                return item;
+            });
+
+            setAiParsedItems(enrichedItems);
+        } catch (err) {
+            setError("No he podido procesar la descripción. Prueba con algo más sencillo.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const updateAIItem = (idx, updates) => {
+        setAiParsedItems(prev => prev.map((item, i) => {
+            if (i !== idx) return item;
+
+            const newItem = { ...item, ...updates, isModified: true };
+            const getRatio = (q, u) => (u === 'g' || u === 'ml') ? (q / 100) : q;
+
+            // 1. If quantity or unit changed, rescale macros
+            if ((updates.quantity !== undefined || updates.unit !== undefined) && newItem.baseMacros) {
+                const ratio = getRatio(newItem.quantity, newItem.unit);
+                newItem.calories = Math.round((newItem.baseMacros.calories || 0) * ratio);
+                newItem.protein = Math.round((newItem.baseMacros.protein || 0) * ratio);
+                newItem.carbs = Math.round((newItem.baseMacros.carbs || 0) * ratio);
+                newItem.fats = Math.round((newItem.baseMacros.fats || 0) * ratio);
+            }
+
+            // 2. If macros changed manually, update baseMacros
+            const macroFields = ['calories', 'protein', 'carbs', 'fats'];
+            if (macroFields.some(f => updates[f] !== undefined)) {
+                const ratio = getRatio(newItem.quantity, newItem.unit) || 1;
+                newItem.baseMacros = {
+                    ...newItem.baseMacros,
+                    calories: (newItem.calories || 0) / ratio,
+                    protein: (newItem.protein || 0) / ratio,
+                    carbs: (newItem.carbs || 0) / ratio,
+                    fats: (newItem.fats || 0) / ratio
+                };
+            }
+
+            return newItem;
+        }));
+    };
+
+    const removeAIItem = (idx) => {
+        setAiParsedItems(prev => prev.filter((_, i) => i !== idx));
+        if (editingIdx === idx) setEditingIdx(null);
+    };
+
+    const handleConfirmAIAdd = () => {
+        if (!onSelect || !aiParsedItems) return;
+        onSelect(aiParsedItems);
+        onClose();
     };
 
     const handleSelectItem = (item, type) => {
@@ -274,309 +387,465 @@ const FoodSearch = ({ onSelect, onClose }) => {
 
     return (
         <div className="flex flex-col h-full bg-slate-50/50 relative">
-            {selectedItem ? (
-                <div className="flex-1 flex flex-col bg-white animate-in slide-in-from-right duration-200">
-                    {/* Staging Header */}
-                    <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+            {/* Mode Switcher */}
+            {!selectedItem && (
+                <div className="bg-white px-6 py-3 border-b border-slate-100 flex items-center justify-center">
+                    <div className="p-1 bg-slate-100 rounded-2xl flex items-center gap-1 w-full max-w-sm">
                         <button
-                            onClick={() => setSelectedItem(null)}
-                            className="p-2 -ml-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100"
+                            onClick={() => setSearchMode('classic')}
+                            className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${searchMode === 'classic' ? 'bg-white text-slate-900 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
                         >
-                            <ArrowLeft size={20} />
+                            <Search size={14} /> Clásico
                         </button>
-                        <h3 className="font-black text-slate-800 text-lg">Confirmar Cantidad</h3>
-                        <div className="w-8"></div> {/* Spacer */}
-                    </div>
-
-                    <div className="flex-1 p-6 flex flex-col items-center overflow-y-auto">
-                        <div className="text-center mb-8">
-                            <h2 className="text-2xl font-black text-slate-900 mb-2">{selectedItem.data.name}</h2>
-                            <p className="text-slate-400 font-bold text-sm uppercase tracking-wider">{selectedItem.data.brand || 'Alimento'}</p>
-                        </div>
-
-                        {/* Quantity Input */}
-                        <div className="flex items-end gap-3 mb-10">
-                            <input
-                                type="number"
-                                value={quantity}
-                                onChange={(e) => setQuantity(Number(e.target.value))}
-                                className="text-5xl font-black text-center w-36 border-b-2 border-slate-200 focus:border-indigo-500 focus:outline-none bg-transparent pb-2 text-slate-800 placeholder-slate-200"
-                                autoFocus
-                            />
-                            <select
-                                value={unit}
-                                onChange={(e) => setUnit(e.target.value)}
-                                className="text-xl font-bold text-slate-400 bg-transparent border-none focus:outline-none mb-4 cursor-pointer"
-                            >
-                                <option value="g">g</option>
-                                <option value="ml">ml</option>
-                                <option value="unidad">unidad</option>
-                                <option value="porción">porción</option>
-                                <option value="oz">oz</option>
-                            </select>
-                        </div>
-
-                        {/* Macro Preview Cards */}
-                        <div className="grid grid-cols-4 gap-3 w-full max-w-sm mb-8">
-                            <div className="bg-slate-50 rounded-2xl p-3 text-center border border-slate-100">
-                                <div className="text-[10px] font-black uppercase text-slate-400 mb-1">Kcal</div>
-                                <div className="text-lg font-black text-slate-800">{Math.round(previewMacros.calories)}</div>
-                            </div>
-                            <div className="bg-red-50 rounded-2xl p-3 text-center border border-red-100">
-                                <div className="text-[10px] font-black uppercase text-red-400 mb-1">Prot</div>
-                                <div className="text-lg font-black text-red-600">{Math.round(previewMacros.protein)}</div>
-                            </div>
-                            <div className="bg-amber-50 rounded-2xl p-3 text-center border border-amber-100">
-                                <div className="text-[10px] font-black uppercase text-amber-400 mb-1">Carb</div>
-                                <div className="text-lg font-black text-amber-600">{Math.round(previewMacros.carbs)}</div>
-                            </div>
-                            <div className="bg-yellow-50 rounded-2xl p-3 text-center border border-yellow-100">
-                                <div className="text-[10px] font-black uppercase text-yellow-500 mb-1">Grasa</div>
-                                <div className="text-lg font-black text-yellow-600">{Math.round(previewMacros.fats)}</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Action Button */}
-                    <div className="p-4 border-t border-slate-100 bg-white">
                         <button
-                            onClick={handleConfirmAdd}
-                            disabled={!quantity || quantity <= 0}
-                            className="w-full bg-slate-900 text-white py-4 rounded-xl font-black text-sm uppercase tracking-widest shadow-lg shadow-slate-200 hover:bg-slate-800 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            onClick={() => setSearchMode('ai')}
+                            className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${searchMode === 'ai' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'text-slate-400 hover:text-slate-600'}`}
                         >
-                            <Plus size={20} />
-                            Añadir al Diario
+                            <Sparkles size={14} /> Asistente IA
                         </button>
                     </div>
                 </div>
-            ) : (
-                <>
-                    {/* Search Bar & Filters */}
-                    <div className="p-4 bg-white border-b border-slate-100 z-10 sticky top-0">
-                        <form onSubmit={handleSearch} className="relative group mb-2">
-                            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                                <Search className="h-5 w-5 text-slate-400 group-focus-within:text-emerald-500 transition-colors" />
+            )}
+
+            {searchMode === 'ai' && !selectedItem ? (
+                <div className="flex-1 flex flex-col bg-slate-50/50 overflow-hidden relative">
+                    <div className="p-6 space-y-4">
+                        <div className="bg-white rounded-[2rem] border border-slate-100 shadow-xl shadow-indigo-500/5 p-6 space-y-4">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-2xl">
+                                    <Sparkles size={20} />
+                                </div>
+                                <h4 className="font-black text-slate-900">¿Qué has comido?</h4>
                             </div>
-                            <input
-                                type="text"
-                                className="block w-full pl-11 pr-32 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all shadow-sm"
-                                placeholder="Busca alimentos o escanea..."
-                                value={query}
-                                onChange={(e) => setQuery(e.target.value)}
-                                autoFocus
+
+                            <textarea
+                                value={aiText}
+                                onChange={(e) => setAiText(e.target.value)}
+                                placeholder="Ej: 2 huevos fritos, 150g de arroz basmati y una manzana..."
+                                className="w-full h-32 bg-slate-50 border-none rounded-2xl p-4 text-sm font-bold placeholder:text-slate-300 focus:ring-2 focus:ring-indigo-500 transition-all resize-none"
                             />
-                            <div className="absolute inset-y-1 right-1 flex items-center gap-1">
-                                {/* Scanner Button */}
-                                <button
-                                    type="button"
-                                    onClick={() => setShowScanner(true)}
-                                    className="p-2 rounded-lg text-slate-400 hover:text-emerald-500 hover:bg-slate-100 transition-colors"
-                                    title="Escanear Código de Barras"
-                                >
-                                    <ScanBarcode size={20} />
-                                </button>
 
-                                <button
-                                    type="button"
-                                    onClick={() => setShowFilters(!showFilters)}
-                                    className={`p-2 rounded-lg transition-colors ${showFilters || filters.nutriscore || filters.category ? 'bg-emerald-50 text-emerald-500' : 'text-slate-400 hover:text-slate-600'}`}
-                                >
-                                    <Filter size={18} />
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={loading}
-                                    className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-lg transition-colors flex items-center gap-2 text-sm"
-                                >
-                                    {loading ? <Loader2 className="animate-spin h-4 w-4" /> : 'Buscar'}
-                                </button>
+                            <div className="flex gap-2 p-3 bg-amber-50 rounded-xl border border-amber-100">
+                                <Info size={14} className="text-amber-600 shrink-0 mt-0.5" />
+                                <p className="text-[10px] font-medium text-amber-800 leading-tight">
+                                    La IA estima cantidades y macros basándose en tu descripción. Por favor, verifica los resultados antes de confirmar.
+                                </p>
                             </div>
-                        </form>
 
-                        {/* Collapsible Filters */}
-                        {showFilters && (
-                            <div className="mb-4 pt-2 animate-in slide-in-from-top-2 duration-200 border-t border-slate-50 mt-2">
-                                <div className="flex justify-between items-center mb-3">
-                                    <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Filtros Avanzados</h3>
-                                    {(filters.nutriscore || filters.category) && (
-                                        <button onClick={clearFilters} className="text-[10px] text-red-400 hover:text-red-300 flex items-center gap-1 font-bold">
-                                            <X size={12} /> Limpiar filtros
-                                        </button>
-                                    )}
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                    {/* NutriScore */}
-                                    <div className="space-y-1">
-                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider ml-1">Nutri-Score</label>
-                                        <div className="flex gap-1.5">
-                                            {['A', 'B', 'C', 'D', 'E'].map((score) => (
-                                                <button
-                                                    key={score}
-                                                    type="button"
-                                                    onClick={() => setFilters(prev => ({ ...prev, nutriscore: prev.nutriscore === score.toLowerCase() ? '' : score.toLowerCase() }))}
-                                                    className={`flex-1 h-8 rounded-md font-black text-sm transition-all border-2 ${filters.nutriscore === score.toLowerCase()
-                                                        ? 'border-slate-800 scale-105 shadow-sm'
-                                                        : 'border-transparent opacity-60 hover:opacity-100 hover:scale-105'
-                                                        }`}
-                                                    style={{
-                                                        backgroundColor:
-                                                            score === 'A' ? '#038141' :
-                                                                score === 'B' ? '#85BB2F' :
-                                                                    score === 'C' ? '#FECB02' :
-                                                                        score === 'D' ? '#EE8100' : '#E63E11',
-                                                        color: score === 'C' ? 'black' : 'white'
-                                                    }}
-                                                >
-                                                    {score}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    {/* Categories */}
-                                    <div className="space-y-1">
-                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider ml-1">Categoría</label>
-                                        <select
-                                            value={filters.category}
-                                            onChange={(e) => setFilters(prev => ({ ...prev, category: e.target.value }))}
-                                            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-bold text-slate-600 focus:outline-none focus:border-emerald-500 transition-colors"
-                                        >
-                                            <option value="">Todas</option>
-                                            <option value="snack">Snacks</option>
-                                            <option value="dairy">Lácteos</option>
-                                            <option value="meat">Carnes</option>
-                                            <option value="cereal">Cereales</option>
-                                            <option value="beverage">Bebidas</option>
-                                            <option value="plant-based">Vegano</option>
-                                        </select>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Error Message */}
-                        {error && (
-                            <div className="bg-red-50 text-red-500 px-4 py-2 rounded-lg text-xs font-bold text-center border border-red-100 mt-2">
-                                {error}
-                            </div>
-                        )}
+                            <button
+                                onClick={handleAIParse}
+                                disabled={loading || !aiText.trim()}
+                                className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 shadow-lg shadow-indigo-200 transition-all"
+                            >
+                                {loading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                                Analizar con IA
+                            </button>
+                        </div>
                     </div>
 
-                    {/* Results List */}
-                    <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                    <div className="flex-1 overflow-y-auto px-6 pb-24 space-y-4">
+                        <AnimatePresence mode="popLayout">
+                            {aiParsedItems && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    className="space-y-3 pb-8"
+                                >
+                                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 mb-2">Resultados del análisis</div>
+                                    <div className="space-y-2.5">
+                                        {aiParsedItems.map((item, idx) => (
+                                            <motion.div
+                                                layout
+                                                key={`ai-${idx}`}
+                                                className={`flex flex-col p-4 bg-white border-2 rounded-2xl transition-all shadow-sm ${editingIdx === idx ? 'border-indigo-500 ring-4 ring-indigo-50 shadow-xl' : 'border-slate-100'}`}
+                                            >
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex-1 flex items-center gap-3">
+                                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center border ${editingIdx === idx ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50 text-slate-400 border-slate-100'}`}>
+                                                            {editingIdx === idx ? <Edit2 size={14} /> : <Plus size={14} />}
+                                                        </div>
+                                                        {editingIdx !== idx ? (
+                                                            <div>
+                                                                <p className="text-sm font-black text-slate-900 leading-tight">{item.name}</p>
+                                                                <div className="flex flex-wrap items-center gap-2 mt-1">
+                                                                    <span className="text-[10px] font-black text-slate-400">{item.quantity} {item.unit}</span>
+                                                                    <div className="flex gap-1.5 px-2 py-0.5 bg-slate-100/50 rounded-md text-[9px] font-bold text-slate-500 overflow-hidden">
+                                                                        <span className="text-indigo-600">{Math.round(item.calories || 0)} k</span>
+                                                                        <span className="opacity-30">•</span>
+                                                                        <span>P:{Math.round(item.protein || 0)}g</span>
+                                                                        <span className="opacity-30">•</span>
+                                                                        <span>H:{Math.round(item.carbs || 0)}g</span>
+                                                                        <span className="opacity-30">•</span>
+                                                                        <span>G:{Math.round(item.fats || 0)}g</span>
+                                                                    </div>
+                                                                    {item.isVerified ? (
+                                                                        <span className="text-[8px] font-black text-emerald-500 bg-emerald-50 px-2 rounded-full border border-emerald-100">VERIFICADO</span>
+                                                                    ) : item.isModified ? (
+                                                                        <span className="text-[8px] font-black text-blue-500 bg-blue-50 px-2 rounded-full border border-blue-100">MODIFICADO</span>
+                                                                    ) : (
+                                                                        <span className="text-[8px] font-black text-amber-500 bg-amber-50 px-2 rounded-full border border-amber-100">ESTIMADO</span>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="flex-1 space-y-2 pr-4">
+                                                                <input
+                                                                    className="w-full bg-slate-50 border-none rounded-lg px-3 py-1 text-xs font-bold focus:ring-1 focus:ring-indigo-500"
+                                                                    value={item.name}
+                                                                    onChange={(e) => updateAIItem(idx, { name: e.target.value })}
+                                                                />
+                                                                <div className="flex gap-2">
+                                                                    <input type="number" className="w-16 bg-slate-50 border-none rounded-lg px-2 py-1 text-xs font-bold" value={item.quantity} onChange={e => updateAIItem(idx, { quantity: Number(e.target.value) })} />
+                                                                    <select className="bg-slate-50 border-none rounded-lg px-2 py-1 text-xs font-bold" value={item.unit} onChange={e => updateAIItem(idx, { unit: e.target.value })}><option value="g">g</option><option value="ml">ml</option><option value="unidad">ud</option></select>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex items-center gap-1 shrink-0">
+                                                        <button onClick={() => setEditingIdx(editingIdx === idx ? null : idx)} className={`p-2 rounded-lg transition-all ${editingIdx === idx ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-50 hover:text-indigo-600'}`}>{editingIdx === idx ? <Save size={14} /> : <Edit2 size={14} />}</button>
+                                                        <button onClick={() => removeAIItem(idx)} className="p-2 text-slate-300 hover:bg-rose-50 hover:text-rose-500 rounded-lg"><Trash2 size={14} /></button>
+                                                    </div>
+                                                </div>
 
-                        {/* No Results State */}
-                        {!loading && !error && hasSearched && localResults.ingredients.length === 0 && localResults.recipes.length === 0 && offProducts.length === 0 && (
-                            <div className="text-center py-10 text-slate-400">
-                                <Search size={32} className="mx-auto mb-3 text-slate-300" />
-                                <p className="font-medium text-sm">No se encontraron resultados para "{searchTerm}"</p>
-                                <button onClick={handleSeed} className="mt-4 text-emerald-500 hover:text-emerald-600 text-xs font-bold uppercase tracking-wider flex items-center gap-1 mx-auto">
-                                    <Database size={12} />
-                                    Restaurar Base de Datos Local
+                                                {editingIdx === idx && (
+                                                    <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} className="grid grid-cols-4 gap-2 mt-3 pt-3 border-t border-slate-50">
+                                                        {['calories', 'protein', 'carbs', 'fats'].map(field => (
+                                                            <div key={field}>
+                                                                <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest pl-1">{field === 'calories' ? 'Kcal' : field.slice(0, 1).toUpperCase()}</label>
+                                                                <input type="number" className="w-full bg-slate-50 border-none rounded-lg px-2 py-1 text-[10px] font-black text-slate-600" value={item[field]} onChange={e => updateAIItem(idx, { [field]: Number(e.target.value) })} />
+                                                            </div>
+                                                        ))}
+                                                    </motion.div>
+                                                )}
+                                            </motion.div>
+                                        ))}
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                    </div>
+
+                    <AnimatePresence>
+                        {aiParsedItems && aiParsedItems.length > 0 && (
+                            <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="absolute bottom-6 left-6 right-6">
+                                <button
+                                    onClick={handleConfirmAIAdd}
+                                    className="w-full py-5 bg-indigo-600 text-white rounded-[1.5rem] shadow-2xl shadow-indigo-200 font-black text-[13px] uppercase tracking-widest flex items-center justify-center gap-3 ring-4 ring-white"
+                                >
+                                    <Check size={20} className="text-indigo-300" />
+                                    Confirmar {aiParsedItems.length} alimentos
+                                </button>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </div>
+            ) : (
+                <div className="flex flex-col h-full overflow-hidden">
+                    {selectedItem ? (
+                        <div className="flex-1 flex flex-col bg-white animate-in slide-in-from-right duration-200">
+                            {/* Staging Header */}
+                            <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                                <button
+                                    onClick={() => setSelectedItem(null)}
+                                    className="p-2 -ml-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100"
+                                >
+                                    <ArrowLeft size={20} />
+                                </button>
+                                <h3 className="font-black text-slate-800 text-lg">Confirmar Cantidad</h3>
+                                <div className="w-8"></div> {/* Spacer */}
+                            </div>
+
+                            <div className="flex-1 p-6 flex flex-col items-center overflow-y-auto">
+                                <div className="text-center mb-8">
+                                    <h2 className="text-2xl font-black text-slate-900 mb-2">{selectedItem.data.name}</h2>
+                                    <p className="text-slate-400 font-bold text-sm uppercase tracking-wider">{selectedItem.data.brand || 'Alimento'}</p>
+                                </div>
+
+                                {/* Quantity Input */}
+                                <div className="flex items-end gap-3 mb-10">
+                                    <input
+                                        type="number"
+                                        value={quantity}
+                                        onChange={(e) => setQuantity(Number(e.target.value))}
+                                        className="text-5xl font-black text-center w-36 border-b-2 border-slate-200 focus:border-indigo-500 focus:outline-none bg-transparent pb-2 text-slate-800 placeholder-slate-200"
+                                        autoFocus
+                                    />
+                                    <select
+                                        value={unit}
+                                        onChange={(e) => setUnit(e.target.value)}
+                                        className="text-xl font-bold text-slate-400 bg-transparent border-none focus:outline-none mb-4 cursor-pointer"
+                                    >
+                                        <option value="g">g</option>
+                                        <option value="ml">ml</option>
+                                        <option value="unidad">unidad</option>
+                                        <option value="porción">porción</option>
+                                        <option value="oz">oz</option>
+                                    </select>
+                                </div>
+
+                                {/* Macro Preview Cards */}
+                                <div className="grid grid-cols-4 gap-3 w-full max-w-sm mb-8">
+                                    <div className="bg-slate-50 rounded-2xl p-3 text-center border border-slate-100">
+                                        <div className="text-[10px] font-black uppercase text-slate-400 mb-1">Kcal</div>
+                                        <div className="text-lg font-black text-slate-800">{Math.round(previewMacros.calories)}</div>
+                                    </div>
+                                    <div className="bg-red-50 rounded-2xl p-3 text-center border border-red-100">
+                                        <div className="text-[10px] font-black uppercase text-red-400 mb-1">Prot</div>
+                                        <div className="text-lg font-black text-red-600">{Math.round(previewMacros.protein)}</div>
+                                    </div>
+                                    <div className="bg-amber-50 rounded-2xl p-3 text-center border border-amber-100">
+                                        <div className="text-[10px] font-black uppercase text-amber-400 mb-1">Carb</div>
+                                        <div className="text-lg font-black text-amber-600">{Math.round(previewMacros.carbs)}</div>
+                                    </div>
+                                    <div className="bg-yellow-50 rounded-2xl p-3 text-center border border-yellow-100">
+                                        <div className="text-[10px] font-black uppercase text-yellow-500 mb-1">Grasa</div>
+                                        <div className="text-lg font-black text-yellow-600">{Math.round(previewMacros.fats)}</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Action Button */}
+                            <div className="p-4 border-t border-slate-100 bg-white">
+                                <button
+                                    onClick={handleConfirmAdd}
+                                    disabled={!quantity || quantity <= 0}
+                                    className="w-full bg-slate-900 text-white py-4 rounded-xl font-black text-sm uppercase tracking-widest shadow-lg shadow-slate-200 hover:bg-slate-800 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                >
+                                    <Plus size={20} />
+                                    Añadir al Diario
                                 </button>
                             </div>
-                        )}
+                        </div>
+                    ) : (
+                        <>
+                            {/* Search Bar & Filters */}
+                            <div className="p-4 bg-white border-b border-slate-100 z-10 sticky top-0">
+                                <form onSubmit={handleSearch} className="relative group mb-2">
+                                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                                        <Search className="h-5 w-5 text-slate-400 group-focus-within:text-emerald-500 transition-colors" />
+                                    </div>
+                                    <input
+                                        type="text"
+                                        className="block w-full pl-11 pr-32 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all shadow-sm"
+                                        placeholder="Busca o escanea..."
+                                        value={query}
+                                        onChange={(e) => setQuery(e.target.value)}
+                                        autoFocus
+                                    />
+                                    <div className="absolute inset-y-1 right-1 flex items-center gap-1">
+                                        {/* Scanner Button */}
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowScanner(true)}
+                                            className="p-2 rounded-lg text-slate-400 hover:text-emerald-500 hover:bg-slate-100 transition-colors"
+                                            title="Escanear Código de Barras"
+                                        >
+                                            <ScanBarcode size={20} />
+                                        </button>
 
-                        {/* 1. LOCAL RESULTS */}
-                        {(localResults.ingredients.length > 0 || localResults.recipes.length > 0) && (
-                            <div className="space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 mb-2">
-                                    <Utensils size={14} />
-                                    Resultados Locales
-                                </h3>
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowFilters(!showFilters)}
+                                            className={`p-2 rounded-lg transition-colors ${showFilters || filters.nutriscore || filters.category ? 'bg-emerald-50 text-emerald-500' : 'text-slate-400 hover:text-slate-600'}`}
+                                        >
+                                            <Filter size={18} />
+                                        </button>
+                                        <button
+                                            type="submit"
+                                            disabled={loading}
+                                            className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-lg transition-colors flex items-center gap-2 text-sm"
+                                        >
+                                            {loading ? <Loader2 className="animate-spin h-4 w-4" /> : 'Buscar'}
+                                        </button>
+                                    </div>
+                                </form>
 
-                                {localResults.ingredients.map((ing) => (
-                                    <button
-                                        key={`ing-${ing.id}`}
-                                        onClick={() => handleSelectItem(ing, 'food')}
-                                        className="w-full text-left bg-white p-3 rounded-xl border border-slate-100 hover:border-amber-200 hover:shadow-md transition-all group flex items-center justify-between"
-                                    >
-                                        <div>
-                                            <div className="font-bold text-slate-800 text-sm group-hover:text-amber-600 transition-colors">{ing.name}</div>
-                                            <div className="flex gap-2 text-[10px] font-bold text-slate-400 mt-1">
-                                                <span className="flex items-center gap-0.5"><Flame size={10} className="text-orange-400" /> {Math.round(ing.calories)} kcal</span>
-                                                <span className="flex items-center gap-0.5"><Drumstick size={10} className="text-blue-400" /> P: {ing.protein}g</span>
-                                                <span className="flex items-center gap-0.5"><Wheat size={10} className="text-yellow-400" /> C: {ing.carbs}g</span>
-                                                <span className="flex items-center gap-0.5"><Droplets size={10} className="text-purple-400" /> G: {ing.fats}g</span>
-                                            </div>
-                                        </div>
-                                        <div className="bg-amber-50 text-amber-500 text-[10px] font-black px-2 py-1 rounded-full uppercase tracking-wider">
-                                            Local
-                                        </div>
-                                    </button>
-                                ))}
-
-                                {localResults.recipes.map((rec) => (
-                                    <button
-                                        key={`rec-${rec.id}`}
-                                        onClick={() => handleSelectItem(rec, 'recipe')}
-                                        className="w-full text-left bg-white p-3 rounded-xl border border-slate-100 hover:border-emerald-200 hover:shadow-md transition-all group flex items-center justify-between"
-                                    >
-                                        <div>
-                                            <div className="font-bold text-slate-800 text-sm group-hover:text-emerald-600 transition-colors">{rec.name}</div>
-                                            <div className="flex gap-2 text-[10px] font-bold text-slate-400 mt-1">
-                                                <span className="flex items-center gap-0.5"><Flame size={10} className="text-orange-400" /> {Math.round(rec.totalMacros.calories)} kcal</span>
-                                                <span className="flex items-center gap-0.5"><Utensils size={10} className="text-emerald-400" /> Receta Completa</span>
-                                            </div>
-                                        </div>
-                                        <div className="bg-emerald-50 text-emerald-500 text-[10px] font-black px-2 py-1 rounded-full uppercase tracking-wider">
-                                            Receta
-                                        </div>
-                                    </button>
-                                ))}
-                            </div>
-                        )}
-
-                        {/* 2. EXTERNAL RESULTS */}
-                        {offProducts.length > 0 && (
-                            <div className="space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-300 delay-75">
-                                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 mb-2 pt-4 border-t border-slate-100">
-                                    <Globe size={14} />
-                                    Resultados Externos (OpenFoodFacts)
-                                </h3>
-
-                                {offProducts.map((product, index) => (
-                                    <button
-                                        key={`off-${index}`}
-                                        onClick={() => handleSelectItem(product, 'external')}
-                                        className="w-full text-left bg-white p-3 rounded-xl border border-slate-100 hover:border-blue-200 hover:shadow-md transition-all group flex items-center gap-3 relative overflow-hidden"
-                                    >
-                                        <div className="w-12 h-12 bg-slate-50 rounded-lg flex-shrink-0 flex items-center justify-center p-1 border border-slate-100">
-                                            {product.image ? (
-                                                <img src={product.image} alt={product.label} className="w-full h-full object-contain" />
-                                            ) : (
-                                                <Database size={16} className="text-slate-300" />
+                                {/* Collapsible Filters */}
+                                {showFilters && (
+                                    <div className="mb-4 pt-2 animate-in slide-in-from-top-2 duration-200 border-t border-slate-50 mt-2">
+                                        <div className="flex justify-between items-center mb-3">
+                                            <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Filtros Avanzados</h3>
+                                            {(filters.nutriscore || filters.category) && (
+                                                <button onClick={clearFilters} className="text-[10px] text-red-400 hover:text-red-300 flex items-center gap-1 font-bold">
+                                                    <X size={12} /> Limpiar filtros
+                                                </button>
                                             )}
                                         </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            {/* NutriScore */}
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider ml-1">Nutri-Score</label>
+                                                <div className="flex gap-1.5">
+                                                    {['A', 'B', 'C', 'D', 'E'].map((score) => (
+                                                        <button
+                                                            key={score}
+                                                            type="button"
+                                                            onClick={() => setFilters(prev => ({ ...prev, nutriscore: prev.nutriscore === score.toLowerCase() ? '' : score.toLowerCase() }))}
+                                                            className={`flex-1 h-8 rounded-md font-black text-sm transition-all border-2 ${filters.nutriscore === score.toLowerCase()
+                                                                ? 'border-slate-800 scale-105 shadow-sm'
+                                                                : 'border-transparent opacity-60 hover:opacity-100 hover:scale-105'
+                                                                }`}
+                                                            style={{
+                                                                backgroundColor:
+                                                                    score === 'A' ? '#038141' :
+                                                                        score === 'B' ? '#85BB2F' :
+                                                                            score === 'C' ? '#FECB02' :
+                                                                                score === 'D' ? '#EE8100' : '#E63E11',
+                                                                color: score === 'C' ? 'black' : 'white'
+                                                            }}
+                                                        >
+                                                            {score}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
 
-                                        <div className="flex-1 min-w-0">
-                                            <div className="font-bold text-slate-800 text-sm truncate pr-8 group-hover:text-blue-600 transition-colors">{product.label}</div>
-                                            <div className="text-[10px] font-bold text-slate-400 truncate">{product.brand}</div>
-                                            <div className="flex gap-2 text-[10px] font-bold text-slate-500 mt-1">
-                                                <span className="text-slate-600">{Math.round(product.nutrition.energy)} kcal</span>
-                                                <span className="text-slate-400">|</span>
-                                                <span className="text-red-400">P:{Math.round(product.nutrition.protein)}</span>
-                                                <span className="text-orange-400">C:{Math.round(product.nutrition.carbs)}</span>
-                                                <span className="text-amber-400">G:{Math.round(product.nutrition.fat)}</span>
+                                            {/* Categories */}
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider ml-1">Categoría</label>
+                                                <select
+                                                    value={filters.category}
+                                                    onChange={(e) => setFilters(prev => ({ ...prev, category: e.target.value }))}
+                                                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-bold text-slate-600 focus:outline-none focus:border-emerald-500 transition-colors"
+                                                >
+                                                    <option value="">Todas</option>
+                                                    <option value="snack">Snacks</option>
+                                                    <option value="dairy">Lácteos</option>
+                                                    <option value="meat">Carnes</option>
+                                                    <option value="cereal">Cereales</option>
+                                                    <option value="beverage">Bebidas</option>
+                                                    <option value="plant-based">Vegano</option>
+                                                </select>
                                             </div>
                                         </div>
+                                    </div>
+                                )}
 
-                                        {product.nutriscore && (
-                                            <div className={`absolute top-0 right-0 px-2 py-1 rounded-bl-xl text-[10px] font-black uppercase text-white
-                                        ${product.nutriscore === 'a' ? 'bg-[#038141]' :
-                                                    product.nutriscore === 'b' ? 'bg-[#85BB2F]' :
-                                                        product.nutriscore === 'c' ? 'bg-[#FECB02] text-black' :
-                                                            product.nutriscore === 'd' ? 'bg-[#EE8100]' : 'bg-[#E63E11]'
-                                                }`}>
-                                                {product.nutriscore.toUpperCase()}
-                                            </div>
-                                        )}
-                                    </button>
-                                ))}
+                                {/* Error Message */}
+                                {error && (
+                                    <div className="bg-red-50 text-red-500 px-4 py-2 rounded-lg text-xs font-bold text-center border border-red-100 mt-2">
+                                        {error}
+                                    </div>
+                                )}
                             </div>
-                        )}
-                    </div>
-                </>
+
+                            {/* Results List */}
+                            <div className="flex-1 overflow-y-auto p-4 space-y-6">
+
+                                {/* No Results State */}
+                                {!loading && !error && hasSearched && localResults.ingredients.length === 0 && localResults.recipes.length === 0 && offProducts.length === 0 && (
+                                    <div className="text-center py-10 text-slate-400">
+                                        <Search size={32} className="mx-auto mb-3 text-slate-300" />
+                                        <p className="font-medium text-sm">No se encontraron resultados para "{searchTerm}"</p>
+                                        <button onClick={handleSeed} className="mt-4 text-emerald-500 hover:text-emerald-600 text-xs font-bold uppercase tracking-wider flex items-center gap-1 mx-auto">
+                                            <Database size={12} />
+                                            Restaurar Base de Datos Local
+                                        </button>
+                                    </div>
+                                )}
+
+                                {/* 1. LOCAL RESULTS */}
+                                {(localResults.ingredients.length > 0 || localResults.recipes.length > 0) && (
+                                    <div className="space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                        <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 mb-2">
+                                            <Utensils size={14} />
+                                            Resultados Locales
+                                        </h3>
+
+                                        {localResults.ingredients.map((ing) => (
+                                            <button
+                                                key={`ing-${ing.id}`}
+                                                onClick={() => handleSelectItem(ing, 'food')}
+                                                className="w-full text-left bg-white p-3 rounded-xl border border-slate-100 hover:border-amber-200 hover:shadow-md transition-all group flex items-center justify-between"
+                                            >
+                                                <div>
+                                                    <div className="font-bold text-slate-800 text-sm group-hover:text-amber-600 transition-colors">{ing.name}</div>
+                                                    <div className="flex gap-2 text-[10px] font-bold text-slate-400 mt-1">
+                                                        <span className="flex items-center gap-0.5"><Flame size={10} className="text-orange-400" /> {Math.round(ing.calories)} kcal</span>
+                                                        <span className="flex items-center gap-0.5"><Drumstick size={10} className="text-blue-400" /> P: {ing.protein}g</span>
+                                                        <span className="flex items-center gap-0.5"><Wheat size={10} className="text-yellow-400" /> C: {ing.carbs}g</span>
+                                                        <span className="flex items-center gap-0.5"><Droplets size={10} className="text-purple-400" /> G: {ing.fats}g</span>
+                                                    </div>
+                                                </div>
+                                                <div className="bg-amber-50 text-amber-500 text-[10px] font-black px-2 py-1 rounded-full uppercase tracking-wider">
+                                                    Local
+                                                </div>
+                                            </button>
+                                        ))}
+
+                                        {localResults.recipes.map((rec) => (
+                                            <button
+                                                key={`rec-${rec.id}`}
+                                                onClick={() => handleSelectItem(rec, 'recipe')}
+                                                className="w-full text-left bg-white p-3 rounded-xl border border-slate-100 hover:border-emerald-200 hover:shadow-md transition-all group flex items-center justify-between"
+                                            >
+                                                <div>
+                                                    <div className="font-bold text-slate-800 text-sm group-hover:text-emerald-600 transition-colors">{rec.name}</div>
+                                                    <div className="flex gap-2 text-[10px] font-bold text-slate-400 mt-1">
+                                                        <span className="flex items-center gap-0.5"><Flame size={10} className="text-orange-400" /> {Math.round(rec.totalMacros.calories)} kcal</span>
+                                                        <span className="flex items-center gap-0.5"><Utensils size={10} className="text-emerald-400" /> Receta Completa</span>
+                                                    </div>
+                                                </div>
+                                                <div className="bg-emerald-50 text-emerald-500 text-[10px] font-black px-2 py-1 rounded-full uppercase tracking-wider">
+                                                    Receta
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {/* 2. EXTERNAL RESULTS */}
+                                {offProducts.length > 0 && (
+                                    <div className="space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-300 delay-75">
+                                        <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 mb-2 pt-4 border-t border-slate-100">
+                                            <Globe size={14} />
+                                            Resultados Externos (OpenFoodFacts)
+                                        </h3>
+
+                                        {offProducts.map((product, index) => (
+                                            <button
+                                                key={`off-${index}`}
+                                                onClick={() => handleSelectItem(product, 'external')}
+                                                className="w-full text-left bg-white p-3 rounded-xl border border-slate-100 hover:border-blue-200 hover:shadow-md transition-all group flex items-center gap-3 relative overflow-hidden"
+                                            >
+                                                <div className="w-12 h-12 bg-slate-50 rounded-lg flex-shrink-0 flex items-center justify-center p-1 border border-slate-100">
+                                                    {product.image ? (
+                                                        <img src={product.image} alt={product.label} className="w-full h-full object-contain" />
+                                                    ) : (
+                                                        <Database size={16} className="text-slate-300" />
+                                                    )}
+                                                </div>
+
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="font-bold text-slate-800 text-sm truncate pr-8 group-hover:text-blue-600 transition-colors">{product.label}</div>
+                                                    <div className="text-[10px] font-bold text-slate-400 truncate">{product.brand}</div>
+                                                    <div className="flex gap-2 text-[10px] font-bold text-slate-500 mt-1">
+                                                        <span className="text-slate-600">{Math.round(product.nutrition.energy)} kcal</span>
+                                                        <span className="text-slate-400">|</span>
+                                                        <span className="text-red-400">P:{Math.round(product.nutrition.protein)}</span>
+                                                        <span className="text-orange-400">C:{Math.round(product.nutrition.carbs)}</span>
+                                                        <span className="text-amber-400">G:{Math.round(product.nutrition.fat)}</span>
+                                                    </div>
+                                                </div>
+
+                                                {product.nutriscore && (
+                                                    <div className={`absolute top-0 right-0 px-2 py-1 rounded-bl-xl text-[10px] font-black uppercase text-white
+                                        ${product.nutriscore === 'a' ? 'bg-[#038141]' :
+                                                            product.nutriscore === 'b' ? 'bg-[#85BB2F]' :
+                                                                product.nutriscore === 'c' ? 'bg-[#FECB02] text-black' :
+                                                                    product.nutriscore === 'd' ? 'bg-[#EE8100]' : 'bg-[#E63E11]'
+                                                        }`}>
+                                                        {product.nutriscore.toUpperCase()}
+                                                    </div>
+                                                )}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </>
+                    )}
+                </div>
             )}
 
             {/* Scanner Modal */}

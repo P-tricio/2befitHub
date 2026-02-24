@@ -5,9 +5,7 @@ import { TrainingDB } from '../../services/db';
 import { useAuth } from '../../../../context/AuthContext';
 import { onSnapshot, collection, query, orderBy, where } from 'firebase/firestore';
 import { db } from '../../../../lib/firebase';
-import { formatDistanceToNow } from 'date-fns';
-import { es } from 'date-fns/locale';
-import { ensureDate } from '../../../../lib/dateUtils';
+import { ensureDate, formatDistanceToNowSafe } from '../../../../lib/dateUtils';
 import { uploadFile } from '../../services/storageService';
 import AudioRecorder from '../../components/AudioRecorder';
 
@@ -270,7 +268,7 @@ const AdminChatManager = ({ isOpen, onClose, onUserClick }) => {
                                                             {user.displayName || 'Atleta'}
                                                         </h3>
                                                         <span className={`text-[9px] font-bold shrink-0 ${isActive ? 'text-slate-500' : 'text-slate-400'}`}>
-                                                            {user.lastMessageAt ? formatDistanceToNow(ensureDate(user.lastMessageAt), { addSuffix: false, locale: es }).replace('alrededor de ', '') : ''}
+                                                            {user.lastMessageAt ? formatDistanceToNowSafe(user.lastMessageAt, { addSuffix: false }).replace('alrededor de ', '') : ''}
                                                         </span>
                                                     </div>
                                                     <p className={`text-xs truncate font-medium ${hasUnread && !isActive ? 'text-slate-900 font-bold' : isActive ? 'text-slate-400' : 'text-slate-500'}`}>

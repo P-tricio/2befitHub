@@ -16,9 +16,8 @@ import {
     AlertCircle,
     Utensils
 } from 'lucide-react';
-import { format, formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { ensureDate } from '../../../lib/dateUtils';
+import { ensureDate, formatDateSafe, formatDistanceToNowSafe } from '../../../lib/dateUtils';
 
 const AdminDashboard = () => {
     const [stats, setStats] = useState({
@@ -49,13 +48,13 @@ const AdminDashboard = () => {
         };
         loadUsers();
 
-        const today = format(new Date(), 'yyyy-MM-dd');
+        const today = formatDateSafe(new Date(), 'yyyy-MM-dd');
         const unsub = TrainingDB.notifications.listen('admin', (data) => {
             setRecentNotifications(data.slice(0, 10));
             setStats(prev => ({
                 ...prev,
                 todayActivities: data.filter(n =>
-                    format(n.createdAt, 'yyyy-MM-dd') === today
+                    formatDateSafe(n.createdAt, 'yyyy-MM-dd') === today
                 ).length
             }));
             setLoading(false);
@@ -100,10 +99,10 @@ const AdminDashboard = () => {
                     >
                         {/* Background Decoration */}
                         <div className={`absolute -right-4 -top-4 w-16 h-16 rounded-full opacity-5 group-hover:scale-150 transition-transform ${card.color === 'blue' ? 'bg-blue-500' :
-                                card.color === 'emerald' ? 'bg-emerald-500' :
-                                    card.color === 'amber' ? 'bg-amber-500' :
-                                        card.color === 'orange' ? 'bg-orange-500' :
-                                            card.color === 'rose' ? 'bg-rose-500' : 'bg-violet-500'
+                            card.color === 'emerald' ? 'bg-emerald-500' :
+                                card.color === 'amber' ? 'bg-amber-500' :
+                                    card.color === 'orange' ? 'bg-orange-500' :
+                                        card.color === 'rose' ? 'bg-rose-500' : 'bg-violet-500'
                             }`} />
 
                         <div className="p-3 bg-slate-50 rounded-2xl group-hover:scale-110 transition-transform">
@@ -178,7 +177,7 @@ const AdminDashboard = () => {
                                             </h3>
                                             <p className="text-xs text-slate-400 truncate">{noti.message}</p>
                                             <span className="text-[8px] font-bold text-slate-300 uppercase shrink-0">
-                                                {formatDistanceToNow(ensureDate(noti.createdAt), { addSuffix: false, locale: es })}
+                                                {formatDistanceToNowSafe(noti.createdAt, { addSuffix: false })}
                                             </span>
                                         </div>
                                     </div>

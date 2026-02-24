@@ -8,7 +8,7 @@ import { useAuth } from '../../../../context/AuthContext';
 import PhotoComparisonModal from '../../components/PhotoComparisonModal';
 import VisualEvolutionCard from '../../components/VisualEvolutionCard';
 import ExerciseHistoryView from '../components/ExerciseHistoryView';
-import { format } from 'date-fns';
+import { formatDateSafe } from '../../../../lib/dateUtils';
 import { es } from 'date-fns/locale';
 
 const AthleteTracking = () => {
@@ -225,7 +225,7 @@ const AthleteTracking = () => {
                                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                             <XAxis
                                                 dataKey="date"
-                                                tickFormatter={(date) => format(new Date(date), 'dd MMM', { locale: es })}
+                                                tickFormatter={(date) => formatDateSafe(new Date(date), 'dd MMM')}
                                                 stroke="#94a3b8"
                                                 fontSize={9}
                                                 fontWeight="bold"
@@ -244,7 +244,7 @@ const AthleteTracking = () => {
                                                 contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', padding: '12px' }}
                                                 labelStyle={{ fontWeight: '900', color: '#0f172a', marginBottom: '4px', fontSize: '10px' }}
                                                 itemStyle={{ fontSize: '10px', fontWeight: '700' }}
-                                                labelFormatter={(date) => format(new Date(date), 'dd MMMM yyyy', { locale: es })}
+                                                labelFormatter={(date) => formatDateSafe(new Date(date), 'dd MMMM yyyy')}
                                             />
                                             <Line
                                                 type="monotone"
@@ -286,7 +286,7 @@ const AthleteTracking = () => {
                                         {[...history].reverse().map((entry) => (
                                             <tr key={entry.date} className="group hover:bg-slate-50/50 transition-all">
                                                 <td className="px-6 py-5 text-slate-500 font-bold text-xs uppercase">
-                                                    {format(new Date(entry.date + 'T12:00:00'), 'dd MMM yyyy', { locale: es })}
+                                                    {formatDateSafe(new Date(entry.date + 'T12:00:00'), 'dd MMM yyyy')}
                                                 </td>
                                                 <td className={`px-6 py-5 font-black text-sm ${activeMetric === 'weight' ? 'text-indigo-600 bg-indigo-50/10' : 'text-slate-900'}`}>{entry.weight || '-'}</td>
                                                 <td className={`px-6 py-5 font-black text-sm ${activeMetric === 'steps' ? 'text-emerald-600 bg-emerald-50/10' : 'text-slate-900'}`}>{entry.steps?.toLocaleString() || '-'}</td>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, subMonths, addMonths, startOfWeek, endOfWeek, addDays, isAfter, startOfDay, getDay, isSameMonth, isBefore } from 'date-fns';
+import { startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, subMonths, addMonths, startOfWeek, endOfWeek, addDays, isAfter, startOfDay, getDay, isSameMonth, isBefore } from 'date-fns';
+import { formatDateSafe } from '../../../../lib/dateUtils';
 import { Link } from 'react-router-dom';
 import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -33,7 +34,7 @@ const AthleteHabits = ({ userId, isAdminView = false }) => {
 
     // Normalize selectedDate for Weekly Mode (Always use Sunday)
     const effectiveSelectedDate = isWeekly ? endOfWeek(selectedDate, { weekStartsOn: 1 }) : selectedDate;
-    const selectedEntry = monthlyData[format(effectiveSelectedDate, 'yyyy-MM-dd')] || { habitsResults: {} };
+    const selectedEntry = monthlyData[formatDateSafe(effectiveSelectedDate, 'yyyy-MM-dd')] || { habitsResults: {} };
 
     // Restriction Logic
     const today = startOfDay(new Date());
@@ -68,7 +69,7 @@ const AthleteHabits = ({ userId, isAdminView = false }) => {
     };
 
     const getAutomatedStatus = (date) => {
-        const dateKey = format(date, 'yyyy-MM-dd');
+        const dateKey = formatDateSafe(date, 'yyyy-MM-dd');
         const daySchedule = userProfile?.schedule?.[dateKey] || [];
         const isPastDate = isAfter(today, date); // date is before today
 
@@ -105,7 +106,7 @@ const AthleteHabits = ({ userId, isAdminView = false }) => {
 
     const handleSetStatus = async (habit, date, targetStatus) => {
         const habitName = typeof habit === 'string' ? habit : habit.name;
-        const dateKey = format(isWeekly ? endOfWeek(date, { weekStartsOn: 1 }) : date, 'yyyy-MM-dd');
+        const dateKey = formatDateSafe(isWeekly ? endOfWeek(date, { weekStartsOn: 1 }) : date, 'yyyy-MM-dd');
         const entry = monthlyData[dateKey] || { date: dateKey, habitsResults: {} };
         const currentStatus = entry.habitsResults?.[habitName];
 
@@ -189,7 +190,7 @@ const AthleteHabits = ({ userId, isAdminView = false }) => {
     };
 
     const getDayStatus = (date) => {
-        const dateKey = format(isWeekly ? endOfWeek(date, { weekStartsOn: 1 }) : date, 'yyyy-MM-dd');
+        const dateKey = formatDateSafe(isWeekly ? endOfWeek(date, { weekStartsOn: 1 }) : date, 'yyyy-MM-dd');
         const entry = monthlyData[dateKey];
         const auto = getAutomatedStatus(date);
 
@@ -275,7 +276,7 @@ const AthleteHabits = ({ userId, isAdminView = false }) => {
             const status = getDayStatus(date);
             const isPast = isBefore(date, today);
 
-            const dateKey = format(date, 'yyyy-MM-dd');
+            const dateKey = formatDateSafe(date, 'yyyy-MM-dd');
             const daySchedule = userProfile?.schedule?.[dateKey] || [];
 
             const hasScheduledTraining = daySchedule.some(t => t.type === 'session' || t.type === 'free_training');
@@ -375,7 +376,7 @@ const AthleteHabits = ({ userId, isAdminView = false }) => {
                                     ${isToday && !isSelected ? 'ring-1 ring-slate-200' : ''}
                                 `}
                             >
-                                {format(date, 'd')}
+                                {formatDateSafe(date, 'd')}
                             </button>
                         );
                     })}
@@ -451,7 +452,7 @@ const AthleteHabits = ({ userId, isAdminView = false }) => {
                                 <ChevronLeft size={20} />
                             </button>
                             <span className="text-xs font-black uppercase text-slate-900 min-w-[100px] text-center">
-                                {format(viewDate, 'MMMM yyyy', { locale: es })}
+                                {formatDateSafe(viewDate, 'MMMM yyyy')}
                             </span>
                             <button onClick={() => setViewDate(addMonths(viewDate, 1))} className="p-1 hover:bg-slate-50 rounded-lg text-slate-400">
                                 <ChevronRight size={20} />
@@ -547,7 +548,7 @@ const AthleteHabits = ({ userId, isAdminView = false }) => {
                 <div className="flex justify-between items-end px-2">
                     <div className="space-y-1">
                         <h2 className="text-xl font-black text-slate-900 capitalize leading-none">
-                            {isSameDay(selectedDate, new Date()) ? 'Hoy' : format(selectedDate, 'EEEE, d MMMM', { locale: es })}
+                            {isSameDay(selectedDate, new Date()) ? 'Hoy' : formatDateSafe(selectedDate, 'EEEE, d MMMM')}
                         </h2>
                         {!canEdit && (
                             <p className="text-[10px] font-bold text-rose-500 uppercase tracking-wider">

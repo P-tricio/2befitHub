@@ -2,9 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bell, X, Check, Inbox, BellOff, Activity, Dumbbell, Footprints, BarChart3, Notebook, SquareCheck, AlertCircle, UserPlus, Sparkles } from 'lucide-react';
 import { TrainingDB } from '../services/db';
-import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { ensureDate } from '../../../lib/dateUtils';
+import { ensureDate, formatDistanceToNowSafe } from '../../../lib/dateUtils';
 
 const NotificationBell = ({ recipientId, onNotificationClick }) => {
     const [notifications, setNotifications] = useState([]);
@@ -168,7 +167,7 @@ const NotificationBell = ({ recipientId, onNotificationClick }) => {
                                                         {noti.title}
                                                     </p>
                                                     <span className="text-[8px] font-bold text-slate-300 uppercase shrink-0">
-                                                        {formatDistanceToNow(ensureDate(noti.createdAt), { addSuffix: false, locale: es })}
+                                                        {formatDistanceToNowSafe(noti.createdAt, { addSuffix: false })}
                                                     </span>
                                                 </div>
                                                 <p className="text-[11px] text-slate-500 mt-1 line-clamp-2 leading-relaxed">

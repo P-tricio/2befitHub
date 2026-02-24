@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Camera, Activity, ChevronRight, X, Maximize2, ZoomIn, ZoomOut, Move } from 'lucide-react';
-import { format } from 'date-fns';
+import { formatDateSafe } from '../../../lib/dateUtils';
 import { es } from 'date-fns/locale';
 import { AnimatePresence, motion } from 'framer-motion';
 
@@ -173,7 +173,7 @@ const VisualEvolutionCard = ({ history }) => {
                                                     className="bg-white/10 text-white rounded-xl px-2 sm:px-4 py-1.5 sm:py-2 text-[10px] font-black uppercase tracking-widest border border-white/20 outline-none hover:bg-white/20 transition-all cursor-pointer w-full"
                                                 >
                                                     {photoEntries.map(e => (
-                                                        <option key={e.date} value={e.date} className="bg-slate-800">{format(new Date(e.date + 'T12:00:00'), 'dd MMM yy', { locale: es })}</option>
+                                                        <option key={e.date} value={e.date} className="bg-slate-800">{formatDateSafe(new Date(e.date + 'T12:00:00'), 'dd MMM yy')}</option>
                                                     ))}
                                                 </select>
                                             </div>
@@ -211,7 +211,7 @@ const VisualEvolutionCard = ({ history }) => {
                                         >
                                             <img src={entry.photos.front || entry.photos.side || entry.photos.back} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all" alt="Thumb" />
                                             <div className="absolute bottom-0 left-0 right-0 bg-black/60 p-1">
-                                                <span className="text-[8px] font-black">{format(new Date(entry.date + 'T12:00:00'), 'dd MMM', { locale: es })}</span>
+                                                <span className="text-[8px] font-black">{formatDateSafe(new Date(entry.date + 'T12:00:00'), 'dd MMM')}</span>
                                             </div>
                                         </button>
                                     ))}
@@ -272,13 +272,13 @@ const VisualEvolutionCard = ({ history }) => {
                             <div className="relative rounded-3xl overflow-hidden border-2 border-white/5">
                                 <PanZoomImage
                                     src={getPhoto(compareDate1)}
-                                    label={format(new Date(compareDate1 + 'T12:00:00'), 'dd MMM yyyy', { locale: es })}
+                                    label={formatDateSafe(new Date(compareDate1 + 'T12:00:00'), 'dd MMM yyyy')}
                                 />
                             </div>
                             <div className="relative rounded-3xl overflow-hidden border-2 border-white/5">
                                 <PanZoomImage
                                     src={getPhoto(compareDate2)}
-                                    label={format(new Date(compareDate2 + 'T12:00:00'), 'dd MMM yyyy', { locale: es })}
+                                    label={formatDateSafe(new Date(compareDate2 + 'T12:00:00'), 'dd MMM yyyy')}
                                 />
                             </div>
                         </div>
