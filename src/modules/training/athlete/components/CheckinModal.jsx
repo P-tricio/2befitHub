@@ -16,32 +16,53 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics: rawCus
     // Stabilize customMetrics to avoid re-renders from parent creating new [] on each snapshot
     const customMetricsKey = JSON.stringify(rawCustomMetrics);
     const customMetrics = useMemo(() => rawCustomMetrics, [customMetricsKey]);
+
+    // --- localStorage Draft Persistence ---
+    const draftKey = `checkin_draft_${userId}_${task.id || task.type}_${formatDateSafe(targetDate || new Date(), 'yyyy-MM-dd')}`;
+
+    const loadDraft = () => {
+        try {
+            const raw = localStorage.getItem(draftKey);
+            if (!raw) return null;
+            const draft = JSON.parse(raw);
+            // Expire drafts older than 24h
+            if (draft._ts && Date.now() - draft._ts > 24 * 60 * 60 * 1000) {
+                localStorage.removeItem(draftKey);
+                return null;
+            }
+            return draft;
+        } catch { return null; }
+    };
+
+    const existingDraft = useRef(loadDraft());
+    const d = existingDraft.current;
+
     // Shared State
     const [saving, setSaving] = useState(false);
-    const [notes, setNotes] = useState('');
+    const [notes, setNotes] = useState(d?.notes || '');
 
     // Checkin / Tracking State
-    const [weight, setWeight] = useState('');
-    const [waist, setWaist] = useState('');
-    const [hip, setHip] = useState('');
+    const [weight, setWeight] = useState(d?.weight || '');
+    const [waist, setWaist] = useState(d?.waist || '');
+    const [hip, setHip] = useState(d?.hip || '');
     const [photos, setPhotos] = useState({ front: null, side: null, back: null });
-    const [photoUrls, setPhotoUrls] = useState({ front: null, side: null, back: null });
+    const [photoUrls, setPhotoUrls] = useState(d?.photoUrls || { front: null, side: null, back: null });
     const [uploading, setUploading] = useState(false);
 
     // Nutrition State
-    const [habitsResults, setHabitsResults] = useState({}); // { habitName: true/false }
+    const [habitsResults, setHabitsResults] = useState(d?.habitsResults || {}); // { habitName: true/false }
 
     // Custom Metrics State
-    const [customValues, setCustomValues] = useState({});
+    const [customValues, setCustomValues] = useState(d?.customValues || {});
 
     // NEAT / Activity State
-    const [activityType, setActivityType] = useState('minutes');
-    const [duration, setDuration] = useState(task.config?.target || 30);
-    const [rpe, setRpe] = useState(null);
+    const [activityType, setActivityType] = useState(d?.activityType || 'minutes');
+    const [duration, setDuration] = useState(d?.duration ?? (task.config?.target || 30));
+    const [rpe, setRpe] = useState(d?.rpe ?? null);
 
     // Custom Form State
     const [formDefinition, setFormDefinition] = useState(null);
-    const [formAnswers, setFormAnswers] = useState({});
+    const [formAnswers, setFormAnswers] = useState(d?.formAnswers || {});
     const [userMinimums, setUserMinimums] = useState({ nutrition: [], movement: [], health: [], uncategorized: [] });
 
     const normalizeMinimums = (m) => {
@@ -59,6 +80,20 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics: rawCus
         });
         return result;
     };
+
+    // --- Auto-save draft to localStorage on any field change ---
+    useEffect(() => {
+        const draft = {
+            notes, weight, waist, hip, photoUrls,
+            habitsResults, customValues,
+            activityType, duration, rpe,
+            formAnswers,
+            _ts: Date.now()
+        };
+        try {
+            localStorage.setItem(draftKey, JSON.stringify(draft));
+        } catch { /* ignore quota errors */ }
+    }, [notes, weight, waist, hip, photoUrls, habitsResults, customValues, activityType, duration, rpe, formAnswers, draftKey]);
 
     // --- Date Logic ---
     // targetDate: The date where the task is displayed (e.g., Today in the dashboard)
@@ -85,9 +120,13 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics: rawCus
         const loadData = async () => {
             hasLoadedRef.current = true;
             try {
+                // Check if we have a localStorage draft — if so, skip DB overwrite for user-entered fields
+                const hasDraft = !!existingDraft.current;
+
                 // Try to load historical data for this date
                 const existing = await TrainingDB.tracking.getByDate(userId, trackingDateKey);
-                if (existing) {
+                if (existing && !hasDraft) {
+                    // Only apply DB data if there's no local draft (user hasn't started typing)
                     if (existing.weight) setWeight(existing.weight);
                     if (existing.steps) {
                         setDuration(existing.steps);
@@ -126,8 +165,8 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics: rawCus
                     setFormDefinition(form);
                 }
 
-                // If no existing data, ensure we use the prescribed type from config (default to minutes)
-                if (!existing) {
+                // If no existing data and no draft, ensure we use the prescribed type from config
+                if (!existing && !hasDraft) {
                     setActivityType('minutes');
                     if (task.config?.target) setDuration(task.config.target);
                 }
@@ -391,6 +430,9 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics: rawCus
                 // Don't fail the whole save if notification fails
             }
 
+            // Clear localStorage draft on successful save
+            try { localStorage.removeItem(draftKey); } catch { }
+
             onClose(true);
         } catch (error) {
             console.error(error);
@@ -405,6 +447,7 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics: rawCus
         try {
             const { _selectedDate, ...cleanTask } = task;
             await TrainingDB.users.removeTaskFromSchedule(userId, scheduleDateKey, cleanTask);
+            try { localStorage.removeItem(draftKey); } catch { }
             onClose(true);
         } catch (e) {
             console.error(e);
