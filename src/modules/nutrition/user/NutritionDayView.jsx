@@ -177,7 +177,8 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
     };
 
     const handleFoodSelect = async (result) => {
-        if (activeMealIndex === null) return;
+        // For free mode (no plan), default to meal index 0
+        const mealIdx = activeMealIndex !== null ? activeMealIndex : 0;
 
         // NEW: Batch support for AI parsing
         const results = Array.isArray(result) ? result : [result];
@@ -185,7 +186,7 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
         const newItemsToAppend = results.map(res => {
             const { type, data, quantity, unit } = res;
             return {
-                mealIndex: activeMealIndex,
+                mealIndex: mealIdx,
                 item: {
                     type: type === 'external' ? 'food' : type,
                     refId: data?.id || res.refId,
@@ -235,8 +236,12 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
 
         try {
             const { t, c } = getStats();
-            const pct = t.calories > 0 ? Math.round((c.calories / t.calories) * 100) : 0;
-            const summary = `${Math.round(c.calories)}/${Math.round(t.calories)} kcal (${pct}%)`;
+            const isFreeMode = !day;
+            const calTarget = isFreeMode ? c.calories : t.calories;
+            const pct = calTarget > 0 ? Math.round((c.calories / calTarget) * 100) : 0;
+            const summary = isFreeMode
+                ? `${Math.round(c.calories)} kcal | P:${Math.round(c.protein)}g H:${Math.round(c.carbs)}g G:${Math.round(c.fats)}g`
+                : `${Math.round(c.calories)}/${Math.round(t.calories)} kcal (${pct}%)`;
 
             const enrichedCompletedItems = {};
             if (log.completedItems && day?.meals) {
@@ -265,9 +270,9 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                 summary: summary,
                 results: {
                     consumed: c,
-                    target: t,
+                    target: isFreeMode ? null : t,
                     notes: stats.notes,
-                    adherence: stats.adherence,
+                    adherence: isFreeMode ? 'free' : stats.adherence,
                     completedItems: enrichedCompletedItems,
                     extraItems: extraItems
                 }
@@ -396,25 +401,57 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
 
     if (loading) return <div className="fixed inset-0 z-[5000] bg-white flex items-center justify-center text-slate-400">Cargando nutrición...</div>;
 
-    // If no plan is assigned, but we have extra items, we show a simplified "Extras Only" view
-    if (!day && extraItems.length === 0) {
-        return (
-            <div className="fixed inset-0 z-[5000] flex items-center justify-center p-6">
-                <div
+    // Free mode: no plan assigned — show full tracker instead of empty state
+    const isFreeMode = !day;
+
+    if (isFreeMode && extraItems.length === 0 && activeMealIndex === null) {
+        return createPortal(
+            <div className="fixed inset-0 z-[5000] flex flex-col justify-end">
+                <motion.div
+                    initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                     className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
                     onClick={onClose}
                 />
-                <div className="relative bg-white p-10 rounded-3xl shadow-xl text-center max-w-sm w-full space-y-4">
-                    <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto text-slate-300">
-                        <Utensils size={32} />
+                <motion.div
+                    initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+                    transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                    className="relative w-full bg-white rounded-t-3xl shadow-[0_-8px_30px_rgba(0,0,0,0.12)] overflow-hidden flex flex-col p-8 pb-10"
+                >
+                    <button onClick={onClose} className="absolute top-5 right-5 p-2 bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors">
+                        <X size={18} />
+                    </button>
+
+                    <div className="text-center space-y-5">
+                        <div className="w-20 h-20 bg-gradient-to-br from-indigo-50 to-purple-50 rounded-3xl flex items-center justify-center mx-auto text-indigo-500 shadow-lg shadow-indigo-500/10 border border-indigo-100">
+                            <Utensils size={36} />
+                        </div>
+                        <div>
+                            <h3 className="text-xl font-black text-slate-900">Nutrición Libre</h3>
+                            <p className="text-sm text-slate-500 font-medium mt-1">Registra lo que has comido hoy usando la búsqueda, el escáner o la IA.</p>
+                        </div>
+                        <button
+                            onClick={() => setActiveMealIndex(0)}
+                            className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-indigo-200 hover:bg-indigo-700 active:scale-[0.98] transition-all flex items-center justify-center gap-3"
+                        >
+                            <Plus size={20} />
+                            Añadir Alimento
+                        </button>
                     </div>
-                    <div>
-                        <h3 className="text-lg font-black text-slate-900">Sin Registro</h3>
-                        <p className="text-sm text-slate-500 font-medium">No hay plan asignado ni alimentos registrados para este día.</p>
+                </motion.div>
+
+                {activeMealIndex !== null && (
+                    <div className="absolute inset-0 z-[5010] bg-white flex flex-col animate-in fade-in zoom-in-95 duration-200 rounded-t-3xl overflow-hidden">
+                        <div className="flex justify-between items-center p-4 border-b border-slate-100 bg-white">
+                            <h3 className="text-lg font-black text-slate-900">Añadir Alimento</h3>
+                            <button onClick={() => setActiveMealIndex(null)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200 text-slate-500"><X size={20} /></button>
+                        </div>
+                        <div className="flex-1 overflow-hidden flex flex-col">
+                            <FoodSearch onSelect={handleFoodSelect} onClose={() => setActiveMealIndex(null)} />
+                        </div>
                     </div>
-                    <button onClick={onClose} className="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm">Cerrar</button>
-                </div>
-            </div>
+                )}
+            </div>,
+            document.body
         );
     }
 
@@ -473,7 +510,7 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                     <div className="bg-white text-slate-900 rounded-b-[32px] p-5 pt-6 shadow-xl shadow-slate-200/50 pb-8 relative overflow-hidden ring-1 ring-slate-100 z-0">
                         <div className="flex justify-between items-center mb-3">
                             <div>
-                                <h1 className="text-xl font-black tracking-wide flex items-center gap-2">PLAN DIARIO</h1>
+                                <h1 className="text-xl font-black tracking-wide flex items-center gap-2">{isFreeMode ? 'NUTRICIÓN LIBRE' : 'PLAN DIARIO'}</h1>
                                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{date}</p>
                             </div>
                         </div>
@@ -612,12 +649,20 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
 
                         {!day && extraItems.length > 0 && (
                             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-[24px] shadow-lg shadow-indigo-100 border-2 border-indigo-50 overflow-hidden">
-                                <div className="p-5 flex items-center gap-3 bg-indigo-50/30 border-b border-indigo-50">
-                                    <div className="p-2 bg-indigo-600 text-white rounded-xl shadow-md"><Sparkles size={18} /></div>
-                                    <div>
-                                        <h3 className="font-black text-lg text-slate-900 leading-tight">Alimentos Registrados</h3>
-                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Sin plan nutricional asignado</p>
+                                <div className="p-5 flex items-center justify-between bg-indigo-50/30 border-b border-indigo-50">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 bg-indigo-600 text-white rounded-xl shadow-md"><Sparkles size={18} /></div>
+                                        <div>
+                                            <h3 className="font-black text-lg text-slate-900 leading-tight">Alimentos Registrados</h3>
+                                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Nutrición libre</p>
+                                        </div>
                                     </div>
+                                    <button
+                                        onClick={() => setActiveMealIndex(0)}
+                                        className="p-2.5 bg-indigo-600 text-white rounded-xl shadow-md hover:bg-indigo-700 active:scale-95 transition-all"
+                                    >
+                                        <Plus size={18} />
+                                    </button>
                                 </div>
                                 <div className="divide-y divide-slate-50">
                                     {extraItems.map((entry, idx) => {
@@ -663,7 +708,7 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                     {onClose && (
                         <div className="fixed bottom-0 left-0 right-0 p-6 bg-white border-t border-slate-100 z-50 flex flex-col gap-3">
                             <div className="max-w-md mx-auto w-full space-y-3">
-                                {taskId && (
+                                {taskId && !isFreeMode && (
                                     <>
                                         <div className="space-y-3 mb-2">
                                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">¿Qué tal lo has llevado?</p>
@@ -681,6 +726,18 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
                                         </div>
                                     </>
                                 )}
+                                {taskId && isFreeMode && (
+                                    <>
+                                        <input type="text" value={stats.notes} onChange={e => setStats(s => ({ ...s, notes: e.target.value }))} placeholder="Notas sobre tu alimentación (opcional)..." className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-100" />
+                                        <div className="flex gap-2">
+                                            <button onClick={onClose} className="flex-1 bg-slate-100 text-slate-500 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-200 transition-all">Cerrar</button>
+                                            <button onClick={handleCompleteDay} disabled={extraItems.length === 0} className="flex-[2] bg-indigo-600 text-white py-3 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-200 flex items-center justify-center gap-2 hover:bg-indigo-700 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"><Check size={16} className="text-indigo-300" />Guardar Registro</button>
+                                        </div>
+                                    </>
+                                )}
+                                {!taskId && (
+                                    <button onClick={onClose} className="w-full bg-slate-100 text-slate-500 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-200 transition-all">Cerrar</button>
+                                )}
                             </div>
                         </div>
                     )}
@@ -694,7 +751,7 @@ const NutritionDayView = ({ userId, date, dayId, taskId, onClose }) => { // dayI
             {activeMealIndex !== null && (
                 <div className="absolute inset-0 z-[5010] bg-white flex flex-col animate-in fade-in zoom-in-95 duration-200 rounded-t-3xl overflow-hidden">
                     <div className="flex justify-between items-center p-4 border-b border-slate-100 bg-white">
-                        <h3 className="text-lg font-black text-slate-900">Añadir a {day?.meals?.[activeMealIndex]?.name || 'Comida'}</h3>
+                        <h3 className="text-lg font-black text-slate-900">Añadir a {day?.meals?.[activeMealIndex]?.name || 'Registro'}</h3>
                         <button onClick={() => setActiveMealIndex(null)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200 text-slate-500"><X size={20} /></button>
                     </div>
                     <div className="flex-1 overflow-hidden flex flex-col">

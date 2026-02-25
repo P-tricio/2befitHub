@@ -463,8 +463,9 @@ const AthleteHome = () => {
 
 
                                 // Handle Nutrition Day Task
-                                if (task.type === 'nutrition_day') {
+                                if (task.type === 'nutrition_day' || task.type === 'nutrition_free') {
                                     const isCompleted = task.status === 'completed';
+                                    const isFree = task.type === 'nutrition_free';
                                     return (
                                         <button
                                             key={task.id || index}
@@ -472,18 +473,18 @@ const AthleteHome = () => {
                                             className={`w-full p-4 rounded-[1.8rem] shadow-sm border flex items-center justify-between transition-all text-left ${isCompleted ? 'bg-white border-emerald-100/50' : 'bg-white border-slate-100 hover:border-emerald-200'}`}
                                         >
                                             <div className="flex items-center gap-4">
-                                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-colors shrink-0 ${isCompleted ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/10' : 'bg-amber-50 text-amber-500'}`}>
+                                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-colors shrink-0 ${isCompleted ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/10' : isFree ? 'bg-indigo-50 text-indigo-500' : 'bg-amber-50 text-amber-500'}`}>
                                                     {isCompleted ? <Check size={20} strokeWidth={3} /> : <Utensils size={20} />}
                                                 </div>
                                                 <div>
                                                     <div className="flex items-center gap-2">
                                                         <h3 className={`font-black ${isCompleted ? 'text-slate-400 line-through decoration-emerald-500/20' : 'text-slate-800'}`}>
-                                                            {task.title || 'Nutrición del Día'}
+                                                            {task.title || (isFree ? 'Nutrición Libre' : 'Nutrición del Día')}
                                                         </h3>
                                                         {isCompleted && <span className="px-2 py-0.5 bg-emerald-50 text-emerald-600 text-[7px] font-black rounded-full uppercase tracking-widest">OK</span>}
                                                     </div>
                                                     <p className={`text-[10px] font-black uppercase tracking-widest ${isCompleted ? 'text-emerald-500' : 'text-slate-400'}`}>
-                                                        {isCompleted ? 'Registrado' : 'Ver Plan Dieta'}
+                                                        {isCompleted ? 'Registrado' : (isFree ? 'Tracker de macros' : 'Ver Plan Dieta')}
                                                     </p>
                                                 </div>
                                             </div>
@@ -498,7 +499,7 @@ const AthleteHome = () => {
                                     <button
                                         key={task.id || index}
                                         onClick={() => {
-                                            if (task.type === 'nutrition_day' || task.type === 'nutrition_planning') {
+                                            if (task.type === 'nutrition_day' || task.type === 'nutrition_planning' || task.type === 'nutrition_free') {
                                                 setNutritionDayTask(task);
                                             } else {
                                                 setCheckinTask(task);
@@ -511,7 +512,7 @@ const AthleteHome = () => {
                                             <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-colors shrink-0 ${isCompleted ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/10' :
                                                 task.type === 'neat' ? 'bg-emerald-50 text-emerald-500' :
                                                     task.type === 'nutrition' ? 'bg-amber-50 text-amber-500' :
-                                                        (task.type === 'nutrition_day' || task.type === 'nutrition_planning') ? 'bg-orange-50 text-orange-500' :
+                                                        (task.type === 'nutrition_day' || task.type === 'nutrition_planning' || task.type === 'nutrition_free') ? 'bg-orange-50 text-orange-500' :
                                                             task.type === 'free_training' ? 'bg-slate-100 text-slate-600' :
                                                                 'bg-blue-50 text-blue-500'
                                                 }`}>
@@ -519,7 +520,7 @@ const AthleteHome = () => {
                                                     <>
                                                         {task.type === 'neat' && <Footprints size={20} />}
                                                         {task.type === 'nutrition' && <CheckSquare size={20} />}
-                                                        {(task.type === 'nutrition_day' || task.type === 'nutrition_planning') && <Utensils size={20} />}
+                                                        {(task.type === 'nutrition_day' || task.type === 'nutrition_planning' || task.type === 'nutrition_free') && <Utensils size={20} />}
                                                         {(task.type === 'tracking' || task.type === 'checkin') && <ClipboardList size={20} />}
                                                         {task.type === 'free_training' && <Dumbbell size={20} />}
                                                     </>
@@ -578,7 +579,11 @@ const AthleteHome = () => {
                             onClose={() => setAddTaskModal(false)}
                             onTaskCreated={(newTask) => {
                                 setAddTaskModal(false);
-                                setCheckinTask(newTask);
+                                if (newTask.type === 'nutrition_free') {
+                                    setNutritionDayTask(newTask);
+                                } else {
+                                    setCheckinTask(newTask);
+                                }
                             }}
                             userId={currentUser.uid}
                         />
@@ -660,6 +665,7 @@ const AddTaskModal = ({ onClose, onTaskCreated, userId }) => {
         else if (type === 'nutrition') { newTask.title = 'Mis Hábitos'; }
         else if (type === 'checkin' || type === 'tracking') { newTask.title = 'Seguimiento'; }
         else if (type === 'free_training') { newTask.title = 'Entrenamiento Libre'; }
+        else if (type === 'nutrition_free') { newTask.title = 'Nutrición Libre'; }
 
         try {
             await TrainingDB.users.addTaskToSchedule(userId, today, newTask);
@@ -691,6 +697,7 @@ const AddTaskModal = ({ onClose, onTaskCreated, userId }) => {
                 <div className="grid gap-3">
                     {[
                         { id: 'neat', label: 'Movimiento', icon: <Footprints size={20} />, color: 'emerald' },
+                        { id: 'nutrition_free', label: 'Nutrición Libre', icon: <Utensils size={20} />, color: 'amber' },
                         { id: 'nutrition', label: 'Hábitos', icon: <CheckSquare size={20} />, color: 'orange' },
                         { id: 'tracking', label: 'Seguimiento', icon: <ClipboardList size={20} />, color: 'blue' },
                         { id: 'free_training', label: 'Entreno Libre', icon: <Dumbbell size={20} />, color: 'slate' }

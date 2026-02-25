@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatDateSafe } from '../../../../lib/dateUtils';
@@ -10,8 +10,12 @@ import { useAuth } from '../../../../context/AuthContext';
 import { uploadToImgBB } from '../../services/imageService';
 import RPESelector from '../../components/RPESelector';
 
-const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] }) => {
+const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics: rawCustomMetrics = [] }) => {
     const { currentUser } = useAuth();
+
+    // Stabilize customMetrics to avoid re-renders from parent creating new [] on each snapshot
+    const customMetricsKey = JSON.stringify(rawCustomMetrics);
+    const customMetrics = useMemo(() => rawCustomMetrics, [customMetricsKey]);
     // Shared State
     const [saving, setSaving] = useState(false);
     const [notes, setNotes] = useState('');
@@ -72,9 +76,14 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
     // effectiveDate: Used for the UI label (Yesterday vs Today)
     const effectiveDate = isRetroactive ? subDays(targetDate || new Date(), 1) : (targetDate || new Date());
 
+    // Guard: ensure loadData only runs once per mount
+    const hasLoadedRef = useRef(false);
+
     // Initial Load for Tracking Data
     useEffect(() => {
+        if (hasLoadedRef.current) return;
         const loadData = async () => {
+            hasLoadedRef.current = true;
             try {
                 // Try to load historical data for this date
                 const existing = await TrainingDB.tracking.getByDate(userId, trackingDateKey);
@@ -133,7 +142,7 @@ const CheckinModal = ({ task, onClose, userId, targetDate, customMetrics = [] })
             } catch (e) { console.error(e); }
         };
         loadData();
-    }, [userId, task.type, trackingDateKey, scheduleDateKey, customMetrics, task.config?.formId]);
+    }, [userId, task.type, trackingDateKey, scheduleDateKey, task.config?.formId]);
 
     const handleImageSelect = (e, type) => {
         if (e.target.files && e.target.files[0]) {
