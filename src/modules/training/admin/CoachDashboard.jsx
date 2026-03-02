@@ -203,7 +203,7 @@ const StatCard = ({ label, value, icon, color, active, onClick }) => {
     );
 };
 
-const AthleteAlertCard = ({ athlete, onClick }) => {
+const AthleteAlertCard = ({ athlete, availableForms = [], onClick, onShowWellness }) => {
     const levels = {
         red: { bg: 'bg-rose-50 border-rose-100', text: 'text-rose-600', badge: 'En Riesgo', icon: <AlertCircle size={14} /> },
         yellow: { bg: 'bg-amber-50 border-amber-100', text: 'text-amber-600', badge: 'Seguimiento', icon: <Clock size={14} /> },
