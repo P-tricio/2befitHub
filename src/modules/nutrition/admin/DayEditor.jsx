@@ -65,9 +65,21 @@ const DayEditor = ({ isOpen, onClose, initialDayId, onSave, availableDays }) => 
     const handleSave = async () => {
         if (!name) return alert('Nombre del día obligatorio');
 
+        // Deep-clean meals to remove undefined values (Firestore rejects them)
+        const cleanMeals = meals.map(meal => ({
+            ...meal,
+            items: meal.items.map(item => {
+                const clean = {};
+                for (const [key, value] of Object.entries(item)) {
+                    if (value !== undefined) clean[key] = value;
+                }
+                return clean;
+            })
+        }));
+
         const payload = {
             name,
-            meals
+            meals: cleanMeals
         };
         // Only include ID if we are editing
         if (initialDayId) {
@@ -119,8 +131,8 @@ const DayEditor = ({ isOpen, onClose, initialDayId, onSave, availableDays }) => 
             name: data.name,
             quantity: Number(quantity) || 1,
             unit: unit || 'g',
-            // SNAPSHOT: If external, store macros directly
-            cachedMacros: type === 'external' ? data.macros : undefined
+            // SNAPSHOT: If external, store macros directly (avoid undefined for Firestore)
+            ...(type === 'external' && data.macros ? { cachedMacros: data.macros } : {})
         };
 
         const copy = [...meals];
