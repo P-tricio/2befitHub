@@ -185,6 +185,7 @@ const FoodLibrary = () => {
                         <h1 className="text-4xl font-black text-slate-900 tracking-tight">Biblioteca de Alimentos</h1>
                         <div className="flex items-center gap-2">
                             <p className="text-slate-500 text-sm font-medium mt-1">Base de datos de ingredientes y macros (por 100g).</p>
+                            <span className="mt-1 bg-indigo-100 text-indigo-700 text-xs font-black px-2.5 py-1 rounded-full">{foods.length}</span>
                             <button
                                 onClick={() => navigate('/nutrition-test')}
                                 className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded ml-2 opacity-50 hover:opacity-100 transition-opacity"

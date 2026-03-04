@@ -4232,8 +4232,13 @@ const GlobalCreator = ({ embeddedMode = false, initialSession = null, onClose, o
                                             <div className="h-full p-6 overflow-y-auto w-full">
                                                 <div className="max-w-5xl mx-auto w-full">
                                                     <div className="flex justify-between items-center mb-8">
-                                                        <h2 className="text-3xl font-black text-slate-900">Plantillas de Días</h2>
-                                                        <p className="text-slate-500 font-medium text-sm">Crea estructuras de comidas para usar en planes.</p>
+                                                        <div>
+                                                            <div className="flex items-center gap-3">
+                                                                <h2 className="text-3xl font-black text-slate-900">Plantillas de Días</h2>
+                                                                <span className="bg-indigo-100 text-indigo-700 text-xs font-black px-2.5 py-1 rounded-full">{allNutritionDays.filter(d => d.id).length}</span>
+                                                            </div>
+                                                            <p className="text-slate-500 font-medium text-sm">Crea estructuras de comidas para usar en planes.</p>
+                                                        </div>
                                                     </div>
                                                     <div className="flex gap-4">
                                                         <div className="relative w-64">

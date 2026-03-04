@@ -173,7 +173,10 @@ const RecipeEditor = () => {
                 <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
                     <div>
                         <h1 className="text-4xl font-black text-slate-900 tracking-tight">Recetas y Platos</h1>
-                        <p className="text-slate-500 text-sm font-medium mt-1">Crea platos combinados para reutilizar en dietas.</p>
+                        <div className="flex items-center gap-2">
+                            <p className="text-slate-500 text-sm font-medium mt-1">Crea platos combinados para reutilizar en dietas.</p>
+                            <span className="mt-1 bg-indigo-100 text-indigo-700 text-xs font-black px-2.5 py-1 rounded-full">{recipes.length}</span>
+                        </div>
                     </div>
 
                     <div className="flex gap-4 w-full md:w-auto">
