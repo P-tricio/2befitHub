@@ -74,38 +74,62 @@ export const useWorkBlockHistory = ({ currentUser, module, plan, exercises }) =>
                 intensityUnit: ex.quality === 'E' ? (ex.name?.toLowerCase().includes('air bike') || ex.name?.toLowerCase().includes('remo') ? 'W' : 'Ritmo') : 'W'
             };
 
+            // === EXERCISE-MATCHED WEIGHT INITIALIZATION ===
+            // Resolve the correct index in previousLog by matching exercise ID/name,
+            // NOT by blind positional index (fixes cross-exercise weight bleed).
+            const exId = ex.id || ex.exerciseId;
+            let matchedPrevIdx = -1;
+
+            if (previousLog?.exercises) {
+                matchedPrevIdx = previousLog.exercises.findIndex(pe =>
+                    (pe.id && exId && pe.id === exId) ||
+                    (pe.name && ex.name && pe.name === ex.name)
+                );
+            }
+
+            // Use matched index if found, otherwise only use positional index if the exercise at that position matches
+            const prevIdx = matchedPrevIdx !== -1
+                ? matchedPrevIdx
+                : (previousLog?.exercises?.[idx] &&
+                    ((previousLog.exercises[idx].id && exId && previousLog.exercises[idx].id === exId) ||
+                        (previousLog.exercises[idx].name && ex.name && previousLog.exercises[idx].name === ex.name))
+                    ? idx
+                    : -1);
+
             // PRIORITY 0: Use LAST weight from libreSeriesWeights (per-set weights from previous session)
-            const prevSeriesWeights = previousLog?.results?.libreSeriesWeights?.[idx];
-            if (prevSeriesWeights && prevSeriesWeights.length > 0) {
-                const lastSeriesWeight = prevSeriesWeights[prevSeriesWeights.length - 1];
-                if (lastSeriesWeight) {
-                    let baseWeight = parseFloat(lastSeriesWeight);
+            if (prevIdx !== -1) {
+                const prevSeriesWeights = previousLog?.results?.libreSeriesWeights?.[prevIdx];
+                if (prevSeriesWeights && prevSeriesWeights.length > 0) {
+                    const lastSeriesWeight = prevSeriesWeights[prevSeriesWeights.length - 1];
+                    if (lastSeriesWeight) {
+                        let baseWeight = parseFloat(lastSeriesWeight);
 
-                    // Apply recommendation if available
-                    if (previousLog?.analysis) {
-                        const recommendation = previousLog.analysis.find(
-                            a => a.moduleId === module.id &&
-                                (a.exerciseId === ex.id || a.exerciseIndex === idx)
-                        );
-                        if (recommendation?.adjustment) {
-                            baseWeight += recommendation.adjustment;
+                        // Apply recommendation if available
+                        if (previousLog?.analysis) {
+                            const recommendation = previousLog.analysis.find(
+                                a => a.moduleId === module.id &&
+                                    (a.exerciseId === exId || a.exerciseIndex === prevIdx)
+                            );
+                            if (recommendation?.adjustment) {
+                                baseWeight += recommendation.adjustment;
+                            }
                         }
-                    }
 
-                    initWeights[idx] = baseWeight.toFixed(1);
-                    return; // Skip to next exercise
+                        initWeights[idx] = baseWeight.toFixed(1);
+                        return; // Skip to next exercise
+                    }
                 }
             }
 
             // PRIORITY 1: Use actual weight from previous session + recommendation
-            if (previousLog?.results?.actualWeights?.[idx]) {
-                let baseWeight = parseFloat(previousLog.results.actualWeights[idx]);
+            if (prevIdx !== -1 && previousLog?.results?.actualWeights?.[prevIdx]) {
+                let baseWeight = parseFloat(previousLog.results.actualWeights[prevIdx]);
 
                 // Find exercise-specific recommendation
                 if (previousLog?.analysis) {
                     const recommendation = previousLog.analysis.find(
                         a => a.moduleId === module.id &&
-                            (a.exerciseId === ex.id || a.exerciseIndex === idx)
+                            (a.exerciseId === exId || a.exerciseIndex === prevIdx)
                     );
 
                     if (recommendation?.adjustment) {
@@ -115,21 +139,17 @@ export const useWorkBlockHistory = ({ currentUser, module, plan, exercises }) =>
 
                 initWeights[idx] = baseWeight.toFixed(1);
             }
-            // PRIORITY 2: Use plan (if no history exists)
+            // PRIORITY 2: Use global exercise history (cross-session, per exercise ID)
+            else if (exId && globalExerciseWeights[exId]) {
+                initWeights[idx] = globalExerciseWeights[exId].weight.toString();
+            }
+            // PRIORITY 3: Use plan (if no history exists)
             else if (plan?.[module.offset + idx]) {
-                const w = parseFloat(plan[module.offset + idx]);
                 initWeights[idx] = plan[module.offset + idx];
             }
-            // PRIORITY 3: Empty
+            // PRIORITY 4: Empty
             else {
-                // FALLBACK: Don't pick up RPE/RIR intensities as weight
-                const { isLoadable } = getLibreConfig(ex, module);
-                // If not loadable, force empty string to avoid showing "28.0" or similar phantom values
-                if (!isLoadable) {
-                    initWeights[idx] = '';
-                } else {
-                    initWeights[idx] = '';
-                }
+                initWeights[idx] = '';
             }
         });
         setRepsDone(initReps);
@@ -137,7 +157,7 @@ export const useWorkBlockHistory = ({ currentUser, module, plan, exercises }) =>
         setHeartRates(initHR);
         setEnergyMetrics(initEnergy);
         setExerciseNotes({});
-    }, [module, plan, previousLog, exercises]);
+    }, [module, plan, previousLog, exercises, globalExerciseWeights]);
 
     return {
         previousLog,
