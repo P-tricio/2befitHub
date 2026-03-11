@@ -42,7 +42,12 @@ const Login = () => {
                 await login(email, password);
                 // Small delay to allow Firestore sync to complete
                 await new Promise(resolve => setTimeout(resolve, 500));
-                navigate('/');
+
+                if (email.toLowerCase() === 'admin@2befit.com') {
+                    navigate('/training/admin');
+                } else {
+                    navigate('/');
+                }
             } else {
                 const userCredential = await signup(email, password);
                 const user = userCredential.user;
@@ -79,10 +84,15 @@ const Login = () => {
         setSuccess('');
         setLoading(true);
         try {
-            await googleLogin();
+            const result = await googleLogin();
             // Small delay to allow Firestore sync to complete
             await new Promise(resolve => setTimeout(resolve, 500));
-            navigate('/');
+
+            if (result.user.email?.toLowerCase() === 'admin@2befit.com') {
+                navigate('/training/admin');
+            } else {
+                navigate('/');
+            }
         } catch (err) {
             console.error(err);
             setError(`Error Google: ${err.code || err.message}`);

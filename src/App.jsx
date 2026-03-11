@@ -11,6 +11,12 @@ import Login from './modules/auth/Login';
 import PrivateRoute from './modules/auth/PrivateRoute';
 import NutritionTest from './modules/nutrition/NutritionTest';
 
+const RootRedirect = () => {
+  const { currentUser } = useAuth();
+  const isAdmin = currentUser?.email === 'admin@2befit.com';
+  return <Navigate to={isAdmin ? "/training/admin" : "/training"} replace />;
+};
+
 const router = createBrowserRouter([
   {
     path: "/login",
@@ -40,7 +46,7 @@ const router = createBrowserRouter([
     path: "/",
     element: (
       <PrivateRoute>
-        <Navigate to="/training" replace />
+        <RootRedirect />
       </PrivateRoute>
     ),
   },
