@@ -6,7 +6,7 @@ import Profile from './components/dashboard/Profile';
 import TrainingRoutes from './modules/training/TrainingRoutes';
 import TrainingAdminRoutes from './modules/training/TrainingAdminRoutes';
 import InstallPWA from './components/common/InstallPWA';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './modules/auth/Login';
 import PrivateRoute from './modules/auth/PrivateRoute';
 import NutritionTest from './modules/nutrition/NutritionTest';
