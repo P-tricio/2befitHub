@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Clock, Play, CheckCircle, AlertCircle, Plus, Minus, Zap, Info,
-    Repeat, Layers, Activity, ChevronLeft
+    Repeat, Layers, Activity, ChevronLeft, FileText
 } from 'lucide-react';
 import { TrainingDB } from '../../services/db';
 import { useAuth } from '../../../../context/AuthContext';
@@ -626,8 +626,8 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                     <span className="text-white text-xs font-bold block truncate flex-1">{ex.nameEs || ex.name}</span>
                                     <div className="flex items-center gap-2">
                                         {ex.notes && (
-                                            <span className="text-amber-400 text-[10px] font-black uppercase bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
-                                                📝 Notas
+                                            <span className="text-amber-400 text-[10px] font-black uppercase bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 flex items-center gap-1">
+                                                <FileText size={10} /> Notas
                                             </span>
                                         )}
                                         {((ex.targetReps || ex.manifestation) && protocol === 'LIBRE') && (
@@ -1055,12 +1055,14 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                                             )}
                                                             {ex.notes && (
                                                                 <div className={`bg-amber-500/15 border border-amber-500/30 rounded-lg flex items-center gap-1.5 ${isSingle ? 'px-3 py-1.5' : 'px-2 py-1'}`}>
-                                                                    <span className={`text-amber-400 font-black ${isSingle ? 'text-xs' : 'text-[10px]'} uppercase tracking-wider`}>📝 Notas</span>
+                                                                    <span className={`text-amber-400 font-black ${isSingle ? 'text-xs' : 'text-[10px]'} uppercase tracking-wider flex items-center gap-1.5`}>
+                                                                        <FileText size={isSingle ? 14 : 10} /> Notas
+                                                                    </span>
                                                                 </div>
                                                             )}
                                                         </div>
-                                                        <div className={`text-slate-500 ${isSingle ? 'text-xs mt-2' : 'text-[10px] mt-1'}`}>
-                                                            ⏱ {restSeconds}s descanso
+                                                        <div className={`text-slate-500 flex items-center gap-1 ${isSingle ? 'text-xs mt-2' : 'text-[10px] mt-1'}`}>
+                                                            <Clock size={isSingle ? 12 : 10} /> {restSeconds}s descanso
                                                         </div>
                                                     </div>
                                                 </div>
@@ -1232,7 +1234,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                                                             >
                                                                                 {workTimer.active && workTimer.exIdx === idx ? (
                                                                                     <>
-                                                                                        <span className="text-sm">⏱</span>
+                                                                                        <Clock size={12} />
                                                                                         <span className="tabular-nums text-xs">{workTimer.timeLeft}s</span>
                                                                                     </>
                                                                                 ) : (
@@ -1379,7 +1381,7 @@ const WorkBlock = ({ step, plan, onComplete, onSelectExercise, playCountdownShor
                                                                             >
                                                                                 {workTimer.active && workTimer.exIdx === idx ? (
                                                                                     <>
-                                                                                        <span className="text-sm">⏱</span>
+                                                                                        <Clock size={12} />
                                                                                         <span className="tabular-nums text-xs">{workTimer.timeLeft}s</span>
                                                                                     </>
                                                                                 ) : (

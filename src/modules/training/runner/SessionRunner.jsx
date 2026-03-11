@@ -7,7 +7,7 @@ import WarmupBlock from './components/WarmupBlock';
 import SummaryBlock from './components/SummaryBlock';
 import { uploadToImgBB } from '../services/imageService';
 import { useAuth } from '../../../context/AuthContext';
-import { ChevronLeft, ChevronUp, ChevronDown, Play, AlertCircle, CheckCircle, Clock, Plus, TrendingUp, TrendingDown, Minus, Info, Dumbbell, Zap, X, Activity, MessageSquare, Flame, Footprints, Trash2, Repeat, Layers, Camera, Check, Pause, AlertTriangle, ArrowRight, ArrowLeft, Save, Target, Hash, History } from 'lucide-react';
+import { ChevronLeft, ChevronUp, ChevronDown, Play, AlertCircle, CheckCircle, Clock, Plus, TrendingUp, TrendingDown, Minus, Info, Dumbbell, Zap, X, Activity, MessageSquare, Flame, Footprints, Trash2, Repeat, Layers, Camera, Check, Pause, AlertTriangle, ArrowRight, ArrowLeft, Save, Target, Hash, History, FileText } from 'lucide-react';
 import { useSessionData } from './hooks/useSessionData.js';
 import { useSessionTimer } from '../hooks/useSessionTimer';
 import { useKeepAwake } from '../../../hooks/useKeepAwake';
@@ -1214,8 +1214,8 @@ const CollapsiblePlanningBlock = ({ module, onSelectExercise }) => {
                                                                     const notes = ex.notes || ex.config?.notes;
                                                                     if (!notes) return null;
                                                                     return (
-                                                                        <span className="inline-flex items-center px-2 py-1 bg-amber-500/10 text-amber-400 rounded text-[10px] font-black border border-amber-500/20" title={notes}>
-                                                                            ðŸ“ Notas
+                                                                        <span className="inline-flex items-center gap-1.5 px-2 py-1 bg-amber-500/10 text-amber-400 rounded text-[10px] font-black border border-amber-500/20" title={notes}>
+                                                                            <FileText size={10} /> Notas
                                                                         </span>
                                                                     );
                                                                 })()
